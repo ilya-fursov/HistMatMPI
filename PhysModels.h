@@ -10,6 +10,7 @@
 
 #include <vector>
 #include "MathUtils.h"
+#include "Abstract.h"
 #include <mpi.h>
 
 //---------------------------------------------------------------------------

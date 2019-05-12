@@ -2784,8 +2784,8 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 		try						// this try-catch block is intended for MPI synchronisation of errors
 		{
 			if (!CheckLimits(params))
-				throw HMMPI::EObjFunc(HMMPI::MessageRE("Параметры выходят за допустимый диапазон",
-													   "Parameters are out of range"));
+				throw HMMPI::EObjFunc((std::string)HMMPI::MessageRE("Параметры выходят за допустимый диапазон: ",
+													   	   	   	    "Parameters are out of range: ") + HMMPI::ToString(params));
 
 			// 1. Substitute the parameters and run the model
 			HMMPI::TagPrintfMap *tmap = parameters->get_tag_map();		// object handling the parameters - fill it!
@@ -3398,7 +3398,7 @@ PM_Linear::PM_Linear(Parser_1 *K, KW_item *kw, MPI_Comm c) : PhysModel(K, kw, c)
 	else
 	{
 		std::vector<double> big_diag = mat->v2;
-		std::transform(big_diag.begin(), big_diag.end(), big_diag.begin(), sqrt);
+		std::transform(big_diag.begin(), big_diag.end(), big_diag.begin(), HMMPI::_sqrt);
 		FullCov = big_diag % corr->Corr() % big_diag;
 	}
 

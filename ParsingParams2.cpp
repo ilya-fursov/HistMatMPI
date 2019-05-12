@@ -3074,7 +3074,7 @@ void KW_matvecvec::Action() noexcept
 std::vector<double> KW_matvecvec::Std() const
 {
 	std::vector<double> res = v2;
-	std::transform(res.begin(), res.end(), res.begin(), sqrt);
+	std::transform(res.begin(), res.end(), res.begin(), HMMPI::_sqrt);
 	return res;
 }
 //------------------------------------------------------------------------------------------

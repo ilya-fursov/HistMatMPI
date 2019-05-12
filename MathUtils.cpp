@@ -64,6 +64,11 @@ bool IsNaN(double d)
 	return std::isnan(d) || std::isinf(d);
 }
 //------------------------------------------------------------------------------------------
+double _sqrt(double d)
+{
+	return sqrt(d);
+};
+//------------------------------------------------------------------------------------------
 void Sobol(long long int &seed, std::vector<double> &vec)
 {
 	i8_sobol ((int)vec.size(), &seed, vec.data());
@@ -2053,7 +2058,7 @@ void DiagBlockNum::chol_mult(const std::vector<double> &vec1, int start, std::ve
 	if (!holding_chol)
 	{
 		chol_d = d;
-		std::transform(chol_d.begin(), chol_d.end(), chol_d.begin(), sqrt);
+		std::transform(chol_d.begin(), chol_d.end(), chol_d.begin(), _sqrt);
 		holding_chol = true;
 	}
 

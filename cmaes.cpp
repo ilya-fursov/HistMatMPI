@@ -2430,7 +2430,7 @@ random_init( random_t *t, long unsigned inseed)
   if (inseed < 1) {
     while ((long) (cloc - clock()) == 0)
       ; /* TODO: remove this for time critical applications? */
-    inseed = (long unsigned)abs(100*time(NULL)+clock());
+    inseed = (long unsigned)abs(100*(long int)time(NULL)+(long int)clock());
   }
   long res = random_Start(t, inseed);
   MPI_Bcast(&res, 1, MPI_LONG, 0, MPI_COMM_WORLD);
@@ -2819,7 +2819,7 @@ readpara_SupplementDefaults(readpara_t *t)
   if (t->seed < 1) {
     while ((int) (cloc - clock()) == 0)
       ; /* TODO: remove this for time critical applications!? */
-    t->seed = (unsigned int)abs(100*time(NULL)+clock());
+    t->seed = (unsigned int)abs(100*(long int)time(NULL)+(long int)clock());
     MPI_Bcast(&(t->seed), 1, MPI_INT, 0, MPI_COMM_WORLD);
   }
 

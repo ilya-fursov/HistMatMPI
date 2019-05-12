@@ -1090,8 +1090,9 @@ PhysModGradNum::PhysModGradNum(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *
 	}
 	else							// PARAMETERS case
 	{
-		const double const_dh = 1e-5;		// TODO original
+		//const double const_dh = 1e-5;		// TODO original
 		//const double const_dh = 1e-4;
+		const double const_dh = 1e-6;
 		dh = std::vector<double>(init.size(), const_dh);
 		dh_type = std::vector<std::string>(init.size(), "CONST");
 		K->AppText(HMMPI::stringFormatArr("NUMGRAD: взяты dh = {0}, dh_type = CONST\n", "NUMGRAD: using dh = {0}, dh_type = CONST\n", const_dh));

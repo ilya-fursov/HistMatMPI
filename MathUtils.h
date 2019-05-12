@@ -32,6 +32,7 @@ double NumD(const std::function<double(double)> &f, double x, double h = 1e-4, O
 double NumD2(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative d2f/dx2; h - increment, oh - precision
 double NumD3(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative d3f/dx3; h - increment, oh - precision
 bool IsNaN(double d);
+double _sqrt(double d);
 void Sobol(long long int &seed, std::vector<double> &vec);	// generates a new quasirandom Sobol vector with each call; it's a wrapper for "i8_sobol"; dimension is taken according to the vec.size(); 'seed' is incremented with each call
 void CholDecomp(const double *A, double *res, int sz);		// Cholesky decomp. A[sz,sz] -> res[sz,sz], A should be symmetric positive definite; for row-major storage of A, only lower triangular part of A is used
 															// array 'res' should have been allocated
