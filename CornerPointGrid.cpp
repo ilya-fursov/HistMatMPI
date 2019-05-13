@@ -8,6 +8,7 @@
 #include "CornerPointGrid.h"
 #include "Utils.h"
 #include <cassert>
+#include <cstring>
 
 namespace HMMPI
 {
@@ -35,11 +36,12 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 		throw Exception((std::string)"Cannot open " + file + "\n");
 
 	bool expect_scan_two = true;
-	while (ReadTokenComm(File, &str, new_line, str0, Buff))	// reads a token to str, ignoring comments
+	while (ReadTokenComm(File, &str, new_line, str0, Buff))		// reads a token to "str", ignoring comments
 	{
 		std::string S = str;
 		if (seek_beg)
 		{
+			S = ToUpper(S);
 			ind = StrIndex(S, S1);
 			if (ind != -1)					// "S" is the starting string for grid #ind
 			{
@@ -141,25 +143,84 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 	}
 }
 //------------------------------------------------------------------------------------------
-bool ReadTokenComm(FILE *F, char **str, bool &new_line, char *str0, const int str0_len);
-															// reads a token from the file (delimited by ' ', '\t', '\r', '\n'), dropping "--..." comments
-															// returns true on success, false on failure/EOF
-															// the token is saved to "str"
-															// set "new_line" = true in the first call, then the function will manage it
-															// str0 is a working array, it should have been allocated
-//------------------------------------------------------------------------------------------
-int StrIndex(const std::string &S, const std::vector<std::string> &VECS);	// index of S in VECS[], -1 if not found
-//------------------------------------------------------------------------------------------
-inline bool scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two);	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
-//------------------------------------------------------------------------------------------
-inline bool scan_one(const char *str, double &d, bool &expect_scan_two);				// parses "d", returns 'true' on success, updates 'expect_scan_two'
-//------------------------------------------------------------------------------------------
+bool CornGrid::ReadTokenComm(FILE *F, char **str, bool &new_line, char *str0, const int str0_len)
+{																	// reads a token from the file (delimited by ' ', '\t', '\r', '\n'), dropping "--..." comments
+	*str = 0;														// returns true on success, false on failure/EOF
+																	// the token is saved to "str"
+	static const char COMM[] = "--";		// comment beginning	// set "new_line" = true in the first call, then the function will manage it
+	static const char DELIM[] = " \t\r\n";	// delimiters			// str0 is a working array (stores a line), it should have been allocated
 
+	while (*str == 0)
+	{
+		if (new_line)
+		{
+			if (fgets(str0, str0_len, F) != 0)	// read the line
+			{
+				// remove the comment
+				char *comm_ind = strstr(str0, COMM);
+				if (comm_ind != 0)			// comment found
+					comm_ind[0] = 0;		// set end-of-line at the comment start
 
+				new_line = false;
 
+				// get the first token
+				*str = strtok(str0, DELIM);
+			}
+			else
+				return false;
+		}
+		else
+			*str = strtok(0, DELIM);			// TODO test more esp comments
+
+		if (*str == 0)
+			new_line = true;
+	}
+
+	return true;
+}
+//------------------------------------------------------------------------------------------
+int CornGrid::StrIndex(const std::string &s, const std::vector<std::string> &vecs)	// index of "s" in vecs[], -1 if not found
+{
+	for (size_t i = 0; i < vecs.size(); i++)
+		if (s == vecs[i])
+			return i;
+
+	return -1;
+}
+//------------------------------------------------------------------------------------------
+inline bool CornGrid::scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two)	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
+{
+	char swork[8];
+	swork[0] = '\0';
+
+	int read = sscanf(str, "%zu*%lg%5s", &cnt, &d, swork);
+	if (read == 2 && swork[0] == '\0')				// RPT*VAL successfully read		TODO test more this template
+	{
+		expect_scan_two = true;
+		return true;
+	}
+	else
+		return false;
+}
+//------------------------------------------------------------------------------------------
+inline bool CornGrid::scan_one(const char *str, double &d, bool &expect_scan_two)				// parses "d", returns 'true' on success, updates 'expect_scan_two'
+{
+	char swork[8];
+	swork[0] = '\0';
+
+	int read = sscanf(str, "%lg%5s", &d, swork);
+	if (read == 1 && swork[0] == '\0') 				// VAL successfully read		TODO test more
+	{
+		expect_scan_two = false;
+		return true;
+	}
+	else
+		return false;
+}
+//------------------------------------------------------------------------------------------
 std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy)	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
 {																										// [dx, dy] is the coordinates origin, it is added to COORD
-	Nx = nx;
+	Nx = nx;																							// a small message is returned by this function
 	Ny = ny;
 	Nz = nz;
 
@@ -175,10 +236,23 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 	coord = std::move(data[0]);
 	zcorn = std::move(data[1]);
 
-	// shift the origin
-	//TODO
+	assert(coord.size() == coord_size);
+	assert(zcorn.size() == zcorn_size);
 
-	// print the message TODO
+	// shift the origin
+	for (size_t j = 0; j < Ny+1; j++)
+		for (size_t i = 0; i < Nx+1; i++)		// consider pillar p = (i, j)
+		{
+			size_t p = j*(Nx+1) + i;
+
+			coord[p*6] += dx;
+			coord[p*6+1] += dy;
+
+			coord[p*6+3] += dx;
+			coord[p*6+4] += dy;
+		}
+
+	return stringFormatArr("Loaded {0:%zu} pillars and {1:%zu} ZCORN values", std::vector<size_t>{coord_size, zcorn_size});
 }
 //------------------------------------------------------------------------------------------
 void CornGrid::fill_cell_coord()					// fills "cell_coord" from coord, zcorn, and grid dimensions

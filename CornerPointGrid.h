@@ -40,7 +40,7 @@ private:
 																// the token is saved to "str"
 																// set "new_line" = true in the first call, then the function will manage it
 																// str0 is a working array, it should have been allocated
-	int StrIndex(const std::string &S, const std::vector<std::string> &VECS);	// index of S in VECS[], -1 if not found
+	int StrIndex(const std::string &s, const std::vector<std::string> &vecs);	// index of "s" in vecs[], -1 if not found
 	inline bool scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two);	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
 	inline bool scan_one(const char *str, double &d, bool &expect_scan_two);				// parses "d", returns 'true' on success, updates 'expect_scan_two'
 
@@ -48,6 +48,7 @@ private:
 public:
 	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy);	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
 																									// [dx, dy] is the coordinates origin, it is added to COORD
+																									// a small message is returned by this function
 	void fill_cell_coord();			// fills "cell_coord" from coord, zcorn, and grid dimensions
 };
 //------------------------------------------------------------------------------------------
