@@ -19,6 +19,7 @@ namespace HMMPI
 class CornGrid
 {
 private:
+	bool grid_loaded;		// 'true' if the grid has been loaded
 	size_t Nx, Ny, Nz;		// grid dimensions
 
 	std::vector<double> coord;		// read from COORD
@@ -26,8 +27,9 @@ private:
 	std::vector<double> cell_coord;		// filled by fill_cell_coord(), contains vertex coords for all cells;
 										// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
 
-
-
+	bool state_found;		// 'true' <=> dx0, dy0, theta0 have been found
+	double dx0, dy0;		// grid horizontal cell size
+	double theta0;			// grid rotation angle
 
 
 	void ReadGrids(const char *file, std::vector<size_t> len, std::vector<std::vector<double>> &data, std::vector<std::string> S1, std::string S2);
@@ -44,8 +46,10 @@ private:
 	inline bool scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two);	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
 	inline bool scan_one(const char *str, double &d, bool &expect_scan_two);				// parses "d", returns 'true' on success, updates 'expect_scan_two'
 
+	std::string unify_pillar_z();	// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
 
 public:
+	CornGrid() : grid_loaded(false), Nx(0), Ny(0), Nz(0), state_found(false), dx0(0), dy0(0), theta0(0){};
 	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy);	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
 																									// [dx, dy] is the coordinates origin, it is added to COORD
 																									// a small message is returned by this function

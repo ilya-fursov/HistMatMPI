@@ -218,6 +218,70 @@ inline bool CornGrid::scan_one(const char *str, double &d, bool &expect_scan_two
 		return false;
 }
 //------------------------------------------------------------------------------------------
+std::string CornGrid::unify_pillar_z()		// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
+{
+	double mz0 = 0, mz1 = 0;
+	size_t pcount = (Nx+1)*(Ny+1);
+
+	assert(grid_loaded);
+
+	for (size_t j = 0; j < Ny+1; j++)
+		for (size_t i = 0; i < Nx+1; i++)	// consider pillar p = (i, j)
+		{
+			size_t p = j*(Nx+1) + i;
+
+			mz0 += coord[p*6+2];
+			mz1 += coord[p*6+5];
+		}
+
+	mz0 /= pcount;							// find the mean z0_ij, z1_ij
+	mz1 /= pcount;
+
+	for (size_t j = 0; j < Ny+1; j++)
+		for (size_t i = 0; i < Nx+1; i++)	// consider pillar p = (i, j)
+		{
+			size_t p = j*(Nx+1) + i;
+
+			double x0 = coord[p*6];
+			double y0 = coord[p*6+1];
+			double z0 = coord[p*6+2];
+
+			double x1 = coord[p*6+3];
+			double y1 = coord[p*6+4];
+			double z1 = coord[p*6+5];
+
+			if (z1 != z0)
+			{
+				coord[p*6] = x0 + (x1-x0)/(z1-z0)*(mz0 - z0);
+				coord[p*6+1] = y0 + (y1-y0)/(z1-z0)*(mz0 - z0);
+			}
+			else
+			{
+				coord[p*6] = x0;
+				coord[p*6+1] = y0;
+			}
+			coord[p*6+2] = mz0;
+
+			if (z1 != z0)
+			{
+				coord[p*6+3] = x0 + (x1-x0)/(z1-z0)*(mz1 - z0);
+				coord[p*6+4] = y0 + (y1-y0)/(z1-z0)*(mz1 - z0);
+			}
+			else
+			{
+				coord[p*6+3] = x0;
+				coord[p*6+4] = y0;
+			}
+			coord[p*6+5] = mz1;
+		}
+	// TODO test by explicit output of pillars, and by creating a grid with/without pillar correction
+
+	char msg[HMMPI::BUFFSIZE];
+	sprintf(msg, "Processed %zu pillars, pillar starts unified to %g, pillar ends unified to %g", pcount, mz0, mz1);
+
+	return msg;
+}
+//------------------------------------------------------------------------------------------
 std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy)	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
 {																										// [dx, dy] is the coordinates origin, it is added to COORD
 	Nx = nx;																							// a small message is returned by this function
@@ -252,6 +316,7 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 			coord[p*6+4] += dy;
 		}
 
+	grid_loaded = true;
 	return stringFormatArr("Loaded {0:%zu} pillars and {1:%zu} ZCORN values", std::vector<size_t>{coord_size, zcorn_size});
 }
 //------------------------------------------------------------------------------------------
