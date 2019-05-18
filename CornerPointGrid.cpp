@@ -59,7 +59,7 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 			{
 				fclose(File);
 				File = 0;
-				sprintf(strmsg, " grid contains less values (%zu) than expected (%zu)\n", ValCount, len[ind]);	// TODO test
+				sprintf(strmsg, " grid contains less values (%zu) than expected (%zu)\n", ValCount, len[ind]);
 				throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
 			}
 
@@ -97,7 +97,7 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 				{
 					fclose(File);
 					File = 0;
-					sprintf(strmsg, " grid contains more values than expected (%zu)\n", len[ind]);		// TODO test
+					sprintf(strmsg, " grid contains more values than expected (%zu)\n", len[ind]);
 					throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
 				}
 
@@ -117,7 +117,7 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 			{
 				fclose(File);
 				File = 0;
-				sprintf(strmsg, " grid contains non-numeric symbol %s\n", str);				// TODO test
+				sprintf(strmsg, " grid contains non-numeric symbol %s\n", str);
 				throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
 			}
 		}
@@ -130,7 +130,7 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 		assert(ind != -1);
 		if (ValCount < len[ind])
 		{
-			sprintf(strmsg, " grid contains less values (%zu) than expected (%zu)\n", ValCount, len[ind]);		// TODO test
+			sprintf(strmsg, " grid contains less values (%zu) than expected (%zu)\n", ValCount, len[ind]);
 			throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
 		}
 		GridCount++;
@@ -138,7 +138,7 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 
 	if (GridCount < S1.size())
 	{
-		sprintf(strmsg, "Only %zu grid(s) found out of %zu\n", GridCount, S1.size());		// TODO test
+		sprintf(strmsg, "Only %zu grid(s) found out of %zu\n", GridCount, S1.size());
 		throw Exception(std::string(file) + ": " + std::string(strmsg));
 	}
 }
@@ -170,7 +170,7 @@ bool CornGrid::ReadTokenComm(FILE *F, char **str, bool &new_line, char *str0, co
 				return false;
 		}
 		else
-			*str = strtok(0, DELIM);			// TODO test more esp comments
+			*str = strtok(0, DELIM);
 
 		if (*str == 0)
 			new_line = true;
@@ -194,7 +194,7 @@ inline bool CornGrid::scan_two(const char *str, size_t &cnt, double &d, bool &ex
 	swork[0] = '\0';
 
 	int read = sscanf(str, "%zu*%lg%5s", &cnt, &d, swork);
-	if (read == 2 && swork[0] == '\0')				// RPT*VAL successfully read		TODO test more this template
+	if (read == 2 && swork[0] == '\0')				// RPT*VAL successfully read
 	{
 		expect_scan_two = true;
 		return true;
@@ -209,7 +209,7 @@ inline bool CornGrid::scan_one(const char *str, double &d, bool &expect_scan_two
 	swork[0] = '\0';
 
 	int read = sscanf(str, "%lg%5s", &d, swork);
-	if (read == 1 && swork[0] == '\0') 				// VAL successfully read		TODO test more
+	if (read == 1 && swork[0] == '\0') 				// VAL successfully read
 	{
 		expect_scan_two = false;
 		return true;
@@ -274,12 +274,39 @@ std::string CornGrid::unify_pillar_z()		// sets z0_ij, z1_ij of the pillars to b
 			}
 			coord[p*6+5] = mz1;
 		}
-	// TODO test by explicit output of pillars, and by creating a grid with/without pillar correction
 
 	char msg[HMMPI::BUFFSIZE];
 	sprintf(msg, "Processed %zu pillars, pillar starts unified to %g, pillar ends unified to %g", pcount, mz0, mz1);
 
 	return msg;
+}
+//------------------------------------------------------------------------------------------
+void CornGrid::temp_out_pillars() const	// TODO temp!
+{
+	FILE *f = fopen("pillars_out.txt", "w");
+
+	for (size_t j = 0; j < Ny+1; j++)
+		for (size_t i = 0; i < Nx+1; i++)	// consider pillar p = (i, j)
+		{
+			size_t p = j*(Nx+1) + i;
+
+			fprintf(f, "%.12g\t%.12g\t%.12g\t\t%.12g\t%.12g\t%.12g\n", coord[p*6], coord[p*6+1], coord[p*6+2], coord[p*6+3], coord[p*6+4], coord[p*6+5]);
+		}
+
+	fclose(f);
+}
+void CornGrid::temp_out_zcorn() const	// TODO temp!
+{
+	FILE *f = fopen("zcorn_out.txt", "w");
+
+	for (size_t j = 0; j < zcorn.size(); j++)
+			fprintf(f, "%.12g\n", zcorn[j]);
+
+	fclose(f);
+}
+//------------------------------------------------------------------------------------------
+CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), state_found(false), dx0(0), dy0(0), theta0(0)
+{
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy)	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
@@ -317,11 +344,38 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 		}
 
 	grid_loaded = true;
-	return stringFormatArr("Loaded {0:%zu} pillars and {1:%zu} ZCORN values", std::vector<size_t>{coord_size, zcorn_size});
+	return stringFormatArr("Loaded {0:%zu} COORD values and {1:%zu} ZCORN values", std::vector<size_t>{coord_size, zcorn_size});
+}
+//------------------------------------------------------------------------------------------
+std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be called after "grid_loaded", returns a small message
+{														// treats positive real values as 'active'
+	assert(grid_loaded);
+
+	const size_t grid_size = Nx*Ny*Nz;
+	std::vector<std::vector<double>> data;
+
+	// read the input file
+	ReadGrids(fname.c_str(), std::vector<size_t>{grid_size}, data, std::vector<std::string>{"ACTNUM"}, "/");
+
+	assert(data.size() == 1);
+	assert(data[0].size() == grid_size);
+	actnum = std::vector<int>(grid_size, 0);
+
+	size_t count = 0;
+	for (size_t i = 0; i < grid_size; i++)
+		if (data[0][i] > 0)
+		{
+			actnum[i] = 1;
+			count++;			// count the active cells
+		}
+
+	actnum_loaded = true;
+	return stringFormatArr("Active cells: {0:%zu} / {1:%zu}", std::vector<size_t>{count, grid_size});
 }
 //------------------------------------------------------------------------------------------
 void CornGrid::fill_cell_coord()					// fills "cell_coord" from coord, zcorn, and grid dimensions
 {
+	assert(grid_loaded);
 	const size_t coord_size = 6*(Nx+1)*(Ny+1);			// VTK_VOXEL:
 	const size_t zcorn_size = 8*Nx*Ny*Nz;				// 2 --- 3				   6 --- 7
 														// |	 |	+ another face |	 |

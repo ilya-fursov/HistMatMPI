@@ -17,6 +17,7 @@
 #include "ConcretePhysModels.h"
 #include "Tracking.h"
 #include "GradientOpt.h"
+#include "CornerPointGrid.h"
 #include "EclSMRY.h"
 #include <algorithm>
 #include <cmath>
@@ -409,35 +410,15 @@ void KW_rundebug::Run()
 
 	//FILE *f = fopen("output_vecs.bin", "wb");
 
-//	HMMPI::vector_io<double> v1 = {1, 2, 3, 4, 5.5};
-//	HMMPI::vector_io<double> v2(3, 19.81);
-//
-//	HMMPI::vector_io<double> v1_copy = v1;
-//	HMMPI::vector_io<double> v1_move = std::move(v1);
-//
-//	HMMPI::vector_io<HMMPI::vector_io<double>> V = {v1, v2, v1_copy};
-//
-//	std::vector<int> _v3 = {-1, -2, -3, -4};
-//	HMMPI::vector_io<int> v3 = _v3;
-//
-//	std::vector<HMMPI::SimSMRY::pair> _v4 = {HMMPI::SimSMRY::pair("hello", "world"), HMMPI::SimSMRY::pair("Well1", "WBHP")};
-//	HMMPI::vector_io<HMMPI::SimSMRY::pair> v4 = _v4;
+	std::string fname = "Grid.txt";
+	HMMPI::CornGrid CG;
+	std::cout << CG.LoadCOORD_ZCORN(fname, 5, 5, 5, 0.0, 0.0) << "\n";
+	std::cout << CG.LoadACTNUM(fname) << "\n";
+	std::cout << CG.unify_pillar_z() << "\n";
+	std::cout << "look for the new pillars in the file\n";
+	CG.temp_out_pillars();
+	CG.temp_out_zcorn();
 
-//	v1_copy.write(f);
-//	v2.write(f);
-//	V.write(f);
-//	v3.write(f);
-//	v4.write(f);
-//
-//	fclose(f);
-
-	//eclsmry->Save();
-
-	long long int seed = 0;
-	std::vector<std::vector<double>> res = params->SobolSequence(100, seed);
-
-	for (size_t i = 0; i < res.size(); i++)
-		std::cout << HMMPI::ToString(res[i]);
 
 }
 //------------------------------------------------------------------------------------------

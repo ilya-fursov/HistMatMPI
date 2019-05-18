@@ -20,10 +20,12 @@ class CornGrid
 {
 private:
 	bool grid_loaded;		// 'true' if the grid has been loaded
+	bool actnum_loaded;		// 'true' if ACTNUM has been loaded
 	size_t Nx, Ny, Nz;		// grid dimensions
 
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN
+	std::vector<int> actnum;		// read from ACTNUM
 	std::vector<double> cell_coord;		// filled by fill_cell_coord(), contains vertex coords for all cells;
 										// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
 
@@ -46,13 +48,23 @@ private:
 	inline bool scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two);	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
 	inline bool scan_one(const char *str, double &d, bool &expect_scan_two);				// parses "d", returns 'true' on success, updates 'expect_scan_two'
 
-	std::string unify_pillar_z();	// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
+
+
+		public:	// TODO temp
+		std::string unify_pillar_z();	// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
+
+
+		void temp_out_pillars() const;	// TODO temp
+		void temp_out_zcorn() const;	// TODO temp
+
 
 public:
-	CornGrid() : grid_loaded(false), Nx(0), Ny(0), Nz(0), state_found(false), dx0(0), dy0(0), theta0(0){};
+	CornGrid();
 	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy);	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
 																									// [dx, dy] is the coordinates origin, it is added to COORD
 																									// a small message is returned by this function
+	std::string LoadACTNUM(std::string fname);		// loads ACTNUM, should be called after "grid_loaded", returns a small message
+													// treats positive real values as 'active'
 	void fill_cell_coord();			// fills "cell_coord" from coord, zcorn, and grid dimensions
 };
 //------------------------------------------------------------------------------------------
