@@ -9,9 +9,62 @@
 #include "Utils.h"
 #include <cassert>
 #include <cstring>
+#include <utility>
 
 namespace HMMPI
 {
+
+//------------------------------------------------------------------------------------------
+// NNC_point
+//------------------------------------------------------------------------------------------
+bool NNC_point::operator<=(const NNC_point &N2) const		// comparison is based on {i,j} only
+{
+	return (i < N2.i) || (i == N2.i && j <= N2.j);
+}
+//------------------------------------------------------------------------------------------
+bool NNC_point::operator==(const NNC_point &N2) const		// comparison is based on {i,j} only
+{
+	return (i == N2.i && j == N2.j);
+}
+//------------------------------------------------------------------------------------------
+// NNC
+//------------------------------------------------------------------------------------------
+NNC::NNC(int i0, int j0, int k0, int i1, int j1, int k1) : N0(i0, j0, k0), N1(i1, j1, k1)
+{
+	if (!(N0 <= N1))										// keep the points in the pair _ordered_
+		std::swap(N0, N1);
+}
+//------------------------------------------------------------------------------------------
+NNC NNC::incr(int di, int dj) const							// returns NNC where i and j are incremented by di, dj compared to "this" (same increment for both NNC_points)
+{
+	NNC res(*this);
+	res.N0.i += di;
+	res.N0.j += dj;
+
+	res.N1.i += di;
+	res.N1.j += dj;
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+bool NNC::operator==(const NNC &nnc2) const					// comparison is based on {i,j} of both points
+{
+	return N0 == nnc2.N0 && N1 == nnc2.N1;
+}
+//------------------------------------------------------------------------------------------
+bool NNC::is_neighbour(const NNC &nnc2) const				// 'true' if the two NNCs are adjacent
+{
+	if (*this == nnc2)
+		return true;
+	if (N0 == nnc2.N0 || N0 == nnc2.N1 || N1 == nnc2.N0 || N1 == nnc2.N1)
+		return true;
+	if (incr(1,0) == nnc2 || incr(-1,0) == nnc2 || incr(0,1) == nnc2 || incr(0,-1) == nnc2)
+		return true;
+
+	return false;
+}
+//------------------------------------------------------------------------------------------
+// CornGrid
 //------------------------------------------------------------------------------------------
 void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<std::vector<double>> &data, std::vector<std::string> S1, std::string S2)
 {															// reads a number of grids from "file"

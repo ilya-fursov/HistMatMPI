@@ -15,6 +15,30 @@ namespace HMMPI
 {
 
 //------------------------------------------------------------------------------------------
+// a small helper class for NNC
+class NNC_point
+{
+public:
+	int i, j, k;
+
+	NNC_point(int i0, int j0, int k0) : i(i0), j(j0), k(k0){};
+	bool operator<=(const NNC_point &N2) const;		// comparison is based on {i,j} only
+	bool operator==(const NNC_point &N2) const;		// comparison is based on {i,j} only
+};
+//------------------------------------------------------------------------------------------
+// another small helper class for NNC
+class NNC
+{
+protected:
+	NNC_point N0, N1;
+
+public:
+	NNC(int i0, int j0, int k0, int i1, int j1, int k1);
+	NNC incr(int di, int dj) const;					// returns NNC where i and j are incremented by di, dj compared to "this" (same increment for both NNC_points)
+	bool operator==(const NNC &nnc2) const;			// comparison is based on {i,j} of both points
+	bool is_neighbour(const NNC &nnc2) const;		// 'true' if the two NNCs are adjacent
+};
+//------------------------------------------------------------------------------------------
 // class for working with corner point grids: I/O, grid cell location, other operations
 class CornGrid
 {
