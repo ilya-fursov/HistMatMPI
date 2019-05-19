@@ -64,6 +64,29 @@ bool NNC::is_neighbour(const NNC &nnc2) const				// 'true' if the two NNCs are a
 	return false;
 }
 //------------------------------------------------------------------------------------------
+void NNC::add_NNC_to_array(std::vector<std::vector<NNC>> &NNC_array, NNC n)	// adds "n" to the NNC array, taking connectivity into account (each NNC_array[i] is a connected series of NNCs)
+{
+	int ind = -1;
+	for (size_t i = 0; i < NNC_array.size(); i++)
+	{
+		for (size_t j = 0; j < NNC_array[i].size(); j++)
+			if (NNC_array[i][j].is_neighbour(n))	// found a neighbour of "n" in NNC_array[i]
+			{
+				ind = i;
+				break;
+			}
+
+		if (ind != -1)								// neighbour found - exit the loop
+			break;
+	}
+
+	// add "n" to the appropriate NNC_array[i]
+	if (ind != -1)
+		NNC_array[ind].push_back(n);
+	else
+		NNC_array.push_back(std::vector<NNC>{n});	// start a new connectivity component
+}	// TODO recheck above
+//------------------------------------------------------------------------------------------
 // CornGrid
 //------------------------------------------------------------------------------------------
 void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<std::vector<double>> &data, std::vector<std::string> S1, std::string S2)
@@ -269,6 +292,19 @@ inline bool CornGrid::scan_one(const char *str, double &d, bool &expect_scan_two
 	}
 	else
 		return false;
+}
+//------------------------------------------------------------------------------------------
+bool CornGrid::faces_intersect(double a0, double b0, double c0, double d0, double a1, double b1, double c1, double d1)	// 'true' if two faces intersect;
+{											// the faces are defined by their z-values for two shared pillars (0, 1): face_1 is [a0, b0; a1, b1], face_2 is [c0, d0; c1, d1]
+	if ((a0 < c0 && c0 < b0)||(c0 < a0 && a0 < d0))		// intersection for pillar 0
+		return true;
+	if ((a1 < c1 && c1 < b1)||(c1 < a1 && a1 < d1))		// intersection for pillar 1
+		return true;
+
+	if ((b0 < c0 && d1 < a1)||(d0 < a0 && b1 < c1))		// higher/lower
+		return true;
+
+	return false;
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::unify_pillar_z()		// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message

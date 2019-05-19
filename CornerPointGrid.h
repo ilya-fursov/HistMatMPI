@@ -37,6 +37,7 @@ public:
 	NNC incr(int di, int dj) const;					// returns NNC where i and j are incremented by di, dj compared to "this" (same increment for both NNC_points)
 	bool operator==(const NNC &nnc2) const;			// comparison is based on {i,j} of both points
 	bool is_neighbour(const NNC &nnc2) const;		// 'true' if the two NNCs are adjacent
+	static void add_NNC_to_array(std::vector<std::vector<NNC>> &NNC_array, NNC n);	// adds "n" to the NNC array, taking connectivity into account (each NNC_array[i] is a connected series of NNCs)
 };
 //------------------------------------------------------------------------------------------
 // class for working with corner point grids: I/O, grid cell location, other operations
@@ -50,7 +51,7 @@ private:
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN
 	std::vector<int> actnum;		// read from ACTNUM
-	std::vector<double> cell_coord;		// filled by fill_cell_coord(), contains vertex coords for all cells;
+	std::vector<double> cell_coord;		// filled by fill_cell_coord() (see for details), contains vertex coords for all cells;
 										// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
 
 	bool state_found;		// 'true' <=> dx0, dy0, theta0 have been found
@@ -71,6 +72,8 @@ private:
 	int StrIndex(const std::string &s, const std::vector<std::string> &vecs);	// index of "s" in vecs[], -1 if not found
 	inline bool scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two);	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
 	inline bool scan_one(const char *str, double &d, bool &expect_scan_two);				// parses "d", returns 'true' on success, updates 'expect_scan_two'
+	bool faces_intersect(double a0, double b0, double c0, double d0, double a1, double b1, double c1, double d1);	// 'true' if two faces intersect, the faces are defined by their
+																// z-values for two shared pillars (0, 1): face_1 is [a0, b0; a1, b1], face_2 is [c0, d0; c1, d1]
 
 
 
