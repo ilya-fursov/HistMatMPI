@@ -414,10 +414,6 @@ void KW_rundebug::Run()
 	HMMPI::CornGrid CG;
 	std::cout << CG.LoadCOORD_ZCORN(fname, 5, 5, 5, 0.0, 0.0) << "\n";
 	std::cout << CG.LoadACTNUM(fname) << "\n";
-	std::cout << CG.unify_pillar_z() << "\n";
-	std::cout << "look for the new pillars in the file\n";
-	CG.temp_out_pillars();
-	CG.temp_out_zcorn();
 
 
 }

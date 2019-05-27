@@ -12,6 +12,7 @@
 #include "MathUtils.h"
 #include "MonteCarlo.h"
 #include "EclSMRY.h"
+#include "CornerPointGrid.h"
 
 // TODO uncomment for default behaviour:
 //#define TEMPLATES_KEEP_NO_ASCII 	// TEMPLATES->keep is not read from ASCII file, but is set by function call set_keep();
@@ -130,6 +131,13 @@ class KW_runmpicheck : public KW_run
 {
 public:
 	KW_runmpicheck();
+    virtual void Run();
+};
+//------------------------------------------------------------------------------------------
+class KW_runNNCfromgrid : public KW_run		// extract NNCs across the faults based on the mesh
+{
+public:
+	KW_runNNCfromgrid();
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
@@ -387,6 +395,18 @@ public:
 	std::string satfmt;		// "%.8f", ...
 
 	KW_griddims();
+};
+//------------------------------------------------------------------------------------------
+class KW_griddimens : public KW_params
+{
+public:
+	int Nx;					// grid dimensions
+	int Ny;
+	int Nz;
+	double X0;				// coords origin
+	double Y0;
+
+	KW_griddimens();
 };
 //------------------------------------------------------------------------------------------
 class KW_satsteps : public KW_parint
@@ -1284,6 +1304,26 @@ public:
 	KW_datafile();
 	void WriteDataFile(int i, bool adjrun = false);	// MODELi.DATA, "adjrun" enables ad hoc modifications to switch to adjoint run
 	std::string GetDataFileName(int i);		// name of MODELi.DATA
+};
+//------------------------------------------------------------------------------------------
+class KW_CoordZcorn : public KW_fname		// reads a file with COORD & ZCORN data
+{
+protected:
+	virtual void DataIO(int i);
+
+public:
+	HMMPI::CornGrid CG;
+
+	KW_CoordZcorn();
+};
+//------------------------------------------------------------------------------------------
+class KW_Actnum : public KW_fname			// reads a file with ACTNUM data to KW_CoordZcorn::CG
+{
+protected:
+	virtual void DataIO(int i);
+
+public:
+	KW_Actnum();
 };
 //------------------------------------------------------------------------------------------
 // TODO descendants of KW_fwrite

@@ -1318,6 +1318,40 @@ void KW_runmpicheck::Run()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+KW_runNNCfromgrid::KW_runNNCfromgrid()
+{
+	name = "RUNNNCFROMGRID";
+}
+//------------------------------------------------------------------------------------------
+void KW_runNNCfromgrid::Run()
+{
+	Start_pre();
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	Add_pre("GRIDDIMENS");
+	Finish_pre();
+
+	const std::string fout_name = "Output_NNC_from_grid.txt";
+	std::string msg;
+	std::vector<std::vector<HMMPI::NNC>> res = cz->CG.get_same_layer_NNC(msg);
+	K->AppText(msg + "\n");
+
+	FILE *f = fopen(fout_name.c_str(), "w");
+	for (size_t i = 0; i < res.size(); i++)
+	{
+		for (size_t j = 0; j < res[i].size(); j++)
+		{
+			fprintf(f, "%6d\t%6d\t%6d\t%9d\t%6d\t%6d\tNNC%zu\n",
+					res[i][j].N0.i + 1, res[i][j].N0.j + 1, res[i][j].N0.k + 1,
+					res[i][j].N1.i + 1, res[i][j].N1.j + 1, res[i][j].N1.k + 1, i);
+		}
+		fprintf(f, "\n");
+	}
+
+	fclose(f);
+	K->AppText("NNCs are saved to '" + fout_name + "'\n");
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_runMCMC::KW_runMCMC()
 {
 	name = "RUNMCMC";

@@ -2098,7 +2098,7 @@ void KW_datafile::DataIO(int i)
 		path = fn.substr(0, fn.find_last_of("/"));
 
 		if (mod_name.length() <= 6 || mod_name.substr(mod_name.length()-6) != "0.DATA")
-			throw HMMPI::Exception("(eng)", "Data file should have ...0.DATA ending");
+			throw HMMPI::Exception("Дата-файл должен оканчиваться на ...0.DATA", "Data file should have ...0.DATA ending");
 
 		base_name = mod_name.substr(0, mod_name.length()-6);				// MODEL
 		std::string cont_delim = mod_name.substr(0, mod_name.length()-5);	// MODEL0
@@ -2113,11 +2113,11 @@ void KW_datafile::DataIO(int i)
 			contents += line + "\n";
 		}
 
-		K->AppText(HMMPI::MessageRE("(eng) ...\n", "Reading the file...\n"));
+		K->AppText(HMMPI::MessageRE("Чтение файла ...\n", "Reading the file...\n"));
 		sr.close();
 
 		HMMPI::tokenizeExact(contents, cont_split, cont_delim, true);
-		K->AppText(HMMPI::stringFormatArr("(eng){0:%d}\n", "Found {0:%d} template inclusion(s)\n", (int)cont_split.size()-1));
+		K->AppText(HMMPI::stringFormatArr("Найдено {0:%d} вхождений шаблона\n", "Found {0:%d} template inclusion(s)\n", (int)cont_split.size()-1));
 	}
 	catch (...)
 	{
@@ -2170,6 +2170,44 @@ void KW_datafile::WriteDataFile(int i, bool adjrun)
 std::string KW_datafile::GetDataFileName(int i)
 {
 	return path + "/" + base_name + HMMPI::stringFormatArr("{0:%d}.DATA", std::vector<int>{i});
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_CoordZcorn::KW_CoordZcorn()
+{
+	name = "COORDZCORN";
+	erows = 1;
+}
+//------------------------------------------------------------------------------------------
+void KW_CoordZcorn::DataIO(int i)
+{
+	Start_pre();
+	IMPORTKWD(dims, KW_griddimens, "GRIDDIMENS");
+	Finish_pre();
+
+	std::string fn = this->CWD + "/" + fnames[0];
+	std::string msg = CG.LoadCOORD_ZCORN(fn, dims->Nx, dims->Ny, dims->Nz, dims->X0, dims->Y0);
+
+	K->AppText(std::string(HMMPI::MessageRE("Чтение файла...\n", "Reading the file...\n")) + msg);
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_Actnum::KW_Actnum()
+{
+	name = "ACTNUM";
+	erows = 1;
+}
+//------------------------------------------------------------------------------------------
+void KW_Actnum::DataIO(int i)
+{
+	Start_pre();
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	Finish_pre();
+
+	std::string fn = this->CWD + "/" + fnames[0];
+	std::string msg = cz->CG.LoadACTNUM(fn);
+
+	K->AppText(std::string(HMMPI::MessageRE("Чтение файла...\n", "Reading the file...\n")) + msg + "\n");
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

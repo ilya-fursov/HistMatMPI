@@ -10,6 +10,8 @@
 #include <cassert>
 #include <cstring>
 #include <utility>
+#include <iostream>
+#include <cmath>
 
 namespace HMMPI
 {
@@ -85,7 +87,7 @@ void NNC::add_NNC_to_array(std::vector<std::vector<NNC>> &NNC_array, NNC n)	// a
 		NNC_array[ind].push_back(n);
 	else
 		NNC_array.push_back(std::vector<NNC>{n});	// start a new connectivity component
-}	// TODO recheck above
+}
 //------------------------------------------------------------------------------------------
 // CornGrid
 //------------------------------------------------------------------------------------------
@@ -109,95 +111,98 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 	int ind = -1;			// index within the grid names array
 
 	if (File == 0)
-		throw Exception((std::string)"Cannot open " + file + "\n");
+		throw Exception((std::string)"Cannot open " + file + "\n");		// TODO check
 
-	bool expect_scan_two = true;
-	while (ReadTokenComm(File, &str, new_line, str0, Buff))		// reads a token to "str", ignoring comments
+	try
 	{
-		std::string S = str;
-		if (seek_beg)
+		bool expect_scan_two = true;
+		while (ReadTokenComm(File, &str, new_line, str0, Buff))		// reads a token to "str", ignoring comments
 		{
-			S = ToUpper(S);
-			ind = StrIndex(S, S1);
-			if (ind != -1)					// "S" is the starting string for grid #ind
+			std::string S = str;
+			if (seek_beg)
 			{
-				seek_beg = false;
-				ValCount = 0;
-				c = 0;
-			}
-			continue;
-		}
-		if (!seek_beg && S == S2)			// found the ending string
-		{
-			seek_beg = true;
-			assert(ind != -1);
-			if (ValCount < len[ind])
-			{
-				fclose(File);
-				File = 0;
-				sprintf(strmsg, " grid contains less values (%zu) than expected (%zu)\n", ValCount, len[ind]);
-				throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
-			}
-
-			GridCount++;
-			if (GridCount >= S1.size())		// all grids have been read
-				break;
-
-			continue;
-		}
-		if (!seek_beg)						// reading the main data
-		{
-			size_t cnt;
-			double d;
-			bool err = false;
-			assert(ind != -1);
-
-			if (expect_scan_two)			// scan_two() and scan_one() are invoked based on the expectations (based on the previous successful scan)
-			{
-				if (!scan_two(str, cnt, d, expect_scan_two) && !scan_one(str, d, expect_scan_two))
-					err = true;
-			}
-			else
-			{
-				if (!scan_one(str, d, expect_scan_two) && !scan_two(str, cnt, d, expect_scan_two))
-					err = true;
-			}
-
-			if (!err)
-			{
-				if (!expect_scan_two)
-					cnt = 1;
-
-				ValCount += cnt;
-				if (ValCount > len[ind])	// too many values encountered
+				S = ToUpper(S);
+				ind = StrIndex(S, S1);
+				if (ind != -1)					// "S" is the starting string for grid #ind
 				{
-					fclose(File);
-					File = 0;
-					sprintf(strmsg, " grid contains more values than expected (%zu)\n", len[ind]);
+					seek_beg = false;
+					ValCount = 0;
+					c = 0;
+				}
+				continue;
+			}
+			if (!seek_beg && S == S2)			// found the ending string
+			{
+				seek_beg = true;
+				assert(ind != -1);
+				if (ValCount < len[ind])
+				{
+					sprintf(strmsg, " grid contains less values (%zu) than expected (%zu)\n", ValCount, len[ind]);
 					throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
 				}
 
-				if (expect_scan_two)
-					for (size_t i = 0; i < cnt; i++)
+				GridCount++;
+				if (GridCount >= S1.size())		// all grids have been read
+					break;
+
+				continue;
+			}
+			if (!seek_beg)						// reading the main data
+			{
+				size_t cnt;
+				double d;
+				bool err = false;
+				assert(ind != -1);
+
+				if (expect_scan_two)			// scan_two() and scan_one() are invoked based on the expectations (based on the previous successful scan)
+				{
+					if (!scan_two(str, cnt, d, expect_scan_two) && !scan_one(str, d, expect_scan_two))
+						err = true;
+				}
+				else
+				{
+					if (!scan_one(str, d, expect_scan_two) && !scan_two(str, cnt, d, expect_scan_two))
+						err = true;
+				}
+
+				if (!err)
+				{
+					if (!expect_scan_two)
+						cnt = 1;
+
+					ValCount += cnt;
+					if (ValCount > len[ind])	// too many values encountered
+					{
+						sprintf(strmsg, " grid contains more values than expected (%zu)\n", len[ind]);
+						throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
+					}
+
+					if (expect_scan_two)
+						for (size_t i = 0; i < cnt; i++)
+						{
+							data[ind][c] = d;
+							c++;
+						}
+					else
 					{
 						data[ind][c] = d;
 						c++;
 					}
-				else
-				{
-					data[ind][c] = d;
-					c++;
 				}
-			}
-			else							// error reading the values
-			{
-				fclose(File);
-				File = 0;
-				sprintf(strmsg, " grid contains non-numeric symbol %s\n", str);
-				throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
+				else							// error reading the values
+				{
+					sprintf(strmsg, " grid contains non-numeric symbol %s\n", str);
+					throw Exception(std::string(file) + ": " + S1[ind] + std::string(strmsg));
+				}
 			}
 		}
 	}
+	catch (...)
+	{
+		fclose(File);
+		throw;
+	}
+
 	fclose(File);
 	File = 0;
 
@@ -370,29 +375,92 @@ std::string CornGrid::unify_pillar_z()		// sets z0_ij, z1_ij of the pillars to b
 	return msg;
 }
 //------------------------------------------------------------------------------------------
-void CornGrid::temp_out_pillars() const	// TODO temp!
+std::string CornGrid::analyze()			// finds dx0, dy0, theta0; returns a short message
 {
-	FILE *f = fopen("pillars_out.txt", "w");
+	assert(grid_loaded);
 
-	for (size_t j = 0; j < Ny+1; j++)
-		for (size_t i = 0; i < Nx+1; i++)	// consider pillar p = (i, j)
-		{
-			size_t p = j*(Nx+1) + i;
+	// find dx0, theta0
+	double sum = 0, sum_th0 = 0;
+	double x0 = coord[0], y0 = coord[1];
+	for (size_t i = 1; i < Nx+1; i++)
+	{
+		size_t p = i;
+		double x = coord[p*6];			// only the top point of the pillar
+		double y = coord[p*6+1];
+		sum_th0 += atan2(y - y0, x - x0);
 
-			fprintf(f, "%.12g\t%.12g\t%.12g\t\t%.12g\t%.12g\t%.12g\n", coord[p*6], coord[p*6+1], coord[p*6+2], coord[p*6+3], coord[p*6+4], coord[p*6+5]);
-		}
+		x = (x - x0)/i;
+		y = (y - y0)/i;
+		sum += sqrt(x*x + y*y);
+	}
+	dx0 = sum/Nx;
+	theta0 = sum_th0/Nx;
 
-	fclose(f);
+	double cos0 = cos(theta0);
+	double sin0 = sin(theta0);
+	const bool take_cos = (fabs(cos0) >= fabs(sin0));
+
+	// find dy0 (with sign)
+	sum = 0;
+	double sum2 = 0;
+	for (size_t j = 1; j < Ny+1; j++)
+	{
+		size_t p = j*(Nx+1);
+		double x = coord[p*6];			// only the top point of the pillar
+		double y = coord[p*6+1];
+		x = (x - x0)/j;
+		y = (y - y0)/j;
+		sum += sqrt(x*x + y*y);
+		if (take_cos)
+			sum2 += y/cos0;
+		else
+			sum2 -= x/sin0;
+	}
+	dy0 = sum/Ny;
+	sum2 /= Ny;
+
+	if (sum2 < 0)
+		dy0 = -dy0;
+
+
+	if (take_cos)	// DEBUG
+		std::cout << "\n---------------------------\nanalyze: TAKE COS!!!\n";
+	else
+		std::cout << "analyze: take sine -!\n";	// DEBUG
+	std::cout << "dy0 via sqrt: " << dy0 << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
+
+
+	double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));
+	char msg[HMMPI::BUFFSIZE*10];
+	sprintf(msg, "The grid cell size DX, DY = (%g, %g), theta = %g, the length of horizontal projection of the first pillar = %g\n",
+				 dx0, dy0, theta0/acos(-1.0)*180, shift);
+
+	return msg;
 }
-void CornGrid::temp_out_zcorn() const	// TODO temp!
-{
-	FILE *f = fopen("zcorn_out.txt", "w");
-
-	for (size_t j = 0; j < zcorn.size(); j++)
-			fprintf(f, "%.12g\n", zcorn[j]);
-
-	fclose(f);
-}
+//------------------------------------------------------------------------------------------
+//void CornGrid::temp_out_pillars() const	// TODO temp!
+//{
+//	FILE *f = fopen("pillars_out.txt", "w");
+//
+//	for (size_t j = 0; j < Ny+1; j++)
+//		for (size_t i = 0; i < Nx+1; i++)	// consider pillar p = (i, j)
+//		{
+//			size_t p = j*(Nx+1) + i;
+//
+//			fprintf(f, "%.12g\t%.12g\t%.12g\t\t%.12g\t%.12g\t%.12g\n", coord[p*6], coord[p*6+1], coord[p*6+2], coord[p*6+3], coord[p*6+4], coord[p*6+5]);
+//		}
+//
+//	fclose(f);
+//}
+//void CornGrid::temp_out_zcorn() const	// TODO temp!
+//{
+//	FILE *f = fopen("zcorn_out.txt", "w");
+//
+//	for (size_t j = 0; j < zcorn.size(); j++)
+//			fprintf(f, "%.12g\n", zcorn[j]);
+//
+//	fclose(f);
+//}
 //------------------------------------------------------------------------------------------
 CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), state_found(false), dx0(0), dy0(0), theta0(0)
 {
@@ -433,7 +501,11 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 		}
 
 	grid_loaded = true;
-	return stringFormatArr("Loaded {0:%zu} COORD values and {1:%zu} ZCORN values", std::vector<size_t>{coord_size, zcorn_size});
+	std::string msg1 = stringFormatArr("Loaded {0:%zu} COORD values and {1:%zu} ZCORN values\n", std::vector<size_t>{coord_size, zcorn_size});
+	std::string msg2 = unify_pillar_z() + "\n";
+	std::string msg3 = analyze();
+
+	return msg1 + msg2 + msg3;
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be called after "grid_loaded", returns a small message
@@ -550,6 +622,77 @@ void CornGrid::fill_cell_coord()					// fills "cell_coord" from coord, zcorn, an
 			}
 }
 //------------------------------------------------------------------------------------------
+std::vector<std::vector<NNC>> CornGrid::get_same_layer_NNC(std::string &out_msg)		// based on the mesh and ACTNUM, generates NNCs (where the logically connected cells are not connected in the mesh)
+{																	// only the cells with the same "k" are taken for such NNCs
+	assert(grid_loaded);											// the PURPOSE is to form NNCs across the faults
+
+	fill_cell_coord();
+	assert(cell_coord.size() > 0);
+
+	std::vector<std::vector<NNC>> res;
+	size_t NxNy = Nx*Ny;
+	size_t count = 0;
+	char msg[HMMPI::BUFFSIZE*10];
+
+	for (size_t i = 0; i < Nx; i++)
+		for (size_t j = 0; j < Ny; j++)		// consider the first cell (i,j) in the potential NNC
+			for (int k = 1; k <= 2; k++)
+			{
+				size_t i1 = i + k%2;		// consider the second cell (i1,j1) in the potential NNC
+				size_t j1 = j + k/2;
+
+				if (i1 >= Nx || j1 >= Ny)
+					continue;
+
+				for (size_t z = 0; z < Nz; z++)
+				{
+					size_t m = i + j*Nx + z*NxNy;		// first cell
+					size_t m1 = i1 + j1*Nx + z*NxNy;	// second cell
+
+					if (actnum_loaded && (actnum[m] == 0 || actnum[m1] == 0))
+						continue;			// inactive cells do not participate in NNC 	TODO check on model with/without ACTNUM
+
+					int p11, p12;	// pillars of the first cell
+					int p21, p22;	// pillars of the second cell
+					if (i1 > i)
+					{
+						p11 = 1; p12 = 3;		// #3 2#
+						p21 = 0; p22 = 2;		// #1 0#
+					}
+					else						// ##
+					{							// 01
+						p11 = 2; p12 = 3;		//
+						p21 = 0; p22 = 1;		// 23
+					}							// ##
+
+					double a0 = cell_coord[m*24 + p11*3 + 2];
+					double b0 = cell_coord[m*24 + (p11+4)*3 + 2];
+					double a1 = cell_coord[m*24 + p12*3 + 2];
+					double b1 = cell_coord[m*24 + (p12+4)*3 + 2];
+
+					double c0 = cell_coord[m1*24 + p21*3 + 2];
+					double d0 = cell_coord[m1*24 + (p21+4)*3 + 2];
+					double c1 = cell_coord[m1*24 + p22*3 + 2];
+					double d1 = cell_coord[m1*24 + (p22+4)*3 + 2];
+					if (!faces_intersect(a0, b0, c0, d0, a1, b1, c1, d1))
+					{
+						NNC::add_NNC_to_array(res, NNC(i, j, z, i1, j1, z));
+						count++;
+					}
+				}
+			}
+
+	sprintf(msg, "Found %zu NNCs grouped into %zu chain(s)", count, res.size());
+	out_msg = msg;
+	if (actnum_loaded)
+		out_msg += " (ACTNUM was used)";
+	else
+		out_msg += " (ACTNUM was not found)";
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+
 
 }	// namespace HMMPI
 
