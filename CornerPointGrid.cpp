@@ -423,11 +423,12 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0; returns a short mes
 		dy0 = -dy0;
 
 
+	std::cout << "\n---------------------------\n";
 	if (take_cos)	// DEBUG
 		std::cout << "\n---------------------------\nanalyze: TAKE COS!!!\n";
 	else
 		std::cout << "analyze: take sine -!\n";	// DEBUG
-	std::cout << "dy0 via sqrt: " << dy0 << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
+	std::cout << "dy0 via sqrt: " << sum/Ny << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
 
 
 	double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));
