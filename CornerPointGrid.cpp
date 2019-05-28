@@ -431,9 +431,10 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0; returns a short mes
 	std::cout << "dy0 via sqrt: " << sum/Ny << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
 
 
+	state_found = true;
 	double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));
 	char msg[HMMPI::BUFFSIZE*10];
-	sprintf(msg, "The grid cell size DX, DY = (%g, %g), theta = %g, the length of horizontal projection of the first pillar = %g\n",
+	sprintf(msg, "The grid cell size DX, DY = (%g, %g), theta = %g degrees, the length of horizontal projection of the first pillar = %g\n",
 				 dx0, dy0, theta0/acos(-1.0)*180, shift);
 
 	return msg;
@@ -463,7 +464,8 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0; returns a short mes
 //	fclose(f);
 //}
 //------------------------------------------------------------------------------------------
-CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), state_found(false), dx0(0), dy0(0), theta0(0)
+CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), cell_coord_filled(false),
+					   state_found(false), dx0(0), dy0(0), theta0(0)
 {
 }
 //------------------------------------------------------------------------------------------
@@ -502,6 +504,9 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 		}
 
 	grid_loaded = true;
+	actnum_loaded = false;
+	cell_coord_filled = false;
+	state_found = false;
 	std::string msg1 = stringFormatArr("Loaded {0:%zu} COORD values and {1:%zu} ZCORN values\n", std::vector<size_t>{coord_size, zcorn_size});
 	std::string msg2 = unify_pillar_z() + "\n";
 	std::string msg3 = analyze();
@@ -532,6 +537,7 @@ std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be 
 		}
 
 	actnum_loaded = true;
+
 	return stringFormatArr("Active cells: {0:%zu} / {1:%zu}", std::vector<size_t>{count, grid_size});
 }
 //------------------------------------------------------------------------------------------
@@ -621,13 +627,16 @@ void CornGrid::fill_cell_coord()					// fills "cell_coord" from coord, zcorn, an
 					cell_coord[24*ind + 3*n+14] = zcorn[v[n+4]];
 				}
 			}
+
+	cell_coord_filled = true;
 }
 //------------------------------------------------------------------------------------------
 std::vector<std::vector<NNC>> CornGrid::get_same_layer_NNC(std::string &out_msg)		// based on the mesh and ACTNUM, generates NNCs (where the logically connected cells are not connected in the mesh)
 {																	// only the cells with the same "k" are taken for such NNCs
 	assert(grid_loaded);											// the PURPOSE is to form NNCs across the faults
 
-	fill_cell_coord();
+	if (!cell_coord_filled)
+		fill_cell_coord();
 	assert(cell_coord.size() > 0);
 
 	std::vector<std::vector<NNC>> res;
@@ -691,6 +700,25 @@ std::vector<std::vector<NNC>> CornGrid::get_same_layer_NNC(std::string &out_msg)
 		out_msg += " (ACTNUM was not found)";
 
 	return res;
+}
+//------------------------------------------------------------------------------------------
+void CornGrid::find_cell(double x, double y, double z, int &i, int &j, int &k) 		// find cell [i,j,k] containing the point [x,y,z]
+{
+	assert(grid_loaded);
+	if (!cell_coord_filled)
+		fill_cell_coord();
+	if (!state_found)
+		analyze();
+
+	double x0 = coord[0];
+	double y0 = coord[1];
+	double z0 = coord[2];
+	double x1 = coord[3];
+	double y1 = coord[4];
+	double z1 = coord[5];
+
+	//double x0 =
+	//double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));
 }
 //------------------------------------------------------------------------------------------
 

@@ -50,6 +50,8 @@ private:
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN
 	std::vector<int> actnum;		// read from ACTNUM
+
+	bool cell_coord_filled;
 	std::vector<double> cell_coord;		// filled by fill_cell_coord() (see for details), contains vertex coords for all cells;
 										// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
 
@@ -58,19 +60,19 @@ private:
 	double theta0;			// grid rotation angle
 
 
-	void ReadGrids(const char *file, std::vector<size_t> len, std::vector<std::vector<double>> &data, std::vector<std::string> S1, std::string S2);
+	static void ReadGrids(const char *file, std::vector<size_t> len, std::vector<std::vector<double>> &data, std::vector<std::string> S1, std::string S2);
 																// reads a number of grids from "file"
 																// allocates and fills "data" of size S1.size(), with data[i].size() = len[i]
 																// S1[i], S2 - are the start and end markers of "grid[i]" which is loaded to "data[i]"
-	bool ReadTokenComm(FILE *F, char **str, bool &new_line, char *str0, const int str0_len);
+	static bool ReadTokenComm(FILE *F, char **str, bool &new_line, char *str0, const int str0_len);
 																// reads a token from the file (delimited by ' ', '\t', '\r', '\n'), dropping "--..." comments
 																// returns true on success, false on failure/EOF
 																// the token is saved to "str"
 																// set "new_line" = true in the first call, then the function will manage it
 																// str0 is a working array, it should have been allocated
-	int StrIndex(const std::string &s, const std::vector<std::string> &vecs);	// index of "s" in vecs[], -1 if not found
-	inline bool scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two);	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
-	inline bool scan_one(const char *str, double &d, bool &expect_scan_two);				// parses "d", returns 'true' on success, updates 'expect_scan_two'
+	static int StrIndex(const std::string &s, const std::vector<std::string> &vecs);	// index of "s" in vecs[], -1 if not found
+	static inline bool scan_two(const char *str, size_t &cnt, double &d, bool &expect_scan_two);	// parses "cnt*d", returns 'true' on success, updates 'expect_scan_two'
+	static inline bool scan_one(const char *str, double &d, bool &expect_scan_two);					// parses "d", returns 'true' on success, updates 'expect_scan_two'
 	static bool faces_intersect(double a0, double b0, double c0, double d0, double a1, double b1, double c1, double d1);	// 'true' if two faces intersect, the faces are defined by their
 																// z-values for two shared pillars (0, 1): face_1 is [a0, b0; a1, b1], face_2 is [c0, d0; c1, d1]
 	std::string unify_pillar_z();	// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
@@ -88,6 +90,7 @@ public:
 															// only the cells with the same "k" are taken for such NNCs
 															// the PURPOSE is to form NNCs across the faults
 													// TODO this function was not thoroughly tested
+	void find_cell(double x, double y, double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]
 
 };
 //------------------------------------------------------------------------------------------
