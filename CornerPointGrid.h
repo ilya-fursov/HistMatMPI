@@ -80,9 +80,10 @@ private:
 
 public:
 	CornGrid();
-	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy);	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
-																									// [dx, dy] is the coordinates origin, it is added to COORD
-																									// a small message is returned by this function
+	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive);	// loads "coord", "zcorn" for the grid (nx, ny, nz)
+								// from ASCII format (COORD, ZCORN), returning a small message;
+								// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
+								// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
 	std::string LoadACTNUM(std::string fname);		// loads ACTNUM, should be called after "grid_loaded", returns a small message
 													// treats positive real values as 'active'
 	void fill_cell_coord();			// fills "cell_coord" from coord, zcorn, and grid dimensions
@@ -92,6 +93,7 @@ public:
 													// TODO this function was not thoroughly tested
 	void find_cell(double x, double y, double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]
 
+	void temp_coord_from_cell(int i, int j, int k, double &x, double &y) const;	// (i,j,k) -> (x,y)	// TODO it's a temp stuff
 };
 //------------------------------------------------------------------------------------------
 

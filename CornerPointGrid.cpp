@@ -469,10 +469,10 @@ CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), N
 {
 }
 //------------------------------------------------------------------------------------------
-std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy)	// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN)
-{																										// [dx, dy] is the coordinates origin, it is added to COORD
-	Nx = nx;																							// a small message is returned by this function
-	Ny = ny;
+std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive)	// loads "coord", "zcorn" for the grid (nx, ny, nz)
+{													// from ASCII format (COORD, ZCORN), returning a small message;
+	Nx = nx;										// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
+	Ny = ny;										// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
 	Nz = nz;
 
 	const size_t coord_size = 6*(Nx+1)*(Ny+1);
@@ -490,17 +490,25 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 	assert(coord.size() == coord_size);
 	assert(zcorn.size() == zcorn_size);
 
-	// shift the origin
+	// shift the origin / transform
 	for (size_t j = 0; j < Ny+1; j++)
 		for (size_t i = 0; i < Nx+1; i++)		// consider pillar p = (i, j)
 		{
 			size_t p = j*(Nx+1) + i;
 
 			coord[p*6] += dx;
-			coord[p*6+1] += dy;
-
 			coord[p*6+3] += dx;
-			coord[p*6+4] += dy;
+
+			if (y_positive)
+			{
+				coord[p*6+1] += dy;
+				coord[p*6+4] += dy;
+			}
+			else
+			{
+				coord[p*6+1] = dy - coord[p*6+1];
+				coord[p*6+4] = dy - coord[p*6+4];
+			}
 		}
 
 	grid_loaded = true;
@@ -719,6 +727,34 @@ void CornGrid::find_cell(double x, double y, double z, int &i, int &j, int &k) 	
 
 	//double x0 =
 	//double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));
+}
+//------------------------------------------------------------------------------------------
+void CornGrid::temp_coord_from_cell(int i, int j, int k, double &x, double &y) const	// (i,j,k) -> (x,y)	// TODO it's a temp stuff
+{
+	assert(grid_loaded);
+	assert(cell_coord_filled);
+
+	size_t m = i + j*Nx + k*Nx*Ny;
+	int v1 = 0;
+	int v2 = 3;
+	int v3 = 4;
+	int v4 = 7;
+
+	if (i < 0 || i >= Nx)
+		throw HMMPI::Exception("i out of range");
+	if (j < 0 || j >= Ny)
+		throw HMMPI::Exception("j out of range");
+	if (k < 0 || k >= Nz)
+		throw HMMPI::Exception("k out of range");
+
+	double x0 = (cell_coord[m*24 + v1*3 + 0] + cell_coord[m*24 + v2*3 + 0])/2;
+	double y0 = (cell_coord[m*24 + v1*3 + 1] + cell_coord[m*24 + v2*3 + 1])/2;
+
+	double x1 = (cell_coord[m*24 + v3*3 + 0] + cell_coord[m*24 + v4*3 + 0])/2;
+	double y1 = (cell_coord[m*24 + v3*3 + 1] + cell_coord[m*24 + v4*3 + 1])/2;
+
+	x = (x0+x1)/2;
+	y = (y0+y1)/2;
 }
 //------------------------------------------------------------------------------------------
 

@@ -2186,9 +2186,10 @@ void KW_CoordZcorn::DataIO(int i)
 	Finish_pre();
 
 	std::string fn = this->CWD + "/" + fnames[0];
-	std::string msg = CG.LoadCOORD_ZCORN(fn, dims->Nx, dims->Ny, dims->Nz, dims->X0, dims->Y0);
+	std::string msg = HMMPI::MessageRE("Чтение файла...\n", "Reading the file...\n");
 
-	K->AppText(std::string(HMMPI::MessageRE("Чтение файла...\n", "Reading the file...\n")) + msg);
+	msg += CG.LoadCOORD_ZCORN(fn, dims->Nx, dims->Ny, dims->Nz, dims->X0, dims->Y0, (dims->grid_Y_axis == "POS"));
+	K->AppText(msg);
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

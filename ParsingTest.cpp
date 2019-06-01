@@ -400,7 +400,9 @@ void KW_rundebug::Run()
 	//IMPORTKWD(mat, KW_mat, "MAT");
 	//IMPORTKWD(opt, KW_opt_config, "OPT_CONFIG");
 	//IMPORTKWD(limits, KW_limits, "LIMITS");
-	IMPORTKWD(params, KW_parameters, "PARAMETERS");
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	IMPORTKWD(pts, KW_3points, "3POINTS");
+	Add_pre("GRIDDIMENS");
 	Finish_pre();
 
 	std::string str1 = "Гнев, богиня, воспой Ахиллеса, Пелеева сына\nГрозный, который Ахеянаям тысчи бедствий соделал\n"
@@ -410,11 +412,13 @@ void KW_rundebug::Run()
 
 	//FILE *f = fopen("output_vecs.bin", "wb");
 
-	std::string fname = "Grid.txt";
-	HMMPI::CornGrid CG;
-	std::cout << CG.LoadCOORD_ZCORN(fname, 5, 5, 5, 0.0, 0.0) << "\n";
-	std::cout << CG.LoadACTNUM(fname) << "\n";
+	cz->CG.fill_cell_coord();
 
-
+	for (size_t i = 0; i < pts->x.size(); i++)
+	{
+		double x, y;
+		cz->CG.temp_coord_from_cell(pts->x[i]-1, pts->y[i]-1, pts->z[i]-1, x, y);
+		printf("%d\t%d\t%d\t-\t%.0f\t%.0f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y);
+	}
 }
 //------------------------------------------------------------------------------------------

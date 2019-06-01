@@ -405,6 +405,7 @@ public:
 	int Nz;
 	double X0;				// coords origin
 	double Y0;
+	std::string grid_Y_axis;	// "POS" or "NEG"
 
 	KW_griddimens();
 };
