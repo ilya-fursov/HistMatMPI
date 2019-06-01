@@ -786,7 +786,7 @@ tNavSMRY::tNavSMRY() : SimSMRY(), last_header(""), file_meta(NULL), prop_N(0)
 
 	// NOTE this "table" says how the vectors should be processed: e.g. some (WOPR etc) should be negated, the others (WWCT etc) recalculated; expand as appropriate
 	// all expected Eclipse vectors should be listed here
-	ecl_prop_transform_full.resize(14);
+	ecl_prop_transform_full.resize(15);
 	ecl_prop_transform_full[0] = {"WBHP", 0, [](const int*, double*){}, {}, {}};
 	ecl_prop_transform_full[1] = {"WBP9", 0, [](const int*, double*){}, {}, {}};
 	ecl_prop_transform_full[2] = {"WOPR", -1, [](const int*, double*){}, {}, {}};
@@ -801,6 +801,7 @@ tNavSMRY::tNavSMRY() : SimSMRY(), last_header(""), file_meta(NULL), prop_N(0)
 	ecl_prop_transform_full[11] = {"WGOR", 1, T_ecl_prop_transform::f_gor, {}, {"WOPR", "WGPR"}};
 	ecl_prop_transform_full[12] = {"WLPR", 1, T_ecl_prop_transform::f_sum, {}, {"WOPR", "WWPR"}};
 	ecl_prop_transform_full[13] = {"WLPT", 1, T_ecl_prop_transform::f_sum, {}, {"WOPT", "WWPT"}};
+	ecl_prop_transform_full[14] = {"WPI", 1, T_ecl_prop_transform::f_wpi, {}, {"WOPR", "WWPR", "WBP9", "WBHP"}};
 };
 //--------------------------------------------------------------------------------------------------
 tNavSMRY::~tNavSMRY()

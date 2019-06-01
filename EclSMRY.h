@@ -166,6 +166,8 @@ private:
 		static void f_wct(const int *offs, double *x) {double d = *(x + offs[0]) + *(x + offs[1]); if (d != 0) *x = *(x + offs[1])/d; else *x = 0;};	// args <-> WOPR, WWPR
 		static void f_gor(const int *offs, double *x) {double d = *(x + offs[0]); if (d != 0) *x = *(x + offs[1])/d; else *x = 0;};						// args <-> WOPR, WGPR
 		static void f_sum(const int *offs, double *x) {*x = *(x + offs[0]) + *(x + offs[1]);};
+		static void f_wpi(const int *offs, double *x) {double d = *(x + offs[2]) - *(x + offs[3]);
+													   if (d != 0) *x = (*(x + offs[0]) + *(x + offs[1]))/d; else *x = 0;};		// args <-> WOPR, WWPR, WBP9, WBHP
 	};
 
 	std::string last_header;					// the header found by read_meta_block() before it exited
