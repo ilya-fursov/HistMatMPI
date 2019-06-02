@@ -58,7 +58,7 @@ private:
 	bool state_found;		// 'true' <=> dx0, dy0, theta0 have been found
 	double dx0, dy0;		// grid horizontal cell size
 	double theta0;			// grid rotation angle
-
+	Mat Q0;					// grid rotation matrix
 
 	static void ReadGrids(const char *file, std::vector<size_t> len, std::vector<std::vector<double>> &data, std::vector<std::string> S1, std::string S2);
 																// reads a number of grids from "file"
@@ -76,7 +76,9 @@ private:
 	static bool faces_intersect(double a0, double b0, double c0, double d0, double a1, double b1, double c1, double d1);	// 'true' if two faces intersect, the faces are defined by their
 																// z-values for two shared pillars (0, 1): face_1 is [a0, b0; a1, b1], face_2 is [c0, d0; c1, d1]
 	std::string unify_pillar_z();	// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
-	std::string analyze();			// finds dx0, dy0, theta0; returns a short message
+	std::string analyze();			// finds dx0, dy0, theta0, Q0; returns a short message
+
+	bool point_between_pillars(double x, double y, int i, int j, double t) const;	// 'true' if point (x,y) is between pillars [i,j]-[i+1,j]-[i+1,j+1]-[i,j+1] at depth "t" (fraction)
 
 public:
 	CornGrid();

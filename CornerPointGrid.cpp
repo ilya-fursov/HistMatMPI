@@ -375,7 +375,7 @@ std::string CornGrid::unify_pillar_z()		// sets z0_ij, z1_ij of the pillars to b
 	return msg;
 }
 //------------------------------------------------------------------------------------------
-std::string CornGrid::analyze()			// finds dx0, dy0, theta0; returns a short message
+std::string CornGrid::analyze()			// finds dx0, dy0, theta0, Q0; returns a short message
 {
 	assert(grid_loaded);
 
@@ -398,6 +398,8 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0; returns a short mes
 
 	double cos0 = cos(theta0);
 	double sin0 = sin(theta0);
+	Q0 = Mat(std::vector<double>{cos0, -sin0, sin0, cos0}, 2, 2);
+
 	const bool take_cos = (fabs(cos0) >= fabs(sin0));
 
 	// find dy0 (with sign)
@@ -438,6 +440,29 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0; returns a short mes
 				 dx0, dy0, theta0/acos(-1.0)*180, shift);
 
 	return msg;
+}
+//------------------------------------------------------------------------------------------
+bool CornGrid::point_between_pillars(double x, double y, int i, int j, double t) const	// 'true' if point (x,y) is between pillars [i,j]-[i+1,j]-[i+1,j+1]-[i,j+1] at depth "t" (fraction)
+{
+	assert(grid_loaded);
+	assert(state_found);
+	assert(i >= 0 && (size_t)i < Nx);
+	assert(j >= 0 && (size_t)j < Ny);
+
+	std::vector<size_t> p(4);
+	p[0] = j*(Nx+1) + i;				// global indices of the four pillars
+	p[1] = j*(Nx+1) + i+1;
+	p[2] = (j+1)*(Nx+1) + i+1;
+	p[3] = (j+1)*(Nx+1) + i;
+
+	for (int n = 0; n < 4; n++)
+	{
+		size_t p0 = p[n];				// consider two pillars defining the line
+		size_t p1 = p[(n+1)%4];
+		size_t pt = p[(n+2)%4];			// test pillar which provides the proper test sign
+
+		double x0 =
+	}
 }
 //------------------------------------------------------------------------------------------
 //void CornGrid::temp_out_pillars() const	// TODO temp!
@@ -718,12 +743,29 @@ void CornGrid::find_cell(double x, double y, double z, int &i, int &j, int &k) 	
 	if (!state_found)
 		analyze();
 
-	double x0 = coord[0];
+	double x0 = coord[0];			// the first pillar
 	double y0 = coord[1];
 	double z0 = coord[2];
 	double x1 = coord[3];
 	double y1 = coord[4];
 	double z1 = coord[5];
+
+	double t = 0;
+	if (z1 != z0)
+		t = (z - z0)/(z1 - z0);		// for vertical pillars (z1 == z0) --> t = 0
+
+	double xbar = x - (1-t)*x0 - t*x1;
+	double ybar = y - (1-t)*y0 - t*y1;
+
+	Mat rhs(std::vector<double>{xbar, ybar}, 2, 1);
+
+	Mat sol = Q0.Tr()*rhs;
+	i = int(sol(0,0)/dx0);
+	j = int(sol(1,0)/dy0);
+
+	// check that the found (i,j) is correct
+
+
 
 	//double x0 =
 	//double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));

@@ -176,6 +176,7 @@ public:
 	Mat BFGS_update_B(const std::vector<Mat> &Xk, const std::vector<Mat> &Gk) const;  // makes a series of BFGS updates, "Xk" - coordinate vectors, "Gk" - gradient vectors; in total (Xk.size - 1) updates are done
 	friend double InnerProd(const Mat &a, const Mat &b);	// (a, b), inner product of two vectors
 	friend Mat OuterProd(const Mat &a, const Mat &b);		// a * b', outer product of two vectors
+	friend Mat VecProd(const Mat &a, const Mat &b);			// a (x) b, vector product of two 3-dim vectors
 	friend Mat operator*(double d, Mat m);	// d * m
 	friend Mat operator%(const std::vector<double> &v, Mat m);	// diag(v) * m -- multiplication by a diagonal matrix from left
 	friend Mat operator%(Mat m, const std::vector<double> &v);	// m * diag(v) -- multiplication by a diagonal matrix from right
