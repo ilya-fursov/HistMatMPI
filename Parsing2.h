@@ -406,6 +406,8 @@ public:
 	double X0;				// coords origin
 	double Y0;
 	std::string grid_Y_axis;	// "POS" or "NEG"
+	std::string actnum_name;
+	double actnum_min;
 
 	KW_griddimens();
 };

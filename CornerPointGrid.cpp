@@ -461,7 +461,7 @@ bool CornGrid::point_between_pillars(double x, double y, int i, int j, double t)
 		size_t p1 = p[(n+1)%4];
 		size_t pt = p[(n+2)%4];			// test pillar which provides the proper test sign
 
-		double x0 =
+		//double x0 =
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -489,16 +489,19 @@ bool CornGrid::point_between_pillars(double x, double y, int i, int j, double t)
 //	fclose(f);
 //}
 //------------------------------------------------------------------------------------------
-CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), cell_coord_filled(false),
+CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), actnum_name("ACTNUM"), actnum_min(0), cell_coord_filled(false),
 					   state_found(false), dx0(0), dy0(0), theta0(0)
 {
 }
 //------------------------------------------------------------------------------------------
-std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive)	// loads "coord", "zcorn" for the grid (nx, ny, nz)
-{													// from ASCII format (COORD, ZCORN), returning a small message;
+std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive, std::string aname, double amin)
+{													// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN), returning a small message;
 	Nx = nx;										// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
 	Ny = ny;										// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
-	Nz = nz;
+	Nz = nz;										// aname - ACTNUM name, amin - ACTNUM min
+
+	actnum_name = aname;
+	actnum_min = amin;
 
 	const size_t coord_size = 6*(Nx+1)*(Ny+1);
 	const size_t zcorn_size = 8*Nx*Ny*Nz;
@@ -548,14 +551,14 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be called after "grid_loaded", returns a small message
-{														// treats positive real values as 'active'
+{														// treats real values > "actnum_min" as 'active'
 	assert(grid_loaded);
 
 	const size_t grid_size = Nx*Ny*Nz;
 	std::vector<std::vector<double>> data;
 
 	// read the input file
-	ReadGrids(fname.c_str(), std::vector<size_t>{grid_size}, data, std::vector<std::string>{"ACTNUM"}, "/");
+	ReadGrids(fname.c_str(), std::vector<size_t>{grid_size}, data, std::vector<std::string>{actnum_name}, "/");
 
 	assert(data.size() == 1);
 	assert(data[0].size() == grid_size);
@@ -563,7 +566,7 @@ std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be 
 
 	size_t count = 0;
 	for (size_t i = 0; i < grid_size; i++)
-		if (data[0][i] > 0)
+		if (data[0][i] > actnum_min)
 		{
 			actnum[i] = 1;
 			count++;			// count the active cells

@@ -400,9 +400,12 @@ void KW_rundebug::Run()
 	//IMPORTKWD(mat, KW_mat, "MAT");
 	//IMPORTKWD(opt, KW_opt_config, "OPT_CONFIG");
 	//IMPORTKWD(limits, KW_limits, "LIMITS");
-	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-	IMPORTKWD(pts, KW_3points, "3POINTS");
-	Add_pre("GRIDDIMENS");
+
+// TODO uncomment
+//	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+//	IMPORTKWD(pts, KW_3points, "3POINTS");
+//	Add_pre("GRIDDIMENS");
+	IMPORTKWD(mat, KW_mat, "MAT");
 	Finish_pre();
 
 	std::string str1 = "Гнев, богиня, воспой Ахиллеса, Пелеева сына\nГрозный, который Ахеянаям тысчи бедствий соделал\n"
@@ -412,13 +415,30 @@ void KW_rundebug::Run()
 
 	//FILE *f = fopen("output_vecs.bin", "wb");
 
-	cz->CG.fill_cell_coord();
+// TODO uncomment
+//	cz->CG.fill_cell_coord();
+//
+//	for (size_t i = 0; i < pts->x.size(); i++)
+//	{
+//		double x, y;
+//		cz->CG.temp_coord_from_cell(pts->x[i]-1, pts->y[i]-1, pts->z[i]-1, x, y);
+//		printf("%d\t%d\t%d\t-\t%.0f\t%.0f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y);
+//	}
 
-	for (size_t i = 0; i < pts->x.size(); i++)
+	for (size_t i = 0; i < mat->M.JCount(); i++)
 	{
-		double x, y;
-		cz->CG.temp_coord_from_cell(pts->x[i]-1, pts->y[i]-1, pts->z[i]-1, x, y);
-		printf("%d\t%d\t%d\t-\t%.0f\t%.0f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y);
+		for (size_t j = 0; j < mat->M.JCount(); j++)
+		{
+			HMMPI::Mat v(3,1,0), w(3,1,0), pr;
+			for (size_t k = 0; k < 3; k++)
+			{
+				v(k,0) = mat->M(k,i);
+				w(k,0) = mat->M(k,j);
+			}
+			pr = VecProd(v,w);
+			printf("%60s", pr.Tr().ToString().c_str());
+		}
 	}
+
 }
 //------------------------------------------------------------------------------------------

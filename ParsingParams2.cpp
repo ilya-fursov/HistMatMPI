@@ -921,6 +921,8 @@ KW_griddimens::KW_griddimens()
 	DEFPAR(X0, 0.0);
 	DEFPAR(Y0, 0.0);
 	DEFPAR(grid_Y_axis, "POS");
+	DEFPAR(actnum_name, "ACTNUM");
+	DEFPAR(actnum_min, 0.0);
 
 	FinalizeParams();
 	EXPECTED[5] = std::vector<std::string>{"POS", "NEG"};

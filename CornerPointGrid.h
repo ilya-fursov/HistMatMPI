@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+#include "MathUtils.h"
 
 namespace HMMPI
 {
@@ -50,6 +51,8 @@ private:
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN
 	std::vector<int> actnum;		// read from ACTNUM
+	std::string actnum_name;		// name of the grid serving as ACTNUM
+	double actnum_min;				// when ACTNUM is loaded from the "double" array, values <= "actnum_min" are assigned ACTNUM=0
 
 	bool cell_coord_filled;
 	std::vector<double> cell_coord;		// filled by fill_cell_coord() (see for details), contains vertex coords for all cells;
@@ -82,12 +85,13 @@ private:
 
 public:
 	CornGrid();
-	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive);	// loads "coord", "zcorn" for the grid (nx, ny, nz)
-								// from ASCII format (COORD, ZCORN), returning a small message;
+	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive, std::string aname, double amin);
+								// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN), returning a small message;
 								// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
 								// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
+								// aname - ACTNUM name, amin - ACTNUM min
 	std::string LoadACTNUM(std::string fname);		// loads ACTNUM, should be called after "grid_loaded", returns a small message
-													// treats positive real values as 'active'
+													// treats real values > "actnum_min" as 'active'
 	void fill_cell_coord();			// fills "cell_coord" from coord, zcorn, and grid dimensions
 	std::vector<std::vector<NNC>> get_same_layer_NNC(std::string &out_msg);		// based on the mesh and ACTNUM, generates NNCs (where the logically connected cells are not connected in the mesh)
 															// only the cells with the same "k" are taken for such NNCs

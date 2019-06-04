@@ -969,7 +969,7 @@ Mat VecProd(const Mat &a, const Mat &b)			// a (x) b, vector product of two 3-di
 {
 	if (a.icount != 3 || b.icount != 3 || a.jcount != 1 || b.jcount != 1)
 		throw Exception(stringFormatArr("Vector product should be applied to 3-dim column-vectors ({0:%zu} != 3 || {1:%zu} != 3 || {2:%zu} != 1 || {3:%zu} != 1)",
-										std::vector<size_t>{a.icount, b.icount, a.jcount, b.jcount}));	// TODO test
+										std::vector<size_t>{a.icount, b.icount, a.jcount, b.jcount}));
 	Mat res(3, 1, 0.0);
 	const double *A = a.data.data();
 	const double *B = b.data.data();
@@ -983,7 +983,7 @@ Mat VecProd(const Mat &a, const Mat &b)			// a (x) b, vector product of two 3-di
 		dat_res[0] = A[1]*B[2] - A[2]*B[1];
 	}
 
-	return res;		// TODO test this function
+	return res;
 }
 //------------------------------------------------------------------------------------------
 Mat operator*(double d, Mat m)		// number * Mat
