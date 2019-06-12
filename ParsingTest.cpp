@@ -401,11 +401,11 @@ void KW_rundebug::Run()
 	//IMPORTKWD(opt, KW_opt_config, "OPT_CONFIG");
 	//IMPORTKWD(limits, KW_limits, "LIMITS");
 
-// TODO uncomment
-//	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-//	IMPORTKWD(pts, KW_3points, "3POINTS");
-//	Add_pre("GRIDDIMENS");
-	IMPORTKWD(mat, KW_mat, "MAT");
+
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	IMPORTKWD(pts, KW_3points, "3POINTS");
+	Add_pre("GRIDDIMENS");
+
 	Finish_pre();
 
 	std::string str1 = "Гнев, богиня, воспой Ахиллеса, Пелеева сына\nГрозный, который Ахеянаям тысчи бедствий соделал\n"
@@ -415,9 +415,16 @@ void KW_rundebug::Run()
 
 	//FILE *f = fopen("output_vecs.bin", "wb");
 
-// TODO uncomment
-//	cz->CG.fill_cell_coord();
-//
+
+	std::cout << cz->CG.fill_cell_coord() << "\n";
+
+//	std::vector<double> act(cz->CG.actnum.size());
+//	for (size_t i = 0; i < act.size(); i++)
+//		act[i] = cz->CG.actnum[i];
+//	cz->CG.SavePropertyToFile("OUT_Actnum.txt", "ACTNUM", act);
+//	cz->CG.SavePropertyToFile("OUT_Height.txt", "THICK", cz->CG.cell_height);
+
+// TODO uncomment	I J K -> X Y
 //	for (size_t i = 0; i < pts->x.size(); i++)
 //	{
 //		double x, y;
@@ -425,20 +432,16 @@ void KW_rundebug::Run()
 //		printf("%d\t%d\t%d\t-\t%.0f\t%.0f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y);
 //	}
 
-	for (size_t i = 0; i < mat->M.JCount(); i++)
+
+	// POINTS.X,Y - metric coords, POINTS.Z in [0,1]
+	for (size_t i = 0; i < pts->x.size(); i++)
 	{
-		for (size_t j = 0; j < mat->M.JCount(); j++)
-		{
-			HMMPI::Mat v(3,1,0), w(3,1,0), pr;
-			for (size_t k = 0; k < 3; k++)
-			{
-				v(k,0) = mat->M(k,i);
-				w(k,0) = mat->M(k,j);
-			}
-			pr = VecProd(v,w);
-			printf("%60s", pr.Tr().ToString().c_str());
-		}
+		int x, y, z;
+		//cz->CG.find_cell_in_window(pts->x[i], pts->y[i], 0, cz->CG.Nx, 0, cz->CG.Ny, pts->z[i], x, y);
+		cz->CG.find_cell(pts->x[i], pts->y[i], pts->z[i], x, y, z);
+		printf("%g\t%g\t%g\t-\t%d\t%d\n", pts->x[i], pts->y[i], pts->z[i], x+1, y+1);
 	}
+	std::cout << "PBP count " << cz->CG.pbp_call_count << "\n";
 
 }
 //------------------------------------------------------------------------------------------

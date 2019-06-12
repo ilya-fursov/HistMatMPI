@@ -141,6 +141,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_runcalcwellcovar);
 		kw1.AddKW_item(new KW_runmpicheck);
 		kw1.AddKW_item(new KW_runNNCfromgrid);
+		kw1.AddKW_item(new KW_runPinchMarkFromGrid);
 
 		kw1.AddKW_item(new KW_LinSolver);
 		kw1.AddKW_item(new KW_soboltest);

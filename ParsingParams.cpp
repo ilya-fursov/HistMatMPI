@@ -1352,6 +1352,28 @@ void KW_runNNCfromgrid::Run()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+KW_runPinchMarkFromGrid::KW_runPinchMarkFromGrid()
+{
+	name = "RUNPINCHMARKFROMGRID";
+}
+//------------------------------------------------------------------------------------------
+void KW_runPinchMarkFromGrid::Run()
+{
+	Start_pre();
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	Add_pre("GRIDDIMENS");
+	Add_pre("ACTNUM");
+	Finish_pre();
+
+	const std::string fout_name = "Output_PINCH_MARK_from_grid.txt";
+	assert(!cz->CG.cell_coord_filled);
+	K->AppText(cz->CG.fill_cell_coord() + "\n");
+
+	std::vector<double> marks = cz->CG.MarkPinchBottoms();
+	cz->CG.SavePropertyToFile(fout_name, "ARRPINCHMARK", marks);
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_runMCMC::KW_runMCMC()
 {
 	name = "RUNMCMC";

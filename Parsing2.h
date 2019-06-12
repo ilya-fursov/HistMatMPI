@@ -134,10 +134,17 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
-class KW_runNNCfromgrid : public KW_run		// extract NNCs across the faults based on the mesh
+class KW_runNNCfromgrid : public KW_run			// extract NNCs across the faults based on the mesh
 {
 public:
 	KW_runNNCfromgrid();
+    virtual void Run();
+};
+//------------------------------------------------------------------------------------------
+class KW_runPinchMarkFromGrid : public KW_run	// marks the cells to control MULTZ for PINCHes
+{
+public:
+	KW_runPinchMarkFromGrid();
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------

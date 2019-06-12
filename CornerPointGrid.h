@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+#include <tuple>
 #include "MathUtils.h"
 
 namespace HMMPI
@@ -44,13 +45,22 @@ public:
 class CornGrid
 {
 private:
+	typedef std::tuple<double, double, double> pointT;		// a helper type for cell search within a column
+
+public:	// TODO TEMP!!! remove!!!
+
+
+
 	bool grid_loaded;		// 'true' if the grid has been loaded
 	bool actnum_loaded;		// 'true' if ACTNUM has been loaded
 	size_t Nx, Ny, Nz;		// grid dimensions
+	mutable size_t pbp_call_count;	// counts point_between_pillars() calls since the last grid loading
 
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN
 	std::vector<int> actnum;		// read from ACTNUM
+	std::vector<double> cell_height;	// Nx*Ny*Nz array with cell heights (taken as average height along 4 pillars)
+	const double min_cell_height;		// cells with heights <= this value are considered empty
 	std::string actnum_name;		// name of the grid serving as ACTNUM
 	double actnum_min;				// when ACTNUM is loaded from the "double" array, values <= "actnum_min" are assigned ACTNUM=0
 
@@ -80,8 +90,18 @@ private:
 																// z-values for two shared pillars (0, 1): face_1 is [a0, b0; a1, b1], face_2 is [c0, d0; c1, d1]
 	std::string unify_pillar_z();	// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
 	std::string analyze();			// finds dx0, dy0, theta0, Q0; returns a short message
+	std::string fill_cell_height();	// fills "cell_height", returns a short message
 
 	bool point_between_pillars(double x, double y, int i, int j, double t) const;	// 'true' if point (x,y) is between pillars [i,j]-[i+1,j]-[i+1,j+1]-[i,j+1] at depth "t" (fraction)
+	bool find_cell_in_window(double x, double y, int i0, int i1, int j0, int j1, double t, int &ii, int &jj);	// iteratively searches the cell index window [i0, i1)*[j0, j1)
+									// for the first encounter of cell [ii, jj] containing the point (x, y); uses point_between_pillars() test; returns "true" on success
+
+	bool point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt) const;	// for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
+									// return "true" if (x,y,z) is in the same semispace relative to the plane span{v0,v1,v2} as "vt"
+
+	static bool point_below_lower_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// "true" if X0=(x,y,z) is strictly below the lower plane of cell (i,j,k)
+	int find_k_lower_bound(int i, int j, double x, double y, double z) const;		// for column (i,j) find the smallest "k" such that
+									// (x,y,z) is above the lower plane of cell (i,j,k); binary search is used here
 
 public:
 	CornGrid();
@@ -92,11 +112,14 @@ public:
 								// aname - ACTNUM name, amin - ACTNUM min
 	std::string LoadACTNUM(std::string fname);		// loads ACTNUM, should be called after "grid_loaded", returns a small message
 													// treats real values > "actnum_min" as 'active'
-	void fill_cell_coord();			// fills "cell_coord" from coord, zcorn, and grid dimensions
+	static void SavePropertyToFile(std::string fname, std::string prop_name, const std::vector<double> &prop);		// saves "prop" in ECLIPSE format
+	std::string fill_cell_coord();			// fills "cell_coord" from coord, zcorn, and grid dimensions; returns a short message
 	std::vector<std::vector<NNC>> get_same_layer_NNC(std::string &out_msg);		// based on the mesh and ACTNUM, generates NNCs (where the logically connected cells are not connected in the mesh)
 															// only the cells with the same "k" are taken for such NNCs
 															// the PURPOSE is to form NNCs across the faults
 													// TODO this function was not thoroughly tested
+
+	std::vector<double> MarkPinchBottoms() const;	// returns Nx*Ny*Nz array, with values = 0 or 1, where 1 is for the cells which don't have active adjacent cell below
 	void find_cell(double x, double y, double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]
 
 	void temp_coord_from_cell(int i, int j, int k, double &x, double &y) const;	// (i,j,k) -> (x,y)	// TODO it's a temp stuff
