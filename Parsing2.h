@@ -148,6 +148,20 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
+class KW_runGridIJK_to_XYZ : public KW_run		// convert IJK to XYZ
+{
+public:
+	KW_runGridIJK_to_XYZ();
+    virtual void Run();
+};
+//------------------------------------------------------------------------------------------
+class KW_runXYZ_to_GridIJK : public KW_run		// convert XYZ to IJK
+{
+public:
+	KW_runXYZ_to_GridIJK();
+    virtual void Run();
+};
+//------------------------------------------------------------------------------------------
 class KW_runsoboltest : public KW_run
 {
 public:

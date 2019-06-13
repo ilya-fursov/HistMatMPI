@@ -54,7 +54,8 @@ public:	// TODO TEMP!!! remove!!!
 	bool grid_loaded;		// 'true' if the grid has been loaded
 	bool actnum_loaded;		// 'true' if ACTNUM has been loaded
 	size_t Nx, Ny, Nz;		// grid dimensions
-	mutable size_t pbp_call_count;	// counts point_between_pillars() calls since the last grid loading
+	mutable size_t pbp_call_count;		// counts point_between_pillars() calls since the last grid loading
+	mutable size_t psspace_call_count;	// counts point_in_same_semispace() calls since the last grid loading
 
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN
@@ -92,6 +93,8 @@ public:	// TODO TEMP!!! remove!!!
 	std::string analyze();			// finds dx0, dy0, theta0, Q0; returns a short message
 	std::string fill_cell_height();	// fills "cell_height", returns a short message
 
+	void xyz_from_cell_ijk(int i, int j, int k, double &x, double &y, double &z) const;				// (i,j,k) -> (x,y,z)
+
 	bool point_between_pillars(double x, double y, int i, int j, double t) const;	// 'true' if point (x,y) is between pillars [i,j]-[i+1,j]-[i+1,j+1]-[i,j+1] at depth "t" (fraction)
 	bool find_cell_in_window(double x, double y, int i0, int i1, int j0, int j1, double t, int &ii, int &jj);	// iteratively searches the cell index window [i0, i1)*[j0, j1)
 									// for the first encounter of cell [ii, jj] containing the point (x, y); uses point_between_pillars() test; returns "true" on success
@@ -100,8 +103,9 @@ public:	// TODO TEMP!!! remove!!!
 									// return "true" if (x,y,z) is in the same semispace relative to the plane span{v0,v1,v2} as "vt"
 
 	static bool point_below_lower_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// "true" if X0=(x,y,z) is strictly below the lower plane of cell (i,j,k)
+	static bool point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
 	int find_k_lower_bound(int i, int j, double x, double y, double z) const;		// for column (i,j) find the smallest "k" such that
-									// (x,y,z) is above the lower plane of cell (i,j,k); binary search is used here
+									// (x,y,z) is above the lower plane of cell (i,j,k), returns Nz if not found; binary search is used here
 
 public:
 	CornGrid();
@@ -120,9 +124,9 @@ public:
 													// TODO this function was not thoroughly tested
 
 	std::vector<double> MarkPinchBottoms() const;	// returns Nx*Ny*Nz array, with values = 0 or 1, where 1 is for the cells which don't have active adjacent cell below
-	void find_cell(double x, double y, double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]
-
-	void temp_coord_from_cell(int i, int j, int k, double &x, double &y) const;	// (i,j,k) -> (x,y)	// TODO it's a temp stuff
+	void find_cell(const double x, const double y, const double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]
+	std::string report_find_cell_stats() const;		// info on the auxiliary function call counts within find_cell()
+	bool IsCellCoordFilled() const {return cell_coord_filled;};
 };
 //------------------------------------------------------------------------------------------
 

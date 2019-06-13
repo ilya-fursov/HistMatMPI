@@ -474,9 +474,40 @@ std::string CornGrid::fill_cell_height()	// fills "cell_height", returns a short
 	return stringFormatArr("Empty cells: {0:%zu} / {1:%zu}", std::vector<size_t>{count_empty, Nx*Ny*Nz});
 }
 //------------------------------------------------------------------------------------------
+void CornGrid::xyz_from_cell_ijk(int i, int j, int k, double &x, double &y, double &z) const		// (i,j,k) -> (x,y,z)
+{
+	assert(grid_loaded);
+	assert(cell_coord_filled);
+
+	size_t m = i + j*Nx + k*Nx*Ny;
+	int v1 = 0;
+	int v2 = 3;
+	int v3 = 4;
+	int v4 = 7;
+
+	if (i < 0 || i >= (int)Nx)
+		throw HMMPI::Exception("i out of range in CornGrid::xyz_from_cell_ijk");
+	if (j < 0 || j >= (int)Ny)
+		throw HMMPI::Exception("j out of range in CornGrid::xyz_from_cell_ijk");
+	if (k < 0 || k >= (int)Nz)
+		throw HMMPI::Exception("k out of range in CornGrid::xyz_from_cell_ijk");
+
+	double x0 = (cell_coord[m*24 + v1*3 + 0] + cell_coord[m*24 + v2*3 + 0])/2;
+	double y0 = (cell_coord[m*24 + v1*3 + 1] + cell_coord[m*24 + v2*3 + 1])/2;
+	double z0 = (cell_coord[m*24 + v1*3 + 2] + cell_coord[m*24 + v2*3 + 2])/2;
+
+	double x1 = (cell_coord[m*24 + v3*3 + 0] + cell_coord[m*24 + v4*3 + 0])/2;
+	double y1 = (cell_coord[m*24 + v3*3 + 1] + cell_coord[m*24 + v4*3 + 1])/2;
+	double z1 = (cell_coord[m*24 + v3*3 + 2] + cell_coord[m*24 + v4*3 + 2])/2;
+
+	x = (x0+x1)/2;
+	y = (y0+y1)/2;
+	z = (z0+z1)/2;
+}
+//------------------------------------------------------------------------------------------
 bool CornGrid::point_between_pillars(double x, double y, int i, int j, double t) const	// 'true' if point (x,y) is between pillars [i,j]-[i+1,j]-[i+1,j+1]-[i,j+1] at depth "t" (fraction)
 {
-	assert(grid_loaded);			// TODO recheck the logic!!! TODO
+	assert(grid_loaded);
 	assert(state_found);
 	assert(i >= 0 && (size_t)i < Nx);
 	assert(j >= 0 && (size_t)j < Ny);
@@ -487,7 +518,7 @@ bool CornGrid::point_between_pillars(double x, double y, int i, int j, double t)
 	p[2] = (j+1)*(Nx+1) + i+1;
 	p[3] = (j+1)*(Nx+1) + i;
 
-	Mat Xt(std::vector<double>{x, y, 0});
+	const Mat Xt(std::vector<double>{x, y, 0});
 	bool is_inside = true;
 	for (int n = 0; n < 4; n++)
 	{
@@ -517,7 +548,7 @@ bool CornGrid::point_between_pillars(double x, double y, int i, int j, double t)
 bool CornGrid::find_cell_in_window(double x, double y, int i0, int i1, int j0, int j1, double t, int &ii, int &jj)	// iteratively searches the cell index window [i0, i1)*[j0, j1)
 {											// for the first encounter of cell [ii, jj] containing the point (x, y); uses point_between_pillars() test; returns "true" on success
 	assert(i0 >= 0 && (size_t)i1 <= Nx);
-	assert(j0 >= 0 && (size_t)j1 <= Ny);	// TODO recheck the logic
+	assert(j0 >= 0 && (size_t)j1 <= Ny);
 
 	for (int i = i0; i < i1; i++)
 		for (int j = j0; j < j1; j++)
@@ -535,7 +566,7 @@ bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int 
 {								// return "true" if (x,y,z) is in the same semispace relative to the plane span{v0,v1,v2} as "vt"
 	assert(grid_loaded);
 	assert(cell_coord_filled);
-	assert(i >= 0 && (size_t)i < Nx);		// TODO recheck logic
+	assert(i >= 0 && (size_t)i < Nx);
 	assert(j >= 0 && (size_t)j < Ny);
 	assert(k >= 0 && (size_t)k < Nz);
 	assert(v0 >= 0 && v0 < 8);
@@ -559,6 +590,7 @@ bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int 
 	double check_t = InnerProd(prod, Ut);
 	double check_A = InnerProd(prod, UA);
 
+	psspace_call_count++;
 	if (check_t*check_A < 0)
 		return false;
 	else
@@ -569,11 +601,18 @@ bool CornGrid::point_below_lower_plane(const pointT &X0, int i, int j, int k, co
 {
 	double x, y, z;
 	std::tie(x, y, z) = X0;
-	return !grid->point_in_same_semispace(x, y, z, i, j, k, 4, 5, 7, 0);		// TODO recheck the logic
+	return !grid->point_in_same_semispace(x, y, z, i, j, k, 4, 5, 7, 0);
+}
+//------------------------------------------------------------------------------------------
+bool CornGrid::point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid)	// "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
+{
+	double x, y, z;
+	std::tie(x, y, z) = X0;
+	return grid->point_in_same_semispace(x, y, z, i, j, k, 0, 1, 3, 4);
 }
 //------------------------------------------------------------------------------------------
 int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) const		// for column (i,j) find the smallest "k" such that
-{							// (x,y,z) is above the lower plane of cell (i,j,k); binary search is used here
+{										// (x,y,z) is above the lower plane of cell (i,j,k), returns Nz if not found; binary search is used here
 	using namespace std::placeholders;
 
 	std::vector<int> k_range(Nz);		// iterator for "k"
@@ -581,8 +620,8 @@ int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) con
 	pointT X0(x, y, z);
 
 	std::vector<int>::iterator res = std::lower_bound(k_range.begin(), k_range.end(), X0,
-													  std::bind(CornGrid::point_below_lower_plane, _2, i, j, _1, this));	// TODO RECHECK!!!!!!!!!!!!!!!!... and is_partitioned()
-	return res - k_range.begin();			// TODO recheck! this may be Nz as well!
+													  std::bind(CornGrid::point_below_lower_plane, _2, i, j, _1, this));
+	return res - k_range.begin();
 }
 //------------------------------------------------------------------------------------------
 //void CornGrid::temp_out_pillars() const	// TODO temp!
@@ -609,7 +648,7 @@ int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) con
 //	fclose(f);
 //}
 //------------------------------------------------------------------------------------------
-CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), pbp_call_count(0),
+CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), pbp_call_count(0), psspace_call_count(0),
 					   min_cell_height(1e-3), actnum_name("ACTNUM"), actnum_min(0), cell_coord_filled(false),
 					   state_found(false), dx0(0), dy0(0), theta0(0)
 {
@@ -661,6 +700,7 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 		}
 
 	pbp_call_count = 0;
+	psspace_call_count = 0;
 	grid_loaded = true;
 	actnum_loaded = false;
 	cell_coord_filled = false;
@@ -912,7 +952,7 @@ std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array
 	assert(cell_coord_filled);
 	assert(cell_height.size() > 0);
 
-	std::vector<double> res(Nx*Ny*Nz, 0.0);		// TODO recheck the logic; the results seem to be fine
+	std::vector<double> res(Nx*Ny*Nz, 0.0);
 
 	for (size_t j = 0; j < Ny; j++)
 		for (size_t i = 0; i < Nx; i++)			// consider cell (i, j, k)
@@ -943,13 +983,13 @@ std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array
 	return res;
 }
 //------------------------------------------------------------------------------------------
-void CornGrid::find_cell(double x, double y, double z, int &i, int &j, int &k) 		// find cell [i,j,k] containing the point [x,y,z]
+void CornGrid::find_cell(const double x, const double y, const double z, int &i, int &j, int &k) 		// find cell [i,j,k] containing the point [x,y,z]
 {
-	const int delta_i = 5;		// if the analytical cell coords (i,j) do not contain the point, window
+	const int delta_i = 5;		// if the CELL with analytical coords (i,j) does not contain the point, window
 	const int delta_j = 5;		// [i - delta_i, i + delta_i]*[j - delta_j, j + delta_j] is searched iteratively;
 								// if the windowed search fails, the whole grid is searched iteratively
 	assert(grid_loaded);
-	if (!cell_coord_filled)				// TODO recheck the logic
+	if (!cell_coord_filled)
 		fill_cell_coord();
 	if (!state_found)
 		analyze();
@@ -968,18 +1008,25 @@ void CornGrid::find_cell(double x, double y, double z, int &i, int &j, int &k) 	
 	double xbar = x - (1-t)*x0 - t*x1;
 	double ybar = y - (1-t)*y0 - t*y1;
 
-	Mat rhs(std::vector<double>{xbar, ybar}, 2, 1);
+	const Mat rhs(std::vector<double>{xbar, ybar});
 
 	Mat sol = Q0.Tr()*rhs;
-	i = int(sol(0,0)/dx0);
+	i = int(sol(0,0)/dx0);			// find analytic (i,j)
 	j = int(sol(1,0)/dy0);
 
-	if (!point_between_pillars(x, y, i, j, t))		// check that the found (i,j) is correct
+	if (i < 0 || i >= (int)Nx || j < 0 || j >= (int)Ny)		// check that the found (i,j) is correct
+	{
+		char msg[BUFFSIZE];
+		sprintf(msg, "Point (%.0f, %.0f) is laterally outside the grid", x, y);
+		throw Exception(msg);
+	}
+
+	if (!point_between_pillars(x, y, i, j, t))
 	{
 		int i0 = i - delta_i;
-		int i1 = i + delta_i;
+		int i1 = i + delta_i + 1;
 		int j0 = j - delta_j;
-		int j1 = j + delta_j;
+		int j1 = j + delta_j + 1;
 
 		if (i0 < 0) i0 = 0;
 		if ((size_t)i1 > Nx) i1 = Nx;
@@ -990,41 +1037,38 @@ void CornGrid::find_cell(double x, double y, double z, int &i, int &j, int &k) 	
 			if(!find_cell_in_window(x, y, 0, Nx, 0, Ny, t, i, j))	// full grid search
 			{
 				char msg[BUFFSIZE];
-				sprintf(msg, "Failure to find a grid cell containing the point (%f, %f)", x, y);
+				sprintf(msg, "Failure to find a grid cell containing the point (%.0f, %.0f)", x, y);
 				throw Exception(msg);
 			}
 	}
 
 	// now (i,j) is the correct cell, need to find "k"
+	k = find_k_lower_bound(i, j, x, y, z);
+	if (k == (int)Nz)
+	{
+		char msg[BUFFSIZE];
+		sprintf(msg, "Point (%.0f, %.0f, %.2f) is in column [%d, %d], but is located below the grid", x, y, z, i+1, j+1);
+		throw Exception(msg);
+	}
+	if (!point_below_upper_plane(pointT(x, y, z), i, j, k, this))
+	{
+		char msg[BUFFSIZE];
+		sprintf(msg, "Point (%.0f, %.0f, %.2f) is in column [%d, %d], but cannot be located within the grid cells", x, y, z, i+1, j+1);
+		throw Exception(msg);
+	}
 
+	// all test passed, (i,j,k) is correct
 }
 //------------------------------------------------------------------------------------------
-void CornGrid::temp_coord_from_cell(int i, int j, int k, double &x, double &y) const	// (i,j,k) -> (x,y)	// TODO it's a temp stuff
+std::string CornGrid::report_find_cell_stats() const		// info on the auxiliary function call counts within find_cell()
 {
-	assert(grid_loaded);
-	assert(cell_coord_filled);
+	char msg_eng[BUFFSIZE];
+	char msg_rus[BUFFSIZE];
 
-	size_t m = i + j*Nx + k*Nx*Ny;
-	int v1 = 0;
-	int v2 = 3;
-	int v3 = 4;
-	int v4 = 7;
+	sprintf(msg_eng, "Calls of 'point_between_pillars': %zu, calls of 'point_in_same_semispace': %zu", pbp_call_count, psspace_call_count);
+	sprintf(msg_rus, "Проверок 'point_between_pillars': %zu, проверок 'point_in_same_semispace': %zu", pbp_call_count, psspace_call_count);
 
-	if (i < 0 || i >= Nx)
-		throw HMMPI::Exception("i out of range");
-	if (j < 0 || j >= Ny)
-		throw HMMPI::Exception("j out of range");
-	if (k < 0 || k >= Nz)
-		throw HMMPI::Exception("k out of range");
-
-	double x0 = (cell_coord[m*24 + v1*3 + 0] + cell_coord[m*24 + v2*3 + 0])/2;
-	double y0 = (cell_coord[m*24 + v1*3 + 1] + cell_coord[m*24 + v2*3 + 1])/2;
-
-	double x1 = (cell_coord[m*24 + v3*3 + 0] + cell_coord[m*24 + v4*3 + 0])/2;
-	double y1 = (cell_coord[m*24 + v3*3 + 1] + cell_coord[m*24 + v4*3 + 1])/2;
-
-	x = (x0+x1)/2;
-	y = (y0+y1)/2;
+	return MessageRE(msg_rus, msg_eng);
 }
 //------------------------------------------------------------------------------------------
 

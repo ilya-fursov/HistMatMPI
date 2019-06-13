@@ -1374,6 +1374,64 @@ void KW_runPinchMarkFromGrid::Run()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+KW_runGridIJK_to_XYZ::KW_runGridIJK_to_XYZ()
+{
+	name = "RUNGRIDIJK_TO_XYZ";
+}
+//------------------------------------------------------------------------------------------
+void KW_runGridIJK_to_XYZ::Run()
+{
+	Start_pre();
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	IMPORTKWD(pts, KW_3points, "3POINTS");
+	Add_pre("GRIDDIMENS");
+	Finish_pre();
+
+	if (!cz->CG.IsCellCoordFilled())
+		K->AppText(cz->CG.fill_cell_coord() + "\n");
+
+	for (size_t i = 0; i < pts->x.size(); i++)
+	{
+		double x, y, z;
+		cz->CG.xyz_from_cell_ijk(pts->x[i]-1, pts->y[i]-1, pts->z[i]-1, x, y, z);
+		printf("%-3d\t%-3d\t%-3d\t->\t%-7.0f\t%-7.0f\t%-7.2f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y, z);
+	}
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_runXYZ_to_GridIJK::KW_runXYZ_to_GridIJK()
+{
+	name = "RUNXYZ_TO_GRIDIJK";
+}
+//------------------------------------------------------------------------------------------
+void KW_runXYZ_to_GridIJK::Run()
+{
+	Start_pre();
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	IMPORTKWD(pts, KW_3points, "3POINTS");
+	Add_pre("GRIDDIMENS");
+	Finish_pre();
+
+	if (!cz->CG.IsCellCoordFilled())
+		K->AppText(cz->CG.fill_cell_coord() + "\n");
+
+	for (size_t n = 0; n < pts->x.size(); n++)
+	{
+		int i = -1, j = -1, k = -1;
+		try
+		{
+			cz->CG.find_cell(pts->x[n], pts->y[n], pts->z[n], i, j, k);
+			printf("%-7.0f\t%-7.0f\t%-7.2f\t->\t%-3d\t%-3d\t%-3d\n", pts->x[n], pts->y[n], pts->z[n], i+1, j+1, k+1);
+		}
+		catch (const HMMPI::Exception &e)
+		{
+			printf("[error] %s\n", e.what());
+		}
+	}
+	K->AppText(cz->CG.report_find_cell_stats() + "\n");
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_runMCMC::KW_runMCMC()
 {
 	name = "RUNMCMC";
