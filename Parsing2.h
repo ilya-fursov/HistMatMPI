@@ -603,7 +603,7 @@ class KW_eclsmry : public KW_params
 {
 private:
 	std::string copy_file_exists(const std::string &f0, int c); 	// if 'f0' exists (&& c > 0), then it is copied to 'f0~', and the function is called recursively on 'f0~'
-																	// 'c' has the meaning of 'backup'; returns a message reporting the file names
+																	// 'c' has the meaning of 'backup'; returns a message reporting the file names;
 																	// to be called on all ranks
 protected:
 	HMMPI::SimProxyFile Data;

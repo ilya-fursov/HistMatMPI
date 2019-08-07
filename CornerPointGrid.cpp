@@ -1057,7 +1057,7 @@ void CornGrid::find_cell(const double x, const double y, const double z, int &i,
 		throw Exception(msg);
 	}
 
-	// all test passed, (i,j,k) is correct
+	// all tests passed, (i,j,k) is correct
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::report_find_cell_stats() const		// info on the auxiliary function call counts within find_cell()

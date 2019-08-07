@@ -325,22 +325,22 @@ void KW_item::ReadParamTable(const std::vector<std::string> &SA) noexcept	// (OK
 //------------------------------------------------------------------------------------------
 void KW_run::Action() noexcept	// (OK)
 {
-	 if ((name == "ECHO")||(name == "NOECHO"))
-		 return;
+	if ((name == "ECHO")||(name == "NOECHO"))
+		return;
 
-	 try
-	 {
-		 K->AppText(HMMPI::stringFormatArr("Выполняется {0:%s}...\n", "Executing {0:%s}...\n", name));
+	try
+	{
+		K->AppText(HMMPI::stringFormatArr("Выполняется {0:%s}...\n", "Executing {0:%s}...\n", name));
 
-		 Run();
-	 }
-	 catch (const HMMPI::Exception &e)
-	 {
-		 K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("ОШИБКА во время выполнения {0:%s}: {1:%s}\n\n",
+		Run();
+	}
+	catch (const HMMPI::Exception &e)
+	{
+		K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("ОШИБКА во время выполнения {0:%s}: {1:%s}\n\n",
 											  	  	  	    "ERROR while running {0:%s}: {1:%s}\n\n"), std::vector<std::string>{name, e.what()}));
-		 AddState(e.what());
-		 K->TotalErrors++;
-	 }
+		AddState(e.what());
+		K->TotalErrors++;
+	}
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -952,6 +952,8 @@ void Parser_1::ReadAll2()	// (OK)
 				kw_it->ResetState();				// reset state = no errors
 				kw_it->ReadParamTable(Spar);
 				kw_it->ProcessParamTable();
+
+				MPI_Barrier(MPI_COMM_WORLD);
 				if (kw_it->GetState() == "")		// check if there are no errors so far
 					kw_it->Action();
 
