@@ -357,8 +357,8 @@ public:
 	PM_Func_lin(Parser_1 *K, KW_item *kw, MPI_Comm c);		// easy constructor; all data are taken from keywords of "K"; "kw" is used only to handle prerequisites
 };
 //---------------------------------------------------------------------------
-// POWER model from MATVEC		TODO change!!
-// F(x)_i = a*(Si - S0)^b, where {a, b, S0} = x, Si = MAT_ij, column j is fixed, d0 = VEC, all Ci = 1
+// POWER model from MATVEC
+// F(x)_i = ln(a*(Si - S0)^b) = ln(a) + b*ln(Si - S0), where {a, b, S0} = x, Si = MAT_ij, column j is fixed, d0 = ln(VEC), all Ci = 1
 // Npar = 3, and parameter min/max are defined in CTOR (however init values are taken from LIMITS)
 class PM_Func_pow : public PM_Func
 {

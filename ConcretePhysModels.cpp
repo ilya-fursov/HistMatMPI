@@ -3663,11 +3663,11 @@ PM_Func_lin::PM_Func_lin(Parser_1 *K, KW_item *kw, MPI_Comm c) : PM_Func(K, kw, 
 //---------------------------------------------------------------------------
 std::vector<double> PM_Func_pow::F(const std::vector<double> &par) const	// forward operator
 {
-	// F(par)_i = a*(Si - S0)^b, where {a, b, S0} = par
+	// F(par)_i = ln(a*(Si - S0)^b) = ln(a) + b*ln(Si - S0), where {a, b, S0} = par
 
 	std::vector<double> res(Si.size());
 	for (size_t i = 0; i < res.size(); i++)
-		res[i] = par[0]*pow(Si[i] - par[2], par[1]);
+		res[i] = log(par[0]) + par[1]*log(Si[i] - par[2]);
 
 	return res;
 }
@@ -3677,9 +3677,9 @@ HMMPI::Mat PM_Func_pow::dF(const std::vector<double> &par) const			// Jacobian
 	HMMPI::Mat res(Si.size(), 3, 0.0);
 	for (size_t i = 0; i < Si.size(); i++)
 	{
-		res(i, 0) = pow(Si[i] - par[2], par[1]);
-		res(i, 1) = par[0]*pow(Si[i] - par[2], par[1]) * log(Si[i] - par[2]);
-		res(i, 2) = -par[0]*par[1] * pow(Si[i] - par[2], par[1] - 1);
+		res(i, 0) = 1/par[0];
+		res(i, 1) = log(Si[i] - par[2]);
+		res(i, 2) = -par[1]/(Si[i] - par[2]);
 	}
 
 	return res;
@@ -3692,27 +3692,27 @@ HMMPI::Mat PM_Func_pow::dJk(const std::vector<double> &par, int k) const	// deri
 	{
 		for (size_t i = 0; i < Si.size(); i++)
 		{
-			res(i, 0) = 0;
-			res(i, 1) = pow(Si[i] - par[2], par[1]) * log(Si[i] - par[2]);
-			res(i, 2) = -par[1]*pow(Si[i] - par[2], par[1] - 1);
+			res(i, 0) = -1/(par[0]*par[0]);
+			res(i, 1) = 0;
+			res(i, 2) = 0;
 		}
 	}
 	else if (k == 1)
 	{
 		for (size_t i = 0; i < Si.size(); i++)
 		{
-			res(i, 0) = pow(Si[i] - par[2], par[1]) * log(Si[i] - par[2]);
-			res(i, 1) = par[0]*pow(Si[i] - par[2], par[1]) * pow(log(Si[i] - par[2]), 2);
-			res(i, 2) = -par[0]*pow(Si[i] - par[2], par[1] - 1)*(1 + par[1]*log(Si[i] - par[2]));
+			res(i, 0) = 0;
+			res(i, 1) = 0;
+			res(i, 2) = -1/(Si[i] - par[2]);
 		}
 	}
 	else if (k == 2)
 	{
 		for (size_t i = 0; i < Si.size(); i++)
 		{
-			res(i, 0) = -par[1]*pow(Si[i] - par[2], par[1] - 1);
-			res(i, 1) = -par[0]*pow(Si[i] - par[2], par[1] - 1)*(1 + par[1]*log(Si[i] - par[2]));
-			res(i, 2) = par[0]*par[1]*(par[1] - 1) * pow(Si[i] - par[2], par[1] - 2);
+			res(i, 0) = 0;
+			res(i, 1) = -1/(Si[i] - par[2]);
+			res(i, 2) = par[1]/((Si[i] - par[2])*(Si[i] - par[2]));
 		}
 	}
 	else
@@ -3744,6 +3744,8 @@ PM_Func_pow::PM_Func_pow(Parser_1 *K, KW_item *kw, MPI_Comm c, int j) : PM_Func(
 													  "In model FUNC_POW, Si should be > {0:%g}", small));
 	Npar = 3;
 	d0 = mat->v1;
+	for (auto &x : d0)			// data are treated in log scale
+		x = log(x);
 	C = std::vector<double>(d0.size(), 1.0);
 
 	min = {small, -big, 0};
