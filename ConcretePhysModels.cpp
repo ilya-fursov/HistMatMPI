@@ -3559,3 +3559,200 @@ void PM_Linear::PerturbData()
 	}
 }
 //---------------------------------------------------------------------------
+// PM_Func
+//---------------------------------------------------------------------------
+PM_Func::PM_Func(int param_dim, const std::vector<double> &data, const std::vector<double> &c) : Npar(param_dim), d0(data), C(c)
+{
+	assert(d0.size() == C.size());
+
+	for (auto &i : C)		// invert the matrix
+		i = 1.0/i;
+}
+//---------------------------------------------------------------------------
+PM_Func::~PM_Func()
+{
+#ifdef TESTCTOR
+
+	std::ofstream testf(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{RNK}), std::ios::app);
+	testf << "rank " << RNK << ", PM_Func -- DTOR --, this = " << this << "\n";
+	testf.close();
+#endif
+}
+//---------------------------------------------------------------------------
+double PM_Func::ObjFunc(const std::vector<double> &params)
+{
+	assert(params.size() == (size_t)Npar);
+
+	modelled_data = F(params);
+	HMMPI::Mat v = HMMPI::Mat(modelled_data) - HMMPI::Mat(d0);
+	return InnerProd(v, C%v);
+}
+//---------------------------------------------------------------------------
+std::vector<double> PM_Func::ObjFuncGrad(const std::vector<double> &params)
+{
+	assert(params.size() == (size_t)Npar);
+
+	HMMPI::Mat f = F(params);
+	f = 2*(f - HMMPI::Mat(d0));
+	DataSens = dF(params);
+	return ((f.Tr() % C)*DataSens).ToVector();
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Func::ObjFuncHess(const std::vector<double> &params)
+{
+	HMMPI::Mat res;
+	HMMPI::Mat f = HMMPI::Mat(F(params)) - HMMPI::Mat(d0);
+	HMMPI::Mat Jac = dF(params);
+
+	for (int i = 0; i < Npar; i++)
+	{
+		HMMPI::Mat Ji = Jac.Reorder(0, Jac.ICount(), i, i+1);			// i-th column of Jac
+		HMMPI::Mat Hi = (Ji.Tr() % C)*Jac + (f.Tr() % C)*dJk(params, i);
+		res = std::move(res) || (2*Hi);									// accumulate the Hessian line by line
+	}
+
+	return res;
+}
+//---------------------------------------------------------------------------
+// PM_Func_lin
+//---------------------------------------------------------------------------
+std::vector<double> PM_Func_lin::F(const std::vector<double> &par) const	// forward operator
+{
+	return (G * HMMPI::Mat(par)).ToVector();
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Func_lin::dF(const std::vector<double> &par) const			// Jacobian
+{
+	return G;
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Func_lin::dJk(const std::vector<double> &par, int k) const	// derivatives of k-th column of Jacobian
+{
+	return HMMPI::Mat(G.ICount(), G.JCount(), 0.0);
+}
+//---------------------------------------------------------------------------
+PM_Func_lin::PM_Func_lin(Parser_1 *K, KW_item *kw, MPI_Comm c) : PM_Func(K, kw, c)	// easy constructor; all data are taken from keywords of "K"; "kw" is used only to handle prerequisites
+{
+	DECLKWD(mat, KW_matvecvec, "MATVECVEC");
+	name = "PM_Func_lin";
+
+	kw->Start_pre();
+	kw->Add_pre("MATVECVEC");
+	kw->Add_pre("LIMITS");
+	kw->Finish_pre();
+
+	G = mat->M;
+	if (G.JCount() != init.size())
+		throw HMMPI::Exception("Не совпадают размерности матрицы G и LIMITS в модели FUNC_LIN",
+							   "Inconsistent dimensions of matrix G and LIMITS in FUNC_LIN model");	// TODO
+	Npar = init.size();
+
+	d0 = mat->v1;
+	C = mat->v2;
+	for (auto &i : C)		// invert the matrix
+		i = 1.0/i;
+
+#ifdef TESTCTOR
+	std::ofstream testf(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{RNK}), std::ios::app);
+	testf << "rank " << RNK << ", PM_Func_lin easy CTOR, this = " << this << "\n";
+	testf.close();
+#endif
+}
+//---------------------------------------------------------------------------
+// PM_Func_pow
+//---------------------------------------------------------------------------
+std::vector<double> PM_Func_pow::F(const std::vector<double> &par) const	// forward operator
+{
+	// F(par)_i = a*(Si - S0)^b, where {a, b, S0} = par
+
+	std::vector<double> res(Si.size());
+	for (size_t i = 0; i < res.size(); i++)
+		res[i] = par[0]*pow(Si[i] - par[2], par[1]);
+
+	return res;
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Func_pow::dF(const std::vector<double> &par) const			// Jacobian
+{
+	HMMPI::Mat res(Si.size(), 3, 0.0);
+	for (size_t i = 0; i < Si.size(); i++)
+	{
+		res(i, 0) = pow(Si[i] - par[2], par[1]);
+		res(i, 1) = par[0]*pow(Si[i] - par[2], par[1]) * log(Si[i] - par[2]);
+		res(i, 2) = -par[0]*par[1] * pow(Si[i] - par[2], par[1] - 1);
+	}
+
+	return res;
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Func_pow::dJk(const std::vector<double> &par, int k) const	// derivatives of k-th column of Jacobian
+{
+	HMMPI::Mat res(Si.size(), 3, 0.0);
+	if (k == 0)
+	{
+		for (size_t i = 0; i < Si.size(); i++)
+		{
+			res(i, 0) = 0;
+			res(i, 1) = pow(Si[i] - par[2], par[1]) * log(Si[i] - par[2]);
+			res(i, 2) = -par[1]*pow(Si[i] - par[2], par[1] - 1);
+		}
+	}
+	else if (k == 1)
+	{
+		for (size_t i = 0; i < Si.size(); i++)
+		{
+			res(i, 0) = pow(Si[i] - par[2], par[1]) * log(Si[i] - par[2]);
+			res(i, 1) = par[0]*pow(Si[i] - par[2], par[1]) * pow(log(Si[i] - par[2]), 2);
+			res(i, 2) = -par[0]*pow(Si[i] - par[2], par[1] - 1)*(1 + par[1]*log(Si[i] - par[2]));
+		}
+	}
+	else if (k == 2)
+	{
+		for (size_t i = 0; i < Si.size(); i++)
+		{
+			res(i, 0) = -par[1]*pow(Si[i] - par[2], par[1] - 1);
+			res(i, 1) = -par[0]*pow(Si[i] - par[2], par[1] - 1)*(1 + par[1]*log(Si[i] - par[2]));
+			res(i, 2) = par[0]*par[1]*(par[1] - 1) * pow(Si[i] - par[2], par[1] - 2);
+		}
+	}
+	else
+		throw HMMPI::Exception("Incorrect k in PM_Func_pow::dJk");
+
+	return res;
+}
+//---------------------------------------------------------------------------
+PM_Func_pow::PM_Func_pow(Parser_1 *K, KW_item *kw, MPI_Comm c, int j) : PM_Func(K, kw, c), small(1e-5), big(1e5)	// easy constructor
+{
+	DECLKWD(mat, KW_matvec, "MATVEC");
+	name = "PM_Func_pow";
+
+	kw->Start_pre();
+	kw->Add_pre("MATVEC");
+	kw->Add_pre("LIMITS");
+	kw->Finish_pre();
+
+	HMMPI::Mat colj = mat->M.Reorder(0, mat->M.ICount(), j, j+1);
+	Si = colj.ToVector();
+	int i0, j0;
+	const double minSi = colj.Min(i0, j0);
+
+	if (init.size() != 3)
+		throw HMMPI::Exception("Размерность LIMITS в модели FUNC_POW должна быть равна 3",
+							   "Dimension of LIMITS in FUNC_POW model should equal 3");
+	if (minSi <= small)
+		throw HMMPI::Exception(HMMPI::stringFormatArr("В модели FUNC_POW величины Si должны быть > {0:%g}",
+													  "In model FUNC_POW, Si should be > {0:%g}", small));
+	Npar = 3;
+	d0 = mat->v1;
+	C = std::vector<double>(d0.size(), 1.0);
+
+	min = {small, -big, 0};
+	max = {big, -small, minSi-small};
+
+#ifdef TESTCTOR
+	std::ofstream testf(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{RNK}), std::ios::app);
+	testf << "rank " << RNK << ", PM_Func_pow easy CTOR, this = " << this << "\n";
+	testf.close();
+#endif
+}
+//---------------------------------------------------------------------------

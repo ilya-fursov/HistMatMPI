@@ -457,6 +457,10 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		Res = new PM_Linear(K, kw, this_comm);
 	if (Type == "ROSEN")
 		Res = new PM_Rosenbrock(K, kw, this_comm);
+	if (Type == "FUNC_LIN")
+		Res = new PM_Func_lin(K, kw, this_comm);
+	if (Type == "FUNC_POW")
+		Res = new PM_Func_pow(K, kw, this_comm, 0);
 
 	if (Type == "NUMGRAD")
 		Res = new PhysModGradNum(this_comm, ref, K, kw);

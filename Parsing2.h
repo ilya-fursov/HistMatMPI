@@ -1048,7 +1048,8 @@ public:
 class KW_physmodel : public KW_multparams
 {
 public:
-	std::vector<std::string> type;	// ECLIPSE, SIMECL, PCONNECT, CONC, SIMPROXY, LIN, ROSEN (plain types); NUMGRAD, PROXY, DATAPROXY, DATAPROXY2, KRIGCORR, KRIGSIGMA, LAGRSPHER, SPHERICAL, CUBEBOUND, HAMILTONIAN, POSTERIOR (referencing types)
+	std::vector<std::string> type;	// ECLIPSE, SIMECL, PCONNECT, CONC, SIMPROXY, LIN, ROSEN, FUNC_LIN, FUNC_POW (plain types);
+									// NUMGRAD, PROXY, DATAPROXY, DATAPROXY2, KRIGCORR, KRIGSIGMA, LAGRSPHER, SPHERICAL, CUBEBOUND, HAMILTONIAN, POSTERIOR (referencing types)
 	std::vector<int> ref;			// "ref" refers to another model defined in row № "ref"
 									// ref == 0 does not refer to any row, and should be used for 'plain' models
 	std::vector<bool> is_plain;		// indicates whether the given entry is of 'plain type'

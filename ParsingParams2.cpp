@@ -3538,7 +3538,8 @@ std::string KW_physmodel::CheckRefs()
 	// fill 'is_plain'
 	is_plain = std::vector<bool>(type.size());
 	for (size_t i = 0; i < type.size(); i++)
-		if (type[i] == "ECLIPSE" || type[i] == "SIMECL" || type[i] == "PCONNECT" || type[i] == "CONC" || type[i] == "SIMPROXY" || type[i] == "LIN" || type[i] == "ROSEN")
+		if (type[i] == "ECLIPSE" || type[i] == "SIMECL" || type[i] == "PCONNECT" || type[i] == "CONC" || type[i] == "SIMPROXY" ||
+			type[i] == "LIN" || type[i] == "ROSEN" || type[i] == "FUNC_LIN" || type[i] == "FUNC_POW")
 			is_plain[i] = true;
 		else
 			is_plain[i] = false;
@@ -3571,7 +3572,7 @@ KW_physmodel::KW_physmodel()
 
 	FinalizeParams();
 
-	EXPECTED[0] = std::vector<std::string>{"ECLIPSE", "SIMECL", "PCONNECT", "CONC", "SIMPROXY", "LIN", "ROSEN", "NUMGRAD", "PROXY", "DATAPROXY", "DATAPROXY2", "KRIGCORR", "KRIGSIGMA", "LAGRSPHER", "SPHERICAL", "CUBEBOUND", "HAMILTONIAN", "POSTERIOR"};
+	EXPECTED[0] = std::vector<std::string>{"ECLIPSE", "SIMECL", "PCONNECT", "CONC", "SIMPROXY", "LIN", "ROSEN", "FUNC_LIN", "FUNC_POW", "NUMGRAD", "PROXY", "DATAPROXY", "DATAPROXY2", "KRIGCORR", "KRIGSIGMA", "LAGRSPHER", "SPHERICAL", "CUBEBOUND", "HAMILTONIAN", "POSTERIOR"};
 }
 //------------------------------------------------------------------------------------------
 void KW_physmodel::UpdateParams() noexcept

@@ -878,6 +878,23 @@ Mat Mat::Reorder(const std::vector<int> &ordi, const std::vector<int> &ordj) con
 	return Mat(HMMPI::Reorder(data, icount, jcount, ordi, ordj), ordi.size(), ordj.size());
 }
 //------------------------------------------------------------------------------------------
+Mat Mat::Reorder(int i0, int i1, int j0, int j1) const		// creates a submatrix with indices [i0, i1)*[j0, j1)
+{
+	if (i0 < 0 || i1 > (int)icount || j0 < 0 || j1 > (int)jcount)
+		throw Exception(stringFormatArr("In Mat::Reorder indices [{0:%d}, {1:%d})*[{2:%d}, {3:%d}) are inconsistent with matrix dimension {4:%d} * {5:%d}",
+						std::vector<int>{i0, i1, j0, j1, (int)icount, (int)jcount}));
+	if (i0 >= i1 || j0 >= j1)
+		throw Exception(stringFormatArr("In Mat::Reorder I-indices ({0:%d}, {1:%d}) and J-indices ({2:%d}, {3:%d}) should be strictly increasing",
+						std::vector<int>{i0, i1, j0, j1}));
+
+	std::vector<int> ordi(i1-i0);
+	std::vector<int> ordj(j1-j0);
+	std::iota(ordi.begin(), ordi.end(), i0);
+	std::iota(ordj.begin(), ordj.end(), j0);
+
+	return Reorder(ordi, ordj);
+}
+//------------------------------------------------------------------------------------------
 Mat Mat::operator+(Mat m) const
 {
 	// m is a copy or rvalue
@@ -2731,6 +2748,13 @@ Mat SolverDGELSY::Solve(Mat A, Mat b) const
 std::string BoundConstr::par_name(int i) const
 {
 	return HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i+1});
+}
+//------------------------------------------------------------------------------------------
+void BoundConstr::OverrideBounds(const std::vector<double> &newmin, const std::vector<double> &newmax)	// overrides min, max after checking that dimensions are the same
+{
+	assert(min.size() == newmin.size() && max.size() == newmax.size());
+	min = newmin;
+	max = newmax;
 }
 //------------------------------------------------------------------------------------------
 std::string BoundConstr::Check(const std::vector<double> &p) const		// "", if all constraints are satisfied for 'p'; or a message, if not

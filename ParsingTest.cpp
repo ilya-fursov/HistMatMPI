@@ -397,14 +397,14 @@ void KW_rundebug::Run()
 {
 	// test ...
 	Start_pre();
-	//IMPORTKWD(mat, KW_mat, "MAT");
+	IMPORTKWD(mat, KW_mat, "MAT");
 	//IMPORTKWD(opt, KW_opt_config, "OPT_CONFIG");
 	//IMPORTKWD(limits, KW_limits, "LIMITS");
 
 
-	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-	IMPORTKWD(pts, KW_3points, "3POINTS");
-	Add_pre("GRIDDIMENS");
+//	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+//	IMPORTKWD(pts, KW_3points, "3POINTS");
+//	Add_pre("GRIDDIMENS");
 
 	Finish_pre();
 
@@ -416,7 +416,7 @@ void KW_rundebug::Run()
 	//FILE *f = fopen("output_vecs.bin", "wb");
 
 
-	std::cout << cz->CG.fill_cell_coord() << "\n";
+//	std::cout << cz->CG.fill_cell_coord() << "\n";
 
 //	std::vector<double> act(cz->CG.actnum.size());
 //	for (size_t i = 0; i < act.size(); i++)
@@ -433,15 +433,24 @@ void KW_rundebug::Run()
 //	}
 
 
-	// POINTS.X,Y - metric coords, POINTS.Z in [0,1]
-	for (size_t i = 0; i < pts->x.size(); i++)
-	{
-		int x, y, z;
-		//cz->CG.find_cell_in_window(pts->x[i], pts->y[i], 0, cz->CG.Nx, 0, cz->CG.Ny, pts->z[i], x, y);
-		cz->CG.find_cell(pts->x[i], pts->y[i], pts->z[i], x, y, z);
-		printf("%g\t%g\t%g\t-\t%d\t%d\n", pts->x[i], pts->y[i], pts->z[i], x+1, y+1);
-	}
-	std::cout << "PBP count " << cz->CG.pbp_call_count << "\n";
+	int Nx = mat->M.ICount();
+	int Ny = mat->M.JCount();
+	//HMMPI::Mat A0 = mat->M.Reorder(0, 6, 0, 7);
+
+	std::cout << "Orig\n" << mat->M.ToString() << "\n";
+
+	HMMPI::Mat A = mat->M.Reorder(0, Nx, 0, Ny);
+	std::cout << "A\n" << A.ToString() << "\n";
+
+	HMMPI::Mat B = mat->M.Reorder(1, 2, 1, 2);
+	std::cout << "B\n" << B.ToString() << "\n";
+
+	HMMPI::Mat C = mat->M.Reorder(1, 4, 1, Ny);
+	std::cout << "C\n" << C.ToString() << "\n";
+
+	HMMPI::Mat D = mat->M.Reorder(0, Nx-1, 3, 4);
+	std::cout << "D\n" << D.ToString() << "\n";
+
 
 }
 //------------------------------------------------------------------------------------------

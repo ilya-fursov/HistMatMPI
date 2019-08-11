@@ -318,5 +318,69 @@ public:
 									// no MPI is used here, so make sure srand() seed is sync between ranks
 };
 //---------------------------------------------------------------------------
+// Model with arbitrary forward operator F(x), obj. func. = (F(x)-d0)^t * 1/C * (F(x)-d0)
+// C - diagonal covariance matrix (defined by its diagonal-vector)
+// Currently works only for LIMITS (not PARAMETERS) to avoid parameters casting to external representation
+class PM_Func : public PhysModel
+{
+protected:
+	int Npar;
+	std::vector<double> d0;				// data
+	std::vector<double> C;				// inverse of covariance diagonal
+
+	virtual std::vector<double> F(const std::vector<double> &par) const = 0;	// the forward operator, mapping vector to vector
+	virtual HMMPI::Mat dF(const std::vector<double> &par) const = 0;			// Jacobian of F (d0_dim * Npar)
+	virtual HMMPI::Mat dJk(const std::vector<double> &par, int k) const = 0;	// (d0_dim * Npar) matrix of derivatives of k-th column of Jacobian, dJk_ij = d2F_i / dx_k*dx_j
+
+public:
+	PM_Func(int param_dim, const std::vector<double> &data, const std::vector<double> &c);
+	PM_Func(Parser_1 *K, KW_item *kw, MPI_Comm c) : PhysModel(K, kw, c), Npar(0){};		// auxiliary CTOR
+	virtual ~PM_Func();
+	virtual double ObjFunc(const std::vector<double> &params);
+	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
+	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+
+	virtual int ParamsDim() const noexcept {return Npar;};
+	virtual size_t ModelledDataSize() const {return d0.size();};
+};
+//---------------------------------------------------------------------------
+// LINEAR model from MATVECVEC (for testing)
+class PM_Func_lin : public PM_Func
+{
+protected:
+	HMMPI::Mat G;			// the operator matrix
+
+	virtual std::vector<double> F(const std::vector<double> &par) const;	// forward operator
+	virtual HMMPI::Mat dF(const std::vector<double> &par) const;			// Jacobian
+	virtual HMMPI::Mat dJk(const std::vector<double> &par, int k) const;	// derivatives of k-th column of Jacobian
+public:
+	PM_Func_lin(Parser_1 *K, KW_item *kw, MPI_Comm c);		// easy constructor; all data are taken from keywords of "K"; "kw" is used only to handle prerequisites
+};
+//---------------------------------------------------------------------------
+// POWER model from MATVEC		TODO change!!
+// F(x)_i = a*(Si - S0)^b, where {a, b, S0} = x, Si = MAT_ij, column j is fixed, d0 = VEC, all Ci = 1
+// Npar = 3, and parameter min/max are defined in CTOR (however init values are taken from LIMITS)
+class PM_Func_pow : public PM_Func
+{
+private:
+	std::vector<double> min;		// 3-dim vectors to be used as bounds during optimization; filled in CTOR
+	std::vector<double> max;
+
+protected:
+	const double small;				// used in constraints definition
+	const double big;
+
+	std::vector<double> Si;			// j-th column of MAT
+
+	virtual std::vector<double> F(const std::vector<double> &par) const;	// forward operator
+	virtual HMMPI::Mat dF(const std::vector<double> &par) const;			// Jacobian
+	virtual HMMPI::Mat dJk(const std::vector<double> &par, int k) const;	// derivatives of k-th column of Jacobian
+public:
+
+	std::vector<double> get_min() const {return min;};
+	std::vector<double> get_max() const {return max;};
+	PM_Func_pow(Parser_1 *K, KW_item *kw, MPI_Comm c, int j);	// easy constructor; all data are taken from keywords of "K"; "kw" is used only to handle prerequisites
+};
+//---------------------------------------------------------------------------
 
 #endif /* CONCRETEPHYSMODELS_H_ */

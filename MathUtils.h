@@ -151,6 +151,7 @@ public:
 	friend Mat operator&&(const Mat &m1, const Mat &m2);	// returns extended matrix by appending "m2" to the right of "m1": [m1, m2]
 	friend Mat operator||(Mat m1, const Mat &m2);			// returns extended matrix by appending "m2" below "m1": [m1; m2]
 	Mat Reorder(const std::vector<int> &ordi, const std::vector<int> &ordj) const;	// creates matrix with indices from "ordi" and "ordj" (indices may be repeated)
+	Mat Reorder(int i0, int i1, int j0, int j1) const;		// creates a submatrix with indices [i0, i1)*[j0, j1)
 	Mat operator+(Mat m) const;				// *this + m; explicit RL associativity allows avoiding unnecessary copying, e.g. (a + (b + (c + d))) instead of a + b + c + d
 	Mat operator-(Mat m) const;				// *this - m
 	void operator+=(const Mat &m);			// *this += m
@@ -469,6 +470,7 @@ protected:
 	virtual double maxrpt(int i) const {return max[i];};
 public:
 
+	void OverrideBounds(const std::vector<double> &newmin, const std::vector<double> &newmax);	// overrides min, max after checking that dimensions are the same
 	virtual std::vector<double> fullmin() const {return min;};	// min & max - INTERNAL FULLDIM parameters
 	virtual std::vector<double> fullmax() const {return max;};
 	virtual std::vector<double> actmin() const {return min;};	// min & max - INTERNAL ACTIVE parameters
