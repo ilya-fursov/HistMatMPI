@@ -2,6 +2,7 @@
 #include "MathUtils.h"
 #include "MonteCarlo.h"
 #include "lapacke.h"
+#include "cblas.h"
 #include "sobol.hpp"
 #include <cstring>
 #include <iostream>
@@ -225,6 +226,8 @@ void Bcast_vector(double **v, int len1, int len2, int root, MPI_Comm comm)
 #endif
 }
 //------------------------------------------------------------------------------------------
+namespace ManualMath
+{
 double InnerProd(const std::vector<double> &a, const std::vector<double> &b)
 {
 	size_t len = a.size();
@@ -236,6 +239,16 @@ double InnerProd(const std::vector<double> &a, const std::vector<double> &b)
 		res += a[i]*b[i];
 
 	return res;
+}
+}
+//------------------------------------------------------------------------------------------
+double InnerProd(const std::vector<double> &a, const std::vector<double> &b)	// BLAS version
+{
+	size_t len = a.size();
+	if (b.size() != len)
+		throw Exception(stringFormatArr("Vector sizes do not match in InnerProd(vector({0:%zu}), vector({1:%zu}))", std::vector<size_t>{len, b.size()}));
+
+	return cblas_ddot(len, a.data(), 1, b.data(), 1);
 }
 //------------------------------------------------------------------------------------------
 std::vector<double> Vec_x_ay(std::vector<double> x, const std::vector<double> &y, double a)
@@ -429,14 +442,14 @@ void Mat::debug_output(const std::string &msg, const Mat *m) const
 	}
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat() : Vector2<double>(), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
+Mat::Mat() : Vector2<double>(), op_switch(2), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
 {
 #ifdef TESTING
 	std::cout << "Mat::Mat()" << std::endl;
 #endif
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat(size_t N) : Vector2<double>(N, N, 0), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
+Mat::Mat(size_t N) : Vector2<double>(N, N, 0), op_switch(2), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
 {
 	for (size_t i = 0; i < N; i++)
 		data[i*N + i] = 1;
@@ -446,28 +459,28 @@ Mat::Mat(size_t N) : Vector2<double>(N, N, 0), chol_spo_cache(0), dsytrf_cache(0
 #endif
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat(size_t I0, size_t J0, double val) : Vector2<double>(I0, J0, val), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
+Mat::Mat(size_t I0, size_t J0, double val) : Vector2<double>(I0, J0, val), op_switch(2), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
 {
 #ifdef TESTING
 	std::cout << "Mat::Mat(size_t I0, size_t J0, double val)" << std::endl;
 #endif
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat(std::vector<double> v, size_t I0, size_t J0) : Vector2<double>(std::move(v), I0, J0), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
+Mat::Mat(std::vector<double> v, size_t I0, size_t J0) : Vector2<double>(std::move(v), I0, J0), op_switch(2), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
 {
 #ifdef TESTING
 	std::cout << "Mat::Mat(std::vector<double> v, size_t I0, size_t J0), std::move(v)" << std::endl;
 #endif
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat(std::vector<double> v) : Vector2<double>(std::move(v), v.size(), 1), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
+Mat::Mat(std::vector<double> v) : Vector2<double>(std::move(v), v.size(), 1), op_switch(2), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
 {
 #ifdef TESTING
 	std::cout << "Mat::Mat(std::vector<double> v)" << std::endl;
 #endif
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat(const Mat &m) : Vector2<double>(m), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0), delim(m.delim)
+Mat::Mat(const Mat &m) : Vector2<double>(m), op_switch(m.op_switch), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0), delim(m.delim)
 {
 	if (m.chol_spo_cache != 0)
 	{
@@ -490,7 +503,7 @@ Mat::Mat(const Mat &m) : Vector2<double>(m), chol_spo_cache(0), dsytrf_cache(0),
 #endif
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat(Mat &&m) noexcept : Vector2<double>(std::move(m)), delim(m.delim)
+Mat::Mat(Mat &&m) noexcept : Vector2<double>(std::move(m)), op_switch(m.op_switch), delim(m.delim)
 {
 	chol_spo_cache = m.chol_spo_cache;
 	m.chol_spo_cache = 0;
@@ -523,6 +536,7 @@ const Mat &Mat::operator=(const Mat &m)
 #endif
 
 	Vector2<double>::operator=(m);
+	op_switch = m.op_switch;
 	delim = m.delim;
 
 	reset_chol_spo_cache();
@@ -560,6 +574,7 @@ const Mat &Mat::operator=(Mat &&m) noexcept	// TODO not much sure here
 #endif
 
 	Vector2<double>::operator=(std::move(m));
+	op_switch = m.op_switch;
 	delim = m.delim;
 
 	chol_spo_cache = m.chol_spo_cache;
@@ -598,6 +613,14 @@ void Mat::Deserialize(const double *v)
 	reset_chol_spo_cache();
 	reset_dsytrf_cache();
 	data = std::vector<double>(v, v + icount*jcount);
+}
+//------------------------------------------------------------------------------------------
+void Mat::SetOpSwitch(int s)						// sets op_switch
+{
+	if (s != 1 && s != 2)
+		throw Exception("Mat::SetOpSwitch requires s = 1 or 2");		// TODO check
+
+	op_switch = s;
 }
 //------------------------------------------------------------------------------------------
 void Mat::LoadASCII(FILE *f, int num)

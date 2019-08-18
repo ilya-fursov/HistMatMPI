@@ -44,7 +44,11 @@ void Bcast_vector(std::vector<std::vector<double>> &v, int root, MPI_Comm comm);
 void Bcast_vector(std::vector<std::vector<std::vector<double>>> &v, int root, MPI_Comm comm);	// MPI broadcast vector^3 from 'root' rank; memory allocation is done if needed
 void Bcast_vector(double **v, int len1, int len2, int root, MPI_Comm comm);			// MPI broadcast vector of vectors v[len1][len2] from 'root' rank; memory should be allocated IN ADVANCE
 
-double InnerProd(const std::vector<double> &a, const std::vector<double> &b);					// scalar product (a, b)
+namespace ManualMath
+{
+	double InnerProd(const std::vector<double> &a, const std::vector<double> &b);				// scalar product (a, b), manual
+}
+double InnerProd(const std::vector<double> &a, const std::vector<double> &b);					// scalar product (a, b), BLAS
 std::vector<double> Vec_x_ay(std::vector<double> x, const std::vector<double> &y, double a);	// x + ay
 std::vector<double> Vec_ax(std::vector<double> x, double a);									// ax
 
@@ -56,7 +60,7 @@ double Vec_pow_multiind(const std::vector<double> &v, const std::vector<int> &mi
 template <class RandomAccessIterator>
 std::vector<int> SortPermutation(RandomAccessIterator first, RandomAccessIterator last);	// sorts [first, last) - not via modification, but by returning the indices of permutation
 template <class FwdIterator, class T>
-FwdIterator FindBinary (FwdIterator first, FwdIterator last, const T &val);		// binary search of "val" in a SORTED range [first, last); returns iterator to the first found element == "val", returns "last" if not found
+FwdIterator FindBinary(FwdIterator first, FwdIterator last, const T &val);		// binary search of "val" in a SORTED range [first, last); returns iterator to the first found element == "val", returns "last" if not found
 template <class T>
 std::vector<T> Reorder(const std::vector<T> &v, const std::vector<int> &ord);	// creates vector from elements of "v" with indices from "ord" (indices may be repeated)
 template <class T>																		// treats "v" as row-major storage of M x N matrix, extracts ordi.size() x ordj.size() sub-matrix with indices "ordi", "ordj" (indices may be repeated)
@@ -94,6 +98,8 @@ void VecAppend(std::vector<T> &a, const std::vector<T> &b);						// append to th
 class Mat : public Vector2<double>
 {
 private:
+	int op_switch;								// 1 - use hand-written algorithms for some functions (e.g. operator*), 2 - use BLAS/LAPACK algorithms
+
 	mutable double *chol_spo_cache;				// cached values of Cholesky decomposition (upper triangle (lower = 0)); erased on every matrix change
 
 	mutable double *dsytrf_cache;				// cached values of DSYTRF decomposition (upper triangle (lower = 0)); erased on every matrix change
@@ -105,7 +111,7 @@ protected:
 	std::string delim = " \t\r\n";				// delimiters for parsing ASCII files
 	const std::string debug_file = "DEBUG_Output_Mat_r%d.txt";		// output to this file if LAPACK procedures fail; %d is for rank number
 
-	const double *chol_spo() const;				// performs and caches Cholesky decomposition U'*U of symmetric positive definite matrix [the upper triangle of *this is used]; uses DPOTRF
+	const double *chol_spo() const;				// [DPOTRF] performs and caches Cholesky decomposition U'*U of symmetric positive definite matrix [the upper triangle of *this is used]; uses DPOTRF
 	void cache_msg_to_file(const std::string &msg) const;			// debug output of 'msg' to file, SIMILAR to Cache<T>::MsgToFile()
 	void dsytrf(const double **A, const int **ipiv) const;			// performs and caches DSYTRF decomposition of symmetric matrix [the upper triangle of *this is used]
 
@@ -133,6 +139,7 @@ public:
 	const std::vector<double> &ToVector() const {return data;};		// return the underlying 'data' vector (const reference)
 	std::vector<double> &ToVectorMutable();							// return the underlying 'data' vector (reference)
 	virtual void Deserialize(const double *v);		// fills values from "v"; current "icount", "jcount" are used for size
+	void SetOpSwitch(int s);						// sets op_switch
 
 	// math
 	// when many operations are used in one line, try to maximize the number of rvalues to minimize copying
@@ -162,7 +169,7 @@ public:
 	Mat Chol() const;						// Cholesky decomposition, uses some simple handwritten code; the lower triangular part is referenced (and returned)
 	Mat CholSPO() const;					// Cholesky decomposition of Symmetric POsitive definite matrix [the upper triangle of *this is used]; the upper triangle is returned (lower = 0); uses DPOTRF
 	Mat InvSPO() const;						// inverse of Symmetric POsitive definite matrix [the upper triangle of *this is used]; uses DPOTRF, DPOTRI
-	Mat InvU() const;						// inverse of the upper triangular matrix [the upper triangle of *this is used]
+	Mat InvU() const;						// inverse of the upper triangular matrix [the upper triangle of *this is used]; uses DTRTRI
 	double LnDetSPO() const;				// ln(det) of Symmetric POsitive definite matrix [the upper triangle of *this is used]; uses DPOTRF
 	Mat InvSY() const;						// inverse of SYmmetric matrix [the upper triangle of *this is used]; uses DSYTRF, DSYTRI
 	double LnDetSY(int &sign) const;		// ln|det| of SYmmetric matrix [the upper triangle of *this is used]; sign(det) is also returned; uses DSYTRF

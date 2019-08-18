@@ -3712,7 +3712,7 @@ HMMPI::Mat PM_Func_pow::dJk(const std::vector<double> &par, int k) const	// deri
 		{
 			res(i, 0) = 0;
 			res(i, 1) = -1/(Si[i] - par[2]);
-			res(i, 2) = par[1]/((Si[i] - par[2])*(Si[i] - par[2]));
+			res(i, 2) = -par[1]/((Si[i] - par[2])*(Si[i] - par[2]));
 		}
 	}
 	else

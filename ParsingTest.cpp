@@ -435,22 +435,26 @@ void KW_rundebug::Run()
 
 	int Nx = mat->M.ICount();
 	int Ny = mat->M.JCount();
-	//HMMPI::Mat A0 = mat->M.Reorder(0, 6, 0, 7);
 
-	std::cout << "Orig\n" << mat->M.ToString() << "\n";
+	if (Nx != Ny)
+		throw HMMPI::Exception("Need a square matrix");
 
-	HMMPI::Mat A = mat->M.Reorder(0, Nx, 0, Ny);
-	std::cout << "A\n" << A.ToString() << "\n";
+	HMMPI::Mat A = mat->M;
+	for (int i = 0; i < 7; i++)
+		A = A || A;
+	std::vector<double> a = A.ToVector();
+	std::vector<double> b = (1e-5*A).ToVector();
 
-	HMMPI::Mat B = mat->M.Reorder(1, 2, 1, 2);
-	std::cout << "B\n" << B.ToString() << "\n";
+	std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now(), time2, time3;
+	std::cout << "Inner products\n1: ";
 
-	HMMPI::Mat C = mat->M.Reorder(1, 4, 1, Ny);
-	std::cout << "C\n" << C.ToString() << "\n";
+	printf("%.18g\n2: ", HMMPI::ManualMath::InnerProd(a, b));
+	time2 = std::chrono::high_resolution_clock::now();
 
-	HMMPI::Mat D = mat->M.Reorder(0, Nx-1, 3, 4);
-	std::cout << "D\n" << D.ToString() << "\n";
+	printf("%.18g\n", HMMPI::InnerProd(a, b));
+	time3 = std::chrono::high_resolution_clock::now();
 
-
+	K->AppText(HMMPI::stringFormatArr("Время-1 {0:%.3f} сек.\n\n", "CPU-1 {0:%.3f} sec.\n\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
+	K->AppText(HMMPI::stringFormatArr("Время-2 {0:%.3f} сек.\n\n", "CPU-2 {0:%.3f} sec.\n\n", std::chrono::duration_cast<std::chrono::duration<double>>(time3-time2).count()));
 }
 //------------------------------------------------------------------------------------------
