@@ -397,9 +397,8 @@ void KW_rundebug::Run()
 {
 	// test ...
 	Start_pre();
-	IMPORTKWD(mat, KW_mat, "MAT");
-	//IMPORTKWD(opt, KW_opt_config, "OPT_CONFIG");
-	//IMPORTKWD(limits, KW_limits, "LIMITS");
+	IMPORTKWD(datesW, KW_dates, "DATES");
+	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
 
 //	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
@@ -432,29 +431,19 @@ void KW_rundebug::Run()
 //		printf("%d\t%d\t%d\t-\t%.0f\t%.0f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y);
 //	}
 
+	std::vector<double> diff = datesW->zeroBased();
+	std::cout << "-----\n" << HMMPI::ToString(diff, "%.16g", "\n");
 
-	int Nx = mat->M.ICount();
-	int Ny = mat->M.JCount();
+	std::cout << HMMPI::Date("01/03/2019").ToString() << "\n";
+	std::cout << HMMPI::Date("01/03/2019 12:15").ToString() << "\n";
 
-	if (Nx != Ny)
-		throw HMMPI::Exception("Need a square matrix");
+	FILE *fd = fopen("smry_ascii_test.txt", "w");
+	eclsmry->get_Data().SaveToAscii(fd);
+	fclose(fd);
+	//std::cout << HMMPI::Date("01/03/2019 12").ToString() << "\n";
+	//std::cout << HMMPI::Date("01/03/2019 12:15.40").ToString() << "\n";
+	//std::cout << HMMPI::Date("01/03/2019 12:15:40:50").ToString() << "\n";
+	//std::cout << HMMPI::Date("01/03/2019 12:15 40:50").ToString() << "\n";
 
-	HMMPI::Mat A = mat->M;
-	for (int i = 0; i < 7; i++)
-		A = A || A;
-	std::vector<double> a = A.ToVector();
-	std::vector<double> b = (1e-5*A).ToVector();
-
-	std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now(), time2, time3;
-	std::cout << "Inner products\n1: ";
-
-	printf("%.18g\n2: ", HMMPI::ManualMath::InnerProd(a, b));
-	time2 = std::chrono::high_resolution_clock::now();
-
-	printf("%.18g\n", HMMPI::InnerProd(a, b));
-	time3 = std::chrono::high_resolution_clock::now();
-
-	K->AppText(HMMPI::stringFormatArr("Время-1 {0:%.3f} сек.\n\n", "CPU-1 {0:%.3f} sec.\n\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
-	K->AppText(HMMPI::stringFormatArr("Время-2 {0:%.3f} сек.\n\n", "CPU-2 {0:%.3f} sec.\n\n", std::chrono::duration_cast<std::chrono::duration<double>>(time3-time2).count()));
 }
 //------------------------------------------------------------------------------------------

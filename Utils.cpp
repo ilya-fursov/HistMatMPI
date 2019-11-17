@@ -12,12 +12,15 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <chrono>
+#include <thread>
 
 namespace HMMPI
 {
 
 std::string MessageRE::lang = "ENG";
 char TagPrintfValBase::buff[BUFFSIZE];
+const int barrier_sleep_ms = 500;			// for MPI_BarrierSleepy
 
 //------------------------------------------------------------------------------------------
 bool FileExists(const std::string &fname)
@@ -190,6 +193,15 @@ std::string ReplaceArr(std::string source, const std::vector<std::string> &find,
 	return res;
 }
 //------------------------------------------------------------------------------------------
+std::vector<const char *> vec_c_str_dodgy(const std::vector<std::string> &v)	// {string, string,...} -> {char*, char*,...}, DON'T use the resulting pointers once "v" is out of scope!
+{
+	std::vector<const char *> res(v.size(), NULL);
+	for (size_t i = 0; i < v.size(); i++)
+		res[i] = v[i].c_str();
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
 std::string Trim(const std::string &s, const std::string &trim_chars)		// removes "trim_chars" from left and right
 {
 	size_t first, last;
@@ -283,6 +295,19 @@ bool MPI_size_consistent()
 			sizeof(bool) == mpival_byte &&			// MPI_BYTE
 			sizeof(clock_t) == mpival_ulong &&		// MPI_UNSIGNED_LONG
 			sizeof(time_t) == mpival_long);			// MPI_LONG
+}
+//------------------------------------------------------------------------------------------
+void MPI_BarrierSleepy(MPI_Comm comm)		// A (less responsive) barrier which does not consume much CPU
+{
+	MPI_Request req;
+
+	int finished = 0;			// 'finished' will be set to TRUE 'simultaneously' on all procs once all procs hit "MPI_Ibarrier"
+	MPI_Ibarrier(comm, &req);
+	while (!finished)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(barrier_sleep_ms));
+		MPI_Test(&req, &finished, MPI_STATUS_IGNORE);
+	}
 }
 //------------------------------------------------------------------------------------------
 std::string MPI_Ranks(std::vector<MPI_Comm> vc)
@@ -475,21 +500,17 @@ void write_ascii(FILE *fd, const std::pair<std::string, std::string> &p)
 //------------------------------------------------------------------------------------------
 void write_bin(FILE *fd, const Date &d)
 {
-	fwrite(&d.Day, sizeof(d.Day), 1, fd);
-	fwrite(&d.Month, sizeof(d.Month), 1, fd);
-	fwrite(&d.Year, sizeof(d.Year), 1, fd);
+	d.write_bin(fd);
 }
 //------------------------------------------------------------------------------------------
 void read_bin(FILE *fd, Date &d)
 {
-	fread_check(&d.Day, sizeof(d.Day), 1, fd);
-	fread_check(&d.Month, sizeof(d.Month), 1, fd);
-	fread_check(&d.Year, sizeof(d.Year), 1, fd);
+	d.read_bin(fd);
 }
 //------------------------------------------------------------------------------------------
 void write_ascii(FILE *fd, const Date &d)
 {
-	fprintf(fd, "%02d/%02d/%04d\t", d.Day, d.Month, d.Year);
+	fprintf(fd, "%s\t", d.ToString().c_str());
 }
 //------------------------------------------------------------------------------------------	SPECIALIZATIONS
 template<>

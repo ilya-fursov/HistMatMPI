@@ -171,6 +171,7 @@ int main(int argc, char *argv[])
 
 		kw1.AddKW_item(new KW_parameters);
 		kw1.AddKW_item(new KW_parameters2);
+		kw1.AddKW_item(new KW_prior);
 		kw1.AddKW_item(new KW_templates);
 		kw1.AddKW_item(new KW_eclsmry);
 		kw1.AddKW_item(new KW_model);

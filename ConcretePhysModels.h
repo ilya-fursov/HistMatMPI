@@ -8,7 +8,7 @@
 #ifndef CONCRETEPHYSMODELS_H_
 #define CONCRETEPHYSMODELS_H_
 
-#define ECLFORMATTED		// for PhysModelHM: read eclipse summary in formatted form (FUNSMRY) | otherwise - read in binary form (UNSMRY)
+//#define ECLFORMATTED		// for PhysModelHM: read eclipse summary in formatted form (FUNSMRY) | otherwise - read in binary form (UNSMRY)
 #define DIAGCOV_1X1			// for PMEclipse: if all covariance blocks are diagonal, they are further split into elementary 1x1 blocks - for better data points balancing on the processors (MPI)
 
 //#define PUNQGRADS			// very adhoc code to read gradients from a specific Punq-S3 model
@@ -36,7 +36,7 @@ class RegListSpat;
 // Verbose logs and messages are produced for RNK = 0 (in the legacy version it was for write_log = true)
 // USER: define 'comm' with large groups to call PARALLEL SIMULATIONS
 //---------------------------------------------------------------------------
-class PhysModelHM : public PhysModel, public HMMPI::CorrelCreator, public HMMPI::StdCreator, public HMMPI::DataCreator
+class PhysModelHM : public Sim_small_interface, public HMMPI::CorrelCreator, public HMMPI::StdCreator, public HMMPI::DataCreator
 {
 private:
 	bool s_echo;				// variables for saving "state"
@@ -52,6 +52,7 @@ protected:
 	HMMPI::Vector2<int> index_arr;
 	int pet_seis_len;
 	mutable size_t modelled_data_size = 0;
+	bool ignore_small_errors;			// if 'true', exceptions != EObjFunc are intercepted in ObjFunc, and the main loop (simulation etc) is restarted; EObjFunc always leads to immediate termination
 
 	VectCorrList *VCL;		// shared between copies of PhysModelHM
 	RegListSpat *RLS;
@@ -93,7 +94,6 @@ public:
 	double f1, f2, f3, f4, f5;	// wells, SWAT, SGAS, k_apr, R2
 	int sign;					// åñëè -1, òî o.f. = -o.f.
 	static std::string uncert_dir;
-	bool ignore_small_errors;		// if 'true', exceptions != EObjFunc are intercepted in ObjFunc, and the main loop (simulation etc) is restarted; EObjFunc always leads to immediate termination
 	std::vector<Grid2D> pet_seis;	// perturbed seismic, size = Attr.size - 1
 
 	//std::vector<double> smry_long; --> became "ModelledData" after 24.05.2016		// all well data, with "inactive data" skipped
@@ -127,6 +127,10 @@ public:
 	virtual std::vector<HMMPI::Mat> CorrBlocks() const;		// N x N blocks, or N x 1 diagonals
 	virtual std::vector<double> Std() const;		// these sigmas (std's) are fully taken from TEXTSMRY, not from ECLVECTORS!
 	virtual std::vector<double> Data() const;		// data are taken only where sigma != 0, i.e. same vector length as ModelledData
+
+	virtual void set_ignore_small_errors(bool flag){ignore_small_errors = flag;};
+	virtual const HMMPI::SimSMRY *get_smry() const;
+	virtual bool is_sim() const {return true;};
 };
 //---------------------------------------------------------------------------
 // Reservoir Simulation model with a more clear code and interface
@@ -143,7 +147,7 @@ public:
 // E.g. with p1/p2/mod.data and p1/p2/poro.inc, inside "mod.data" use either INCLUDE poro.inc, or INCLUDE ../../p1/p2/poro.inc
 // Also, think over if some trick is necessary in orig_files.
 //---------------------------------------------------------------------------
-class PMEclipse : public PhysModel, public HMMPI::CorrelCreator, public HMMPI::StdCreator, public HMMPI::DataCreator
+class PMEclipse : public Sim_small_interface, public HMMPI::CorrelCreator, public HMMPI::StdCreator, public HMMPI::DataCreator
 {
 protected:
 	Parser_1 *K;
@@ -156,13 +160,15 @@ protected:
 
 	VectCorrList *VCL;				// shared between copies of PMEclipse
 
-	void write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry_mod, const HMMPI::Vector2<double> &smry_hist, const std::vector<double> &of_vec, bool text_sigma, bool only_hist = false);	// output summary data to ASCII file
-									// if "only_hist" == true, then "smry_mod", "of_vec" are not written (and can be empty)
-	void perturb_well();
-public:
 	bool ignore_small_errors;		// if 'true', exceptions != EObjFunc are intercepted in ObjFunc, and the main loop (simulation etc) is restarted; EObjFunc always leads to immediate termination
 									// also, if 'true', no log file (ObjFuncLog.txt) is written
 	HMMPI::SimSMRY *smry;			// model SMRY filled by the last call of ObjFunc()
+
+	void write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry_mod, const HMMPI::Vector2<double> &smry_hist, const std::vector<double> &of_vec, bool text_sigma, bool only_hist = false);	// output summary data to ASCII file
+									// if "only_hist" == true, then "smry_mod", "of_vec" are not written (and can be empty)
+	std::string form_prior(double &pr_of) const;		// if prior info is available, returns a message (and fills its value 'pr_of'); returns "" otherwise
+	void perturb_well();
+public:
 
 	PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c);		// all data are taken from keywords of "k"; "kw" is used only to handle prerequisites
 	PMEclipse(const PMEclipse &PM);											// copy constructor, increments VCL->ownerCount
@@ -178,6 +184,10 @@ public:
 	virtual std::vector<HMMPI::Mat> CorrBlocks() const;			// N x N blocks, or N x 1 diagonals; updates "cov_is_diag"
 	virtual std::vector<double> Std() const;		// these sigmas (std's) are fully taken from TEXTSMRY, not from ECLVECTORS!
 	virtual std::vector<double> Data() const;		// data are taken only where sigma != 0, i.e. same vector length as ModelledData
+
+	virtual void set_ignore_small_errors(bool flag){ignore_small_errors = flag;};
+	virtual const HMMPI::SimSMRY *get_smry() const {return smry;};
+	virtual bool is_sim() const {return true;};
 };
 //---------------------------------------------------------------------------
 // pConnect model:

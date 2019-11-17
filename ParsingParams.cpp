@@ -81,16 +81,15 @@ void KW_runForward::Run()
 	if (PM->GetComm() == MPI_COMM_SELF && K->MPI_rank != 0)		// if PM is not communicating, and WORLD-rank is not master, leave
 		return;
 
-	if (dynamic_cast<PhysModelHM*>(PM) != 0)					// one specific setting for PhysModelHM
-		dynamic_cast<PhysModelHM*>(PM)->ignore_small_errors = false;
-	if (dynamic_cast<PMEclipse*>(PM) != 0)						// one specific setting for PMEclipse
-		dynamic_cast<PMEclipse*>(PM)->ignore_small_errors = false;
+	Sim_small_interface *PMsim = dynamic_cast<Sim_small_interface*>(PM); 			// one specific setting for PhysModelHM, PMEclipse and their Posteriors
+	if (PMsim != nullptr && PMsim->is_sim())
+		PMsim->set_ignore_small_errors(false);
 
 	std::string msg = par_interface->msg();
 	std::vector<double> p = par_interface->get_init_act();
 	if (!PM->CheckLimits_ACT(p))
 	{
-		K->AppText("WARNING: " + PM->limits_msg);
+		K->AppText("WARNING: " + PM->get_limits_msg());
 		K->TotalWarnings++;
 	}
 	K->AppText("\n" + msg + "\n");
@@ -99,17 +98,6 @@ void KW_runForward::Run()
 
 	K->AppText(PM->ObjFuncMsg());
 	K->AppText(HMMPI::stringFormatArr("o.f. = {0:%-18.16g}\n", std::vector<double>{of}));
-
-#ifdef TESTCTOR
-	if (K->MPI_rank == 0)
-	{
-		K->AppText("Modelled data:\n");			// output modelled data
-		if (PM->ModelledDataSize() != 0)
-			K->AppText(HMMPI::ToString(PM->ModelledData(), "%8.5g"));
-		else
-			K->AppText("EMPTY\n");
-	}
-#endif
 
 	// DEBUG
 	if (K->MPI_rank == 0)
@@ -243,12 +231,12 @@ void KW_runSingle::Run()
 	DECLKWD(templ, KW_templates, "TEMPLATES");
 	Finish_pre();
 
-	PhysModel *PM = model->MakeModel(this, this->CWD);
-	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + model->type + "\n" + PM->proc_msg());
+	PhysModel *PM = model->MakeModel(this, this->CWD, true);		// make the posterior
+	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + "POSTERIOR(" + model->type + ")\n" + PM->proc_msg());
 
-	PMEclipse *PMecl = dynamic_cast<PMEclipse*>(PM);
-	if (PMecl != 0)								// one specific setting for PMEclipse
-		PMecl->ignore_small_errors = false;
+	Sim_small_interface *PMecl = dynamic_cast<Sim_small_interface*>(PM);
+	if (PMecl != nullptr && PMecl->is_sim())						// one specific setting for PMEclipse/posterior
+		PMecl->set_ignore_small_errors(false);
 
 #ifdef TEMPLATES_KEEP_NO_ASCII
 	templ->set_keep("FIRST");
@@ -258,7 +246,7 @@ void KW_runSingle::Run()
 	std::vector<double> p = parameters->get_init_act();
 	if (!PM->CheckLimits_ACT(p))
 	{
-		K->AppText("WARNING: " + PM->limits_msg);		// checking bounds
+		K->AppText("WARNING: " + PM->get_limits_msg());		// checking bounds
 		K->TotalWarnings++;
 	}
 	K->AppText("\n" + msg + "\n");
@@ -267,12 +255,12 @@ void KW_runSingle::Run()
 	K->AppText(PM->ObjFuncMsg());
 	K->AppText(HMMPI::stringFormatArr("o.f. = {0}\n\n", std::vector<double>{of}));
 
-	if (PMecl != 0)
+	if (PMecl != nullptr && PMecl->is_sim())
 	{
 		if (smry->GetState() == "")				// adding summary to ECLSMRY
 		{
 			K->AppText(HMMPI::MessageRE("Модель " + model->type + " добавляется в ECLSMRY\n", "Adding model " + model->type + " to ECLSMRY\n"));
-			std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->val, parameters->backval, PMecl->smry);
+			std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->val, parameters->backval, PMecl->get_smry());
 			std::string msg2 = smry->Save();
 			K->AppText(msg1);
 			K->AppText(msg2);
@@ -280,7 +268,6 @@ void KW_runSingle::Run()
 		else
 			K->AppText(HMMPI::MessageRE("ECLSMRY не задано, и не будет обновлено\n", "ECLSMRY is not defined, and will not be updated\n"));
 	}
-
 
 	// DEBUG
 //	K->AppText("ModelledData\n");						// DEBUG
@@ -307,20 +294,20 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 	if (model->type != "SIM")
 		throw HMMPI::Exception("Ожидается модель типа SIM", "Model of type SIM is expected");
 
-	PhysModel *PM = model->MakeModel(this, this->CWD);
-	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + model->type + "\n" + PM->proc_msg());
+	PhysModel *PM = model->MakeModel(this, this->CWD, true);		// make the posterior
+	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + "POSTERIOR(" + model->type + ")\n" + PM->proc_msg());
 	K->AppText(seq->msg());
 
-	PMEclipse *PMecl = dynamic_cast<PMEclipse*>(PM);
-	assert(PMecl != 0);
-	PMecl->ignore_small_errors = true;
+	Sim_small_interface *PMecl = dynamic_cast<Sim_small_interface*>(PM);
+	assert(PMecl != nullptr && PMecl->is_sim());
+	PMecl->set_ignore_small_errors(true);
 
 #ifdef TEMPLATES_KEEP_NO_ASCII
 	templ->set_keep("NONE");
 #endif
 
 	long long int seed = seq->seed;
-	std::vector<std::vector<double>> params(seq->N);		// will store internal representation, full-dim points
+	std::vector<std::vector<double>> params(seq->N);				// will store internal representation, full-dim points
 	if (seq->type == "SOBOL")
 		params = parameters->SobolSequence(seq->N, seed);
 	else if (seq->type == "RANDGAUSS")
@@ -338,7 +325,7 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 		K->AppText(HMMPI::stringFormatArr("o.f. = {0}\n", std::vector<double>{of}));
 
 		K->AppText(HMMPI::MessageRE("Модель " + model->type + " добавляется в ECLSMRY\n", "Adding model " + model->type + " to ECLSMRY\n"));
-		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(params[i]), parameters->backval, PMecl->smry);
+		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(params[i]), parameters->backval, PMecl->get_smry());
 		std::string msg2 = smry->Save();
 		K->AppText(msg1);
 		K->AppText(msg2);
@@ -377,7 +364,7 @@ KW_runOptProxy::KW_runOptProxy()
 //------------------------------------------------------------------------------------------
 void KW_runOptProxy::Run()
 {
-	// _NOTE_ Group property of iterations: [.][.] = [..] when intermediate PARAMETERS and Rk are properly selected, and LMstart = SIMBEST; for LMstart = CURR this does not generally holds
+	// _NOTE_ Group property of iterations: [.][.] = [..] when intermediate PARAMETERS and Rk are properly selected, and LMstart = SIMBEST; for LMstart = CURR this does not generally hold
 
 	// _NOTE_ When min/max change (-> params scaling changes), proxy behaviour changes because R is fixed (optimization behaviour may also depend on r0, rmin);
 	// min/max for different parameters should be selected in a balanced manner
@@ -401,7 +388,7 @@ void KW_runOptProxy::Run()
 		FILE *f = fopen(progress_file.c_str(), "w");
 		if (f != 0)
 		{
-			fprintf(f, "%-5.5s\t%-8.8s\t%-10.10s\t%-11.11s\t%-17.17s\t%-10.10s\t%-17.17s\t%-12.12s\t%-12.12s\n", "#MOD", "HOURS", "DX", "PROXY", "SIM", "Tk", "SIMBEST", "DIST_MIN", "DIST_AVG");
+			fprintf(f, "%-5.5s\t%-8.8s\t%-10.10s\t%-11.11s\t%-17.17s\t%-10.10s\t%-2.2s\t%-17.17s\t%-12.12s\t%-12.12s\n", "#MOD", "HOURS", "DX", "PROXY", "SIM", "Tk", "*", "SIMBEST", "DIST_MIN", "DIST_AVG");
 			fclose(f);
 		}
 	}
@@ -417,12 +404,13 @@ void KW_runOptProxy::Run()
 	if (model->type != "PROXY")
 		throw HMMPI::Exception("Ожидается модель типа PROXY", "Model of type PROXY is expected");
 
-	double simk = 0;			// simulator o.f. at starting point of each iteration
-	double Rk = 0;				// sphere/cube radius for restricted step; Rk == 0 means no restricted step
+	double simk = 0;					// simulator o.f. at starting point of each iteration
+	double Rk = 0;						// sphere/cube radius for restricted step; Rk == 0 means no restricted step
+	bool request_Rk_decr = false;		// 'true' if the previous iteration requested Rk to decrease; two such consecutive requests trigger the actual decrease
 	if (config->r0 > 0)
 		Rk = config->r0;
 
-	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + model->type + "\n");
+	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + "POSTERIOR(" + model->type + ")\n");
 	int finished = 0;
 	int iter = 0;
 	time_t t0, t1;
@@ -433,11 +421,11 @@ void KW_runOptProxy::Run()
 		if (Rk != 0)
 			model->R = model_R_cache * HMMPI::Min(Rk*10, 1);			// scale the correlation radius directly in the keyword		***** TODO HERE hardcoded factor "10", it could be set as a parameter from the control file
 
-		PhysModel *PMproxy = model->MakeModel(this, this->CWD);
-		PMEclipse *PMecl = dynamic_cast<PMEclipse*>(model->MakeModel(this, this->CWD, "SIM"));
+		PhysModel *PMproxy = model->MakeModel(this, this->CWD, true);	// make the posterior
+		Sim_small_interface *PMecl = dynamic_cast<Sim_small_interface*>(model->MakeModel(this, this->CWD, true, "SIM"));	// make the posterior
 		K->AppText(PMproxy->proc_msg());
-		assert(PMecl != 0);
-		PMecl->ignore_small_errors = true;
+		assert(PMecl != nullptr && PMecl->is_sim());
+		PMecl->set_ignore_small_errors(true);
 
 		if (iter == 0)
 		{
@@ -511,9 +499,17 @@ void KW_runOptProxy::Run()
 			Tk = (simk - of)/(qk - qk1);						// Tk is used to control the radius Rk
 
 			if (Tk < config->tau1)										// 0.25
-				Rk = HMMPI::Min(Rk, dX)/2;								// here take min(Rk, delta_k) to handle situations (x, x) when delta_k may become large
+			{
+				if (request_Rk_decr)									// check if the previous iteration also requested a decrease
+					Rk = HMMPI::Min(Rk, dX)/2;							// here take min(Rk, delta_k) to handle situations (x, x) when delta_k may become large
+
+				request_Rk_decr = !request_Rk_decr;
+			}
+			else
+				request_Rk_decr = false;								// forget any decrease request
+
 			//else if (Tk > config->tau2 && Opt->restrict_choice == 2)	// version before 25.02.2018. Found an example where the search was stuck in a local minimum, Tk >> 1, optimization finishes in the starting point (f1), and Rk cannot increase
-			else if (Tk > config->tau2)									// 0.75
+			if (Tk > config->tau2)										// 0.75
 				Rk *= 2;
 
 			if (Rk < config->rmin)
@@ -531,9 +527,9 @@ void KW_runOptProxy::Run()
 		time3 = std::chrono::high_resolution_clock::now();
 		K->AppText(HMMPI::stringFormatArr("\nРасчет SIM ({0:%.3f} сек)\n",
 										  "\nSIM calculation ({0:%.3f} sec)\n", std::chrono::duration_cast<std::chrono::duration<double>>(time3-time2).count()));
-		K->AppText(HMMPI::stringFormatArr("Целевая функция = {0}\n", "Objective function = {0}\n", of));
+		K->AppText(HMMPI::stringFormatArr("Целевая функция (posterior) = {0:%.8g}\n", "Objective function (posterior) = {0:%.8g}\n", of));
 
-		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(p), parameters->backval, PMecl->smry);
+		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(p), parameters->backval, PMecl->get_smry());
 		std::string msg2 = smry->Save();
 		time4 = std::chrono::high_resolution_clock::now();
 		K->AppText(HMMPI::stringFormatArr("Модель SIM добавляется в ECLSMRY  ({0:%.3f} сек)\n",
@@ -551,8 +547,9 @@ void KW_runOptProxy::Run()
 			FILE *f = fopen(progress_file.c_str(), "a");
 			if (f != 0)
 			{
-				fprintf(f, "%-5d\t%-8.3g\t%-10.5g\t%-11.6g\t%-17.12g\t%-10.5g\t%-17.12g\t%-12.6g\t%-12.6g\n",
-						int(smry->get_Data().total_models()), difftime(t1, t0)/double(3600), dX, qk1, of, Tk, of_simbest, smry->get_Data().Xmin, smry->get_Data().Xavg);
+				fprintf(f, "%-5d\t%-8.3g\t%-10.5g\t%-11.6g\t%-17.12g\t%-10.5g\t%-2.2s\t%-17.12g\t%-12.6g\t%-12.6g\n",
+						int(smry->get_Data().total_models()), difftime(t1, t0)/double(3600), dX, qk1, of, Tk, (request_Rk_decr ? "*" : " "),
+							of_simbest, smry->get_Data().Xmin, smry->get_Data().Xavg);
 				fclose(f);
 			}
 		}
@@ -561,8 +558,8 @@ void KW_runOptProxy::Run()
 		if (finished && K->MPI_rank == 0)
 		{
 			PMecl->WriteLimits(simbest, params_log_file);
-			K->AppText(HMMPI::stringFormatArr("\nНаилучшая целевая функция для SIM = {0}\n",
-											  "\nBest found SIM objective function = {0}\n", of_simbest));
+			K->AppText(HMMPI::stringFormatArr("\nНаилучшая целевая функция для SIM (posterior) = {0:%.8g}\n",
+											  "\nBest found SIM objective function (posterior) = {0:%.8g}\n", of_simbest));
 		}
 
 		delete Opt;
@@ -933,7 +930,7 @@ void KW_runGrad::Run()
 	std::vector<double> p = par_interface->get_init_act();
 	if (!PM->CheckLimits_ACT(p))
 	{
-		K->AppText("WARNING: " + PM->limits_msg);
+		K->AppText("WARNING: " + PM->get_limits_msg());
 		K->TotalWarnings++;
 	}
 
@@ -1033,7 +1030,7 @@ void KW_runJac::Run()
 	std::vector<double> p = par_interface->get_init_act();
 	if (!PM->CheckLimits_ACT(p))
 	{
-		K->AppText("WARNING: " + PM->limits_msg);
+		K->AppText("WARNING: " + PM->get_limits_msg());
 		K->TotalWarnings++;
 	}
 
@@ -1184,7 +1181,7 @@ void KW_runcalcwellcovar::Run()
 	size_t Ndates = textsmry->data.ICount();
 
 	// find average time step
-	std::vector<int> dates = datesW->zeroBased();
+	std::vector<double> dates = datesW->zeroBased();
 	if (dates.size() != Ndates)
 		throw HMMPI::Exception("(eng) KW_runcalcwellcovar::Run", "Inconsistent sizes of dates arrays from TEXTSMRY and DATES in KW_runcalcwellcovar::Run");
 
@@ -1193,7 +1190,7 @@ void KW_runcalcwellcovar::Run()
 		hav += dates[i] - dates[i-1];
 	hav /= (Ndates - 1);			// step with which covariance C will be defined
 
-	int LastInt = int(((double)dates[Ndates-1])/hav + 0.5);
+	int LastInt = int((dates[Ndates-1])/hav + 0.5);
 	size_t Nint = LastInt + 1;		// number of intervals/points where C will be defined
 
 	HMMPI::Vector2<double> res(Nint, Nvect);

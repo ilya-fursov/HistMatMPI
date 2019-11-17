@@ -256,7 +256,7 @@ public:
 
 	VectCorrEntry();
 	~VectCorrEntry();
-	void FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<int> &tm, double R, HMMPI::Func1D *func);	// ind - vector index in ECLVECTORS, tm - zero-based time (days), R - variogram range in days, func - 1D corr. function
+	void FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, HMMPI::Func1D *func);	// ind - vector index in ECLVECTORS, tm - zero-based time (days), R - variogram range in days, func - 1D corr. function
 					// C, L, sigma, sz, count are filled
 	void Linv_v(const std::vector<double> &v, std::vector<double> &dest) const;
 	void L_v(const std::vector<double> &v, std::vector<double> &dest) const;
@@ -275,7 +275,7 @@ public:
 	std::vector<double> of1;				// objective function for each vector
 
 	VectCorrList();
-	void LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<int> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D*> F);
+	void LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D*> F);
 	double PerturbData(HMMPI::Vector2<double> &smry, HMMPI::RandNormal *rn, double sigma1);	// возмущения добавляются к истории smry, здесь надо использовать textsmry->pet_dat
 																				// возвращает noise'*C*noise для критерия хи-2
 																				// sigma1 - сомножитель для сигм, идущий из w1

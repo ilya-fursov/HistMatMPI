@@ -13,6 +13,7 @@
 #include "mpi.h"
 #include "Parsing.h"
 #include "Parsing2.h"
+#include "EclSMRY.h"
 
 //#define TESTCOMM
 
@@ -59,7 +60,7 @@ PhysModel::~PhysModel()
 {
 #ifdef TESTCTOR
 	std::ofstream testf(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{RNK}), std::ios::app);
-	testf << "rank " << RNK << ", PhysModel -- DTOR --, this = " << this << "\n";
+	testf << "rank " << RNK << ", PhysModel -- DTOR --, this = " << this << ", name = " << name << "\n";
 	testf.close();
 #endif
 }
@@ -400,7 +401,7 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		mngd_ptr->push_back(new HMMPI::ManagedComm(this_comm));
 		mngd_ptr->push_back(new HMMPI::ManagedComm(next_comm));
 	}
-	if (Type == "LAGRSPHER" || Type == "SPHERICAL" || Type == "CUBEBOUND" || Type == "HAMILTONIAN" || Type == "POSTERIOR")
+	if (Type == "LAGRSPHER" || Type == "SPHERICAL" || Type == "CUBEBOUND" || Type == "HAMILTONIAN" || Type == "POSTERIOR" || Type == "POSTERIOR_DIAG")
 		next_comm = this_comm;
 
 	if (Type == "PROXY" || Type == "DATAPROXY" || Type == "DATAPROXY2")
@@ -450,8 +451,8 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		kw->Start_pre();
 		kw->Add_pre("MODEL");
 		kw->Finish_pre();
-
-		Res = model->MakeModel(kw, cwd, "PROXY");			// NOTE: "Res" will be deleted automatically; MPI_COMM_WORLD is always used here (internally)
+																	// make PM_SimProxy
+		Res = model->MakeModel(kw, cwd, false, "PROXY");			// NOTE: "Res" will be deleted automatically; MPI_COMM_WORLD is always used here (internally)
 	}
 	if (Type == "LIN")
 		Res = new PM_Linear(K, kw, this_comm);
@@ -472,6 +473,18 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		kw->Finish_pre();
 
 		Res = new PM_Posterior(ref, matvec->M, matvec->v1);
+	}
+	if (Type == "POSTERIOR_DIAG")
+	{
+		DECLKWD(prior, KW_prior, "PRIOR");
+		kw->Start_pre();
+		kw->Add_pre("PRIOR");
+		kw->Add_pre("PARAMETERS");
+		kw->Finish_pre();
+
+		std::vector<double> m, cov;
+		prior->Mean_Cov(m, cov);
+		Res = new PM_PosteriorDiag(ref, cov, m);
 	}
 	if (Type == "LAGRSPHER" || Type == "SPHERICAL" || Type == "CUBEBOUND" || Type == "HAMILTONIAN")
 	{
@@ -944,14 +957,6 @@ int PhysModMPI::ParamsDim() const noexcept
 	return PM->ParamsDim();
 }
 //---------------------------------------------------------------------------
-bool PhysModMPI::CheckLimits(const std::vector<double> &params) const
-{
-	bool res = PM->CheckLimits(params);
-	limits_msg = PM->limits_msg;
-
-	return res;
-}
-//---------------------------------------------------------------------------
 size_t PhysModMPI::ModelledDataSize() const
 {
 	return PM->ModelledDataSize();
@@ -1094,9 +1099,9 @@ PhysModGradNum::PhysModGradNum(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *
 	}
 	else							// PARAMETERS case
 	{
-		//const double const_dh = 1e-5;		// TODO original
+		const double const_dh = 1e-5;		// TODO original
 		//const double const_dh = 1e-4;
-		const double const_dh = 1e-6;
+		//const double const_dh = 1e-6;
 		dh = std::vector<double>(init.size(), const_dh);
 		dh_type = std::vector<std::string>(init.size(), "CONST");
 		K->AppText(HMMPI::stringFormatArr("NUMGRAD: взяты dh = {0}, dh_type = CONST\n", "NUMGRAD: using dh = {0}, dh_type = CONST\n", const_dh));
@@ -2368,9 +2373,10 @@ void PM_FullHamiltonian::nums_starts_to_file(FILE *f)
 //---------------------------------------------------------------------------
 // PM_Posterior
 //---------------------------------------------------------------------------
-PM_Posterior::PM_Posterior(PhysModel *pm, HMMPI::Mat C, HMMPI::Mat d) : PhysModel(pm->GetComm()), copy_PM(nullptr), PM(pm), Cpr(std::move(C)), dpr(std::move(d))			// comm = PM->comm, con = PM->con (copy as ParamsInterface)
+PM_Posterior::PM_Posterior(PhysModel *pm, HMMPI::Mat C, HMMPI::Mat d, const bool is_posterior_diag) : Sim_small_interface(pm->GetComm()), copy_PM(nullptr), PM(pm), Cpr(std::move(C)), dpr(std::move(d))			// comm = PM->comm, con = PM->con (copy as ParamsInterface)
 {
-	if ((int)Cpr.ICount() != PM->ParamsDim() || (int)Cpr.JCount() != PM->ParamsDim() || (int)dpr.ICount() != PM->ParamsDim() || dpr.JCount() != 1)
+	if ((int)Cpr.ICount() != PM->ParamsDim() || ((int)Cpr.JCount() != PM->ParamsDim() && (int)Cpr.JCount() != 1) ||
+		(int)dpr.ICount() != PM->ParamsDim() || dpr.JCount() != 1)
 	{
 		char msg[HMMPI::BUFFSIZE];
 		sprintf(msg, "Inconsistent dimensions in PM_Posterior::PM_Posterior -- Cpr[%zu x %zu], dpr[%zu x %zu], ParamsDim = %d", Cpr.ICount(), Cpr.JCount(), dpr.ICount(), dpr.JCount(), PM->ParamsDim());
@@ -2388,10 +2394,11 @@ PM_Posterior::PM_Posterior(PhysModel *pm, HMMPI::Mat C, HMMPI::Mat d) : PhysMode
 	act_ind = par->get_act_ind();
 	tot_ind = par->get_tot_ind();
 
-	invCpr = Cpr.InvSY();
+	if (!is_posterior_diag)
+		invCpr = Cpr.InvSY();
 }
 //---------------------------------------------------------------------------
-PM_Posterior::PM_Posterior(const PM_Posterior &p) : PhysModel(p), Cpr(p.Cpr), dpr(p.dpr), invCpr(p.invCpr)		// copy CTOR will copy PM if it is PM_Proxy*, and will borrow the pointer otherwise
+PM_Posterior::PM_Posterior(const PM_Posterior &p) : Sim_small_interface(p), Cpr(p.Cpr), dpr(p.dpr), invCpr(p.invCpr)		// copy CTOR will copy PM if it is PM_Proxy*, and will borrow the pointer otherwise
 {
 	PM_Proxy *proxy = dynamic_cast<PM_Proxy*>(p.PM);
 	if (proxy != nullptr)
@@ -2429,6 +2436,7 @@ double PM_Posterior::ObjFunc(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
+	assert(Cpr.ICount() == Cpr.JCount());
 
 	double res = PM->ObjFunc(params);
 	if (rank == 0)
@@ -2445,6 +2453,7 @@ std::vector<double> PM_Posterior::ObjFuncGrad(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
+	assert(Cpr.ICount() == Cpr.JCount());
 
 	HMMPI::Mat res = PM->ObjFuncGrad(params);
 	if (rank == 0)
@@ -2457,6 +2466,7 @@ HMMPI::Mat PM_Posterior::ObjFuncHess(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
+	assert(Cpr.ICount() == Cpr.JCount());
 
 	HMMPI::Mat res = PM->ObjFuncHess(params);
 	if (rank == 0)
@@ -2469,6 +2479,7 @@ HMMPI::Mat PM_Posterior::ObjFuncFisher(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
+	assert(Cpr.ICount() == Cpr.JCount());
 
 	HMMPI::Mat res = PM->ObjFuncFisher(params);
 	if (rank == 0)
@@ -2480,6 +2491,11 @@ HMMPI::Mat PM_Posterior::ObjFuncFisher(const std::vector<double> &params)
 HMMPI::Mat PM_Posterior::ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r)
 {
 	return PM->ObjFuncFisher_dxi(params, i, r);		// prior component is zero matrix
+}
+//---------------------------------------------------------------------------
+void PM_Posterior::WriteLimits(const std::vector<double> &p, std::string fname) const
+{
+	PM->WriteLimits(p, fname);
 }
 //---------------------------------------------------------------------------
 int PM_Posterior::ParamsDim() const noexcept
@@ -2508,6 +2524,7 @@ std::string PM_Posterior::proc_msg() const
 //---------------------------------------------------------------------------
 void PM_Posterior::correct_of_grad(const std::vector<double> &params, double &y, std::vector<double> &grad) const		// subtracts the prior component from the 'full posterior' y, grad; needed for training PROXY inside POSTERIOR based on POSTERIOR data
 {
+	assert(Cpr.ICount() == Cpr.JCount());
 	HMMPI::Mat r = HMMPI::Mat(params) - dpr;
 	HMMPI::Mat work = invCpr*r;
 	y -= InnerProd(work, r);
@@ -2559,6 +2576,160 @@ std::vector<int> PM_Posterior::Data_ind() const
 		throw HMMPI::Exception("PM should be PM_DataProxy in PM_Posterior::Data_ind");
 
 	return pr->Data_ind();
+}
+//---------------------------------------------------------------------------
+void PM_Posterior::set_ignore_small_errors(bool flag)		// delegates to PM, if PM can do this
+{
+	Sim_small_interface *sim = dynamic_cast<Sim_small_interface*>(PM);
+	if (sim != nullptr)
+		sim->set_ignore_small_errors(flag);
+	else
+		throw HMMPI::Exception("Not appropriate underlying model in PM_Posterior::set_ignore_small_errors()");
+}
+//---------------------------------------------------------------------------
+const HMMPI::SimSMRY *PM_Posterior::get_smry() const		// delegates to PM, if PM can do this
+{
+	const Sim_small_interface *sim = dynamic_cast<const Sim_small_interface*>(PM);
+	if (sim != nullptr)
+		return sim->get_smry();
+	else
+		throw HMMPI::Exception("Not appropriate underlying model in PM_Posterior::get_smry()");
+}
+//---------------------------------------------------------------------------
+bool PM_Posterior::is_sim() const							// delegates to PM, if PM can do this		TODO check nested case POST-POST-...
+{
+	const Sim_small_interface *sim = dynamic_cast<const Sim_small_interface*>(PM);
+	if (sim != nullptr)
+		return sim->is_sim();
+	else
+		return false;
+}
+//---------------------------------------------------------------------------
+// PM_PosteriorDiag
+//---------------------------------------------------------------------------
+// comm = PM->comm, con = PM->con (copy as ParamsInterface), C_diag = {N*1}
+PM_PosteriorDiag::PM_PosteriorDiag(PhysModel *pm, const HMMPI::Mat &C_diag, HMMPI::Mat d) : PM_Posterior(pm, C_diag, std::move(d), true), c_pr(C_diag.ToVector(), true)
+{
+	if (Cpr.JCount() != 1)
+	{
+		char msg[HMMPI::BUFFSIZE];
+		sprintf(msg, "Cpr.jcount (%zu) should equal 1 in PM_PosteriorDiag::PM_PosteriorDiag", Cpr.JCount());	// TODO test
+		throw HMMPI::Exception(msg);
+	}
+
+	name = "PosteriorDiag";
+	invCpr = Cpr;
+	for (size_t i = 0; i < invCpr.ICount(); i++)
+		if (invCpr(i, 0) != 0)
+			invCpr(i, 0) = 1/invCpr(i, 0);
+
+	if (dynamic_cast<PMEclipse*>(PM) != nullptr)
+		dynamic_cast<PMEclipse*>(PM)->set_post_diag_owner(this);
+}
+//---------------------------------------------------------------------------
+PM_PosteriorDiag::PM_PosteriorDiag(const PM_PosteriorDiag &p) : PM_Posterior(p), c_pr(p.c_pr), prior_contrib(p.prior_contrib)	// copy CTOR will copy PM if it is PM_Proxy*,
+{																																// and will borrow the pointer otherwise
+	// TODO: not a very clean solution below: PMEclipse loses link with the previous owner
+	//	if (dynamic_cast<PMEclipse*>(PM) != nullptr)
+	//		dynamic_cast<PMEclipse*>(PM)->set_post_diag_owner(this);
+}
+//---------------------------------------------------------------------------
+PM_PosteriorDiag::~PM_PosteriorDiag()
+{
+#ifdef TESTCTOR
+	std::ofstream testf(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{RNK}), std::ios::app);
+	testf << "rank " << RNK << ", PM_PosteriorDiag -- DTOR --, this = " << this << "\n";
+	testf.close();
+#endif
+}
+//---------------------------------------------------------------------------
+double PM_PosteriorDiag::ObjFunc(const std::vector<double> &params)
+{
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	double res = 0;
+	if (rank == 0)
+	{
+		HMMPI::Mat r = HMMPI::Mat(params) - dpr;
+		HMMPI::Mat Cr = invCpr.ToVector() % r;
+		res += InnerProd(Cr, r);
+		prior_contrib = (Cr.ToVector() % r).ToVector();
+	}
+
+	res += PM->ObjFunc(params);
+	if (rank == 0)
+		modelled_data = PM->ModelledData();
+
+	return res;
+}
+//---------------------------------------------------------------------------
+std::vector<double> PM_PosteriorDiag::ObjFuncGrad(const std::vector<double> &params)
+{
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	HMMPI::Mat res = PM->ObjFuncGrad(params);
+	if (rank == 0)
+		res += 2*(invCpr.ToVector() % (HMMPI::Mat(params) - dpr));
+
+	return res.ToVector();
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_PosteriorDiag::ObjFuncHess(const std::vector<double> &params)
+{
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	HMMPI::Mat res = PM->ObjFuncHess(params);
+	if (rank == 0)
+	{
+		const size_t N = invCpr.ICount();
+		assert(res.ICount() == N && res.JCount() == N);
+		for (size_t i = 0; i < N; i++)
+			res(i, i) += 2*invCpr(i, 0);
+	}
+
+	return res;
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_PosteriorDiag::ObjFuncFisher(const std::vector<double> &params)								//  not implemented
+{
+	throw HMMPI::Exception("Illegal call to PM_PosteriorDiag::ObjFuncFisher");
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_PosteriorDiag::ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r)		//  not implemented
+{
+	throw HMMPI::Exception("Illegal call to PM_PosteriorDiag::ObjFuncFisher_dxi");
+}
+//---------------------------------------------------------------------------
+std::string PM_PosteriorDiag::proc_msg() const
+{
+	int count_nonzeros = 0;
+	for (size_t i = 0; i < Cpr.ICount(); i++)
+		if (Cpr(i, 0) != 0)
+			count_nonzeros++;
+
+	std::string res_pr = HMMPI::stringFormatArr("** Информативное априорное распределение: {0:%d} параметр(ов)\n",
+												"** Informative prior: {0:%d} parameter(s)\n", count_nonzeros);
+	std::string res_lik = std::string("** Likelihood: ") + PM->name;
+	std::string res_2 = PM->proc_msg();
+	if (res_2 != "")
+		res_lik += ", " + res_2;
+	else
+		res_lik += "\n";
+
+	return res_pr + res_lik;
+}
+//---------------------------------------------------------------------------
+void PM_PosteriorDiag::correct_of_grad(const std::vector<double> &params, double &y, std::vector<double> &grad) const	// subtracts the prior component from the 'full posterior' y, grad; needed for training PROXY inside POSTERIOR based on POSTERIOR data
+{																			// TODO not tested!
+	HMMPI::Mat r = HMMPI::Mat(params) - dpr;
+	HMMPI::Mat work = invCpr.ToVector() % r;
+	y -= InnerProd(work, r);
+
+	if (grad.size() != 0)
+		grad = (HMMPI::Mat(grad) - 2*work).ToVector();
 }
 //---------------------------------------------------------------------------
 // VM_gradient

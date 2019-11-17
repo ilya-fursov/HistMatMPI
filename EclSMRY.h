@@ -31,17 +31,27 @@ enum KwdType{INTE, REAL, DOUB, CHAR, LOGI};			// keyword type
 //--------------------------------------------------------------------------------------------------
 struct Date											// 'time coordinate' of the modelled data
 {
+protected:
 	int Day;
 	int Month;
 	int Year;
+	double sec;				// seconds
 
-	Date() {Day = Month = Year = 0;};
-	Date(const std::string &s);						// accepted 's' formats: DD.MM.YYYY, DD/MM/YYYY
-	Date(int d, int m, int y) : Day(d), Month(m), Year(y) {};
-	bool operator==(const Date &rhs) const {return Day == rhs.Day && Month == rhs.Month && Year == rhs.Year;};
+public:
+	Date() {Day = Month = Year = 0; sec = 0.0;};
+	Date(const std::string &s);						// accepted 's' formats: DD.MM.YYYY, DD/MM/YYYY, optionally followed by " hh:mm::ss" or " hh:mm"
+	Date(int d, int m, int y, double s = 0) : Day(d), Month(m), Year(y), sec(s) {};
+	bool operator==(const Date &rhs) const {return Day == rhs.Day && Month == rhs.Month && Year == rhs.Year && sec == rhs.sec;};
 	bool operator>(const Date &rhs) const;
 	bool operator<(const Date &rhs) const {return !(*this > rhs) && !(*this == rhs);};
+	double get_sec() const {return sec;};
+
 	std::string ToString() const;
+	void write_bin(FILE *fd) const;
+	void read_bin(FILE *fd);
+
+	static void parse_date_time(const std::string s, std::string delim, int &D, int &M, int &Y);	// can parse both DD.MM.YYYY, DD/MM/YYYY and hh:mm::ss
+																									// if the last item ("YYYY" or "ss") is empty, then Y = 0
 };
 //--------------------------------------------------------------------------------------------------
 class SmryKwd			// base class for storing 'header(name, type) + data'
@@ -120,10 +130,11 @@ public:
 	Mat ExtractSummary(const std::vector<Date> &dates1, std::vector<pair> vecs1, std::string &msg_dat, std::string &msg_vec, std::string suff = "") const;	// extracts summary, as defined by [dates1 x vecs1],
 										// fills summary with "0" where dates1[*] or vecs1[*] are not found in this->dates, this->vecs
 										// before searching vectors, attaches "suff" (e.g. "H", "S") to vecs1[*].second, making e.g. WBHP+H, WWCT+S
-										// "msg_dat", "msg_vec" return info about non-found dates and vectors
+										// "msg_dat", "msg_vec" return info about not-found dates and vectors
 };
 //--------------------------------------------------------------------------------------------------
 // class for reading binary *.SMSPEC, *.UNSMRY
+// TODO currently doesn't work with hours, minutes, seconds
 //--------------------------------------------------------------------------------------------------
 class EclSMRY : public SimSMRY
 {
@@ -177,7 +188,7 @@ private:
 	std::vector<int> ind_dates;					// indices of dates (timesteps) as defined in *.meta; increasing order
 	std::vector<int> ind_obj;					// indices of objects (wells) as defined in *.meta; increasing order
 	std::vector<int> ecl_prop_ind;				// indices of Eclipse properties as defined in *.meta; increasing order
-	std::vector<T_ecl_prop_transform> ecl_prop_transform;	// transforms corresponding to 'ecl_prop_ind' (eclipse names [WBHP etc] are included here)
+	std::vector<T_ecl_prop_transform> ecl_prop_transform;		// transforms corresponding to 'ecl_prop_ind' (eclipse names [WBHP etc] are included here)
 	int prop_N;					// number of entries in [properties] (incl. -1); filled by read_meta(); used for consistency checks
 
 	void ecl_prop_transform_check() const;		// consistency check
@@ -200,7 +211,7 @@ public:
 	const tNavSMRY &operator=(const tNavSMRY &p);
 	virtual SimSMRY *Copy() const;						// _DELETE_ in the end!
 	virtual void ReadFiles(std::string modname);		// reads summary from "modname_well.meta", "modname_well.res"
-	void dump_all(std::string fname);					// dump contents to ASCII file (for debug)
+	void dump_all(std::string fname) const;				// dump contents to ASCII file (for debug)
 	virtual std::string dates_file() const;				// name of file with dates
 	virtual std::string vecs_file() const;				// name of file with vecs
 	virtual std::string data_file() const;				// name of file with data
@@ -269,6 +280,13 @@ public:
 															// all input and "output" is only referenced on comm-RANKS-0
 															// the function returns a non-empty message if the added model was popped out (NOTE: even in this case 'par_names' get updated)
 															// the function also fills Xmin, Xavg
+	std::string AddSimProxyFile(const SimProxyFile *smry_0);	// appends the proxy file 'smry_0' to 'this'
+																// currently, both proxy files should contain 1 block, and have the same parameters names, same dates and vecs
+																// all input and "output" is only referenced on comm-RANKS-0
+																// models from 'smry_0' which are too close to the existing models, are skipped (similar to AddModel())
+																// the function returns a message counting the added/skipped models
+																// Xmin, Xavg are not updated
+
 	void PopModel();								// pops the last added model; *NOTE* 'par_names' is not changed!; should be called on all ranks
 	void SaveToBinary(const std::string &fname) const;			// saves to binary file (only comm-RANKS-0 is working, but call it on all ranks)
 	std::string LoadFromBinary(const std::string &fname);		// loads from binary file, returns a short message; only comm-RANKS-0 is working, but "fname" should be sync on all ranks
@@ -286,7 +304,7 @@ public:
 
 	std::string models_params_msg() const;			// message about number of models and parameters (comm-RANKS-0 only)
 	void set_par_tran(const ParamsTransform *pt) {par_tran = pt;};
-	int total_models() const {return block_ind.size();};	// current number of models in proxy
+	int total_models() const {return block_ind.size();};	// current number of models in SimProxyFile
 };
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------

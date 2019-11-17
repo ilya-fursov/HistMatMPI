@@ -6,6 +6,7 @@
  */
 
 #include <iostream>
+#include <algorithm>
 #include <fstream>
 #include <cassert>
 #include <algorithm>
@@ -2314,6 +2315,28 @@ void KW_parameters::check_names() noexcept
 			SilentError(HMMPI::stringFormatArr("Параметр не может иметь имя '{0:%s}'", "Parameter cannot have name '{0:%s}'", name[i]));
 }
 //------------------------------------------------------------------------------------------
+void KW_parameters::check_backvals() noexcept			// check symbolic backvals
+{
+	std::vector<std::string> uniq = HMMPI::Unique(backval);
+	std::vector<std::string> notfound;
+	for (size_t i = 0; i < uniq.size(); i++)
+	{
+		bool is_num = false;
+		HMMPI::StoD(uniq[i], is_num);		// is_num = true if whole string is a number
+		if (!is_num)						// symbolic backval
+		{
+			const auto it = std::find(name.begin(), name.end(), uniq[i]);		// returns "last" if not found
+			const size_t ind = it - name.begin();
+			if (ind >= name.size())
+				notfound.push_back("'" + uniq[i] + "'");
+		}
+	}
+	if (notfound.size() > 0)
+		SilentError((std::string)HMMPI::MessageRE("Некоторые выражения из backval не были найдены в основном списке параметров: ",
+												  "Some expressions from backval have not been found in the main parameters list: ") +
+												  HMMPI::ToString(HMMPI::vec_c_str_dodgy(notfound), "%s", ", "));
+}
+//------------------------------------------------------------------------------------------
 void KW_parameters::fill_norm_logmin() noexcept
 {
 	logmin = min;
@@ -2332,8 +2355,14 @@ void KW_parameters::fill_norm_logmin() noexcept
 //------------------------------------------------------------------------------------------
 void KW_parameters::UpdateParams() noexcept
 {
+	// replace backvals = "" by 0's
+	for (auto &s : backval)
+		if (s == "")
+			s = "0";
+
 	count_active();
 	check_names();
+	check_backvals();
 
 	// check signs
 	char buff[HMMPI::BUFFSIZE], buffrus[HMMPI::BUFFSIZE];
@@ -2375,6 +2404,9 @@ void KW_parameters::UpdateParams() noexcept
 
 	K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("Активных параметров: {0:%zu}/{1:%zu}\n",
 													   "Active parameters: {0:%zu}/{1:%zu}\n"), std::vector<size_t>{act_ind.size(), tot_ind.size()}));
+	DECLKWD(prior, KW_prior, "PRIOR");
+	if (prior->GetState() == "")
+		prior->SetState(HMMPI::MessageRE("PRIOR должно быть перезагружено после чтения PARAMETERS\n", "PRIOR should be reloaded after reading PARAMETERS\n"));
 }
 //------------------------------------------------------------------------------------------
 KW_parameters::KW_parameters() : ln10(log(10)), reserved_names({"", "MOD", "PATH", "RANK", "SIZE"})
@@ -2656,6 +2688,105 @@ KW_parameters2::KW_parameters2() : KW_parameters()
 	KW_multparams::name = "PARAMETERS2";
 }
 //------------------------------------------------------------------------------------------
+// KW_prior
+//------------------------------------------------------------------------------------------
+void KW_prior::UpdateParams() noexcept	// count non-weak prior parameters, check validity
+{
+	DECLKWD(params, KW_parameters, "PARAMETERS");
+	try
+	{
+		Start_pre();
+		Add_pre("PARAMETERS");
+		Finish_pre();
+	}
+	catch (const HMMPI::Exception &e)
+	{
+		SilentError(e.what());
+	}
+
+	std::string dup;
+	if (HMMPI::FindDuplicate(names, dup))
+		SilentError(HMMPI::stringFormatArr("Найден повторяющийся параметр {0:%s}",
+									  	   "Duplicate parameter found: {0:%s}", dup));
+
+	inds_in_params = HMMPI::GetSubvecInd(params->name, names);
+	std::vector<std::string> not_found = HMMPI::SubvecNotFound(names, inds_in_params);
+	if (not_found.size() > 0)
+		SilentError(HMMPI::stringFormatArr("В PRIOR найдены параметры, которых нет в PARAMETERS: {0:%s}",
+										   "Some parameters specified in PRIOR are absent in PARAMETERS: {0:%s}",
+										   HMMPI::ToString(HMMPI::vec_c_str_dodgy(not_found), "%s", ", ")));
+	// check std > 0
+	std::vector<std::string> negs, zeros;
+	for (size_t i = 0; i < std.size(); i++)
+	{
+		if (std[i] == 0)
+			zeros.push_back(names[i]);
+		if (std[i] < 0)
+			negs.push_back(names[i]);
+	}
+	if (negs.size() > 0)
+	{
+		SilentError(HMMPI::stringFormatArr("Заданы отрицательные 'std' для {0:%zu} параметр(ов):\n",
+										   "Negative 'std' is specified for {0:%zu} parameter(s):\n", negs.size()) +
+										   HMMPI::ToString(HMMPI::vec_c_str_dodgy(negs), "%s", ", "));
+	}
+	if (zeros.size() > 0)
+	{
+		K->AppText(HMMPI::stringFormatArr("ПРЕДУПРЕЖДЕНИЕ: Заданы нулевые 'std' для {0:%zu} параметр(ов), для них будет использоваться неинформативное априорное распределение:\n",
+										  "WARNING: Zero 'std' is specified for {0:%zu} parameter(s), uninformative prior will be used for them:\n", zeros.size()) +
+										  HMMPI::ToString(HMMPI::vec_c_str_dodgy(zeros), "%s", ", "));
+		K->TotalWarnings++;
+	}	// TODO check numerically!
+
+	if (GetState() == "")
+		K->AppText(HMMPI::stringFormatArr("Задано информативное априорное распределение для {0:%zu} парамер(ов)\n",
+										  "Informative prior for {0:%zu} parameter(s) was specified\n", names.size() - zeros.size()));
+}
+//------------------------------------------------------------------------------------------
+KW_prior::KW_prior()
+{
+	name = "PRIOR";
+
+	DEFPARMULT(names);
+	DEFPARMULT(mean);
+	DEFPARMULT(std);
+
+	FinalizeParams();
+}
+//------------------------------------------------------------------------------------------
+void KW_prior::Mean_Cov(std::vector<double> &m, std::vector<double> &cov) 	// returns full-dim vectors "C_diag", "d" for PM_PosteriorDiag CTOR
+{																			// they will correspond to the internal representation
+	Start_pre();
+	IMPORTKWD(params, KW_parameters, "PARAMETERS");
+	Finish_pre();
+
+	const size_t N = params->init.size();
+	cov = m = std::vector<double>(N, 0.0);
+
+	HMMPI::VecAssign(cov, inds_in_params, std);
+	HMMPI::VecAssign(m, inds_in_params, mean);
+
+	// scale to internal representation						TODO check that scaling does not affect the result
+	for (size_t i = 0; i < N; i++)
+		if (params->func[i] == "LIN")
+		{
+			double norm = params->max[i] - params->min[i];
+			m[i] = (m[i] - params->min[i])/norm;
+			cov[i] /= norm;
+		}
+		else if (params->func[i] == "EXP")
+		{
+			double norm = log10(params->max[i]) - log10(params->min[i]);
+			m[i] = (m[i] - log10(params->min[i]))/norm;
+			cov[i] /= norm;
+		}
+		else
+			throw HMMPI::Exception("Incorrect PARAMETERS.func in KW_prior::Mean_Cov");
+
+	for (auto &x : cov)		// std -> covariance
+		x = x*x;
+}
+//------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
 void KW_dates::UpdateParams() noexcept
 {
@@ -2664,15 +2795,13 @@ void KW_dates::UpdateParams() noexcept
 	dates.resize(D.size());
 	for (size_t i = 0; i < dates.size(); i++)
 	{
-		dates[i].Day = D[i];
-		dates[i].Month = M[i];
-		dates[i].Year = Y[i];
+		dates[i] = HMMPI::Date(D[i], M[i], Y[i], h[i]*3600 + m[i]*60 + s[i]);
 
 		if (i > 0 && !(dates[i] > dates[i-1]))
 		{
 			char buff[HMMPI::BUFFSIZE], buffeng[HMMPI::BUFFSIZE];
-			sprintf(buff, "Нарушено возрастание дат: %02d/%02d/%d и %02d/%02d/%d", dates[i-1].Day, dates[i-1].Month, dates[i-1].Year, dates[i].Day, dates[i].Month, dates[i].Year);
-			sprintf(buffeng, "Dates are not increasing: %02d/%02d/%d and %02d/%02d/%d", dates[i-1].Day, dates[i-1].Month, dates[i-1].Year, dates[i].Day, dates[i].Month, dates[i].Year);
+			sprintf(buff, "Нарушено возрастание дат: %s и %s", dates[i-1].ToString().c_str(), dates[i].ToString().c_str());
+			sprintf(buffeng, "Dates are not increasing: %s and %s", dates[i-1].ToString().c_str(), dates[i].ToString().c_str());
 			SilentError(HMMPI::MessageRE(buff, buffeng));
 		}
 	}
@@ -2689,13 +2818,18 @@ KW_dates::KW_dates()
 	DEFPARMULT(M);
 	DEFPARMULT(Y);
 
+	DEFPARMULT(h);
+	DEFPARMULT(m);
+	DEFPARMULT(s);
+
 	FinalizeParams();
 }
 //------------------------------------------------------------------------------------------
-std::vector<int> KW_dates::zeroBased()
+std::vector<double> KW_dates::zeroBased()
 {
 	size_t count = D.size();
-	std::vector<int> res(count);
+	assert(dates.size() == count);
+	std::vector<double> res(count);
 	if (count != 0)
 	{
 		std::vector<int> MLEN{0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};	// length of months
@@ -2705,6 +2839,7 @@ std::vector<int> KW_dates::zeroBased()
 			int deltaD = D[i] - D[0];
 			int deltaM = MLEN[M[i]-1] - MLEN[M[0]-1];
 			int deltaY = (Y[i] - Y[0])*365;
+			double deltaSec = (dates[i].get_sec() - dates[0].get_sec())/86400;
 
 			// count leap years
 			int leap1 = Y[0]/4;
@@ -2714,7 +2849,7 @@ std::vector<int> KW_dates::zeroBased()
 			if (Y[i]%4 == 0 && M[i] <= 2)
 				leap2--;
 
-			res[i] = deltaD + deltaM + deltaY + leap2-leap1;
+			res[i] = deltaD + deltaM + deltaY + leap2-leap1 + deltaSec;
 		}
 	}
 
@@ -2981,16 +3116,16 @@ void KW_proxy_dump::UpdateParams() noexcept
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
-KW_model::KW_model() : _proxy_params(), mod(0)
+KW_model::KW_model() : _proxy_params(), mod(0), mod_post_sim(0), mod_post_proxy(0)
 {
 	name = "MODEL";
 
 	DEFPAR(type, "SIM");
 	DEFPAR(simulator, "ECL");
 	DEFPAR(R, 1.0);
-	DEFPAR(trend, 1);
+	DEFPAR(trend, 0);
 	DEFPAR(cfunc, "GAUSS");
-	DEFPAR(nu, 2.5);
+	DEFPAR(nu, 3.5);
 	DEFPAR(nugget, 0.0);
 
 	init_pts = 1;
@@ -3006,10 +3141,13 @@ KW_model::KW_model() : _proxy_params(), mod(0)
 KW_model::~KW_model()
 {
 	delete mod;
+	delete mod_post_sim;
+	delete mod_post_proxy;
 }
 //------------------------------------------------------------------------------------------
-PhysModel *KW_model::MakeModel(KW_item *kw, std::string cwd, std::string Type)
+PhysModel *KW_model::MakeModel(KW_item *kw, std::string cwd, bool is_posterior, std::string Type)	// the returned model is DELETED AUTOMATICALLY by DTOR
 {
+	// First, generate the internal model
 	PhysModel *res = 0;
 	if (Type == "Default")
 		Type = type;
@@ -3038,7 +3176,36 @@ PhysModel *KW_model::MakeModel(KW_item *kw, std::string cwd, std::string Type)
 	else
 		throw HMMPI::Exception("Wrong model type in KW_model::MakeModel");
 
-	return res;
+	if (Type == "SIM")
+	{
+		delete mod_post_sim;
+		mod_post_sim = 0;
+	}
+	else
+	{
+		delete mod_post_proxy;
+		mod_post_proxy = 0;
+	}
+
+	if (!is_posterior)
+		return res;
+
+	// Second, generate the posterior if requested
+	DECLKWD(prior, KW_prior, "PRIOR");
+	kw->Start_pre();
+	kw->Add_pre("PRIOR");
+	kw->Finish_pre();
+
+	std::vector<double> d, C_diag;
+	prior->Mean_Cov(d, C_diag); 	// [internal] full-dim vectors for PM_PosteriorDiag CTOR
+	PM_PosteriorDiag *res_post = new PM_PosteriorDiag(res, C_diag, d);
+
+	if (Type == "SIM")
+		mod_post_sim = res_post;
+	else
+		mod_post_proxy = res_post;
+
+	return res_post;
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -3407,7 +3574,7 @@ HMMPI::MCMC *KW_MCMC_config::MakeSampler(KW_item *kw)
 	{
 		delete Sampler;
 		Sampler = 0;
-		throw HMMPI::Exception(PM_main->limits_msg);
+		throw HMMPI::Exception(PM_main->get_limits_msg());
 	}
 
 	return Sampler;
@@ -3572,7 +3739,8 @@ KW_physmodel::KW_physmodel()
 
 	FinalizeParams();
 
-	EXPECTED[0] = std::vector<std::string>{"ECLIPSE", "SIMECL", "PCONNECT", "CONC", "SIMPROXY", "LIN", "ROSEN", "FUNC_LIN", "FUNC_POW", "NUMGRAD", "PROXY", "DATAPROXY", "DATAPROXY2", "KRIGCORR", "KRIGSIGMA", "LAGRSPHER", "SPHERICAL", "CUBEBOUND", "HAMILTONIAN", "POSTERIOR"};
+	EXPECTED[0] = std::vector<std::string>{"ECLIPSE", "SIMECL", "PCONNECT", "CONC", "SIMPROXY", "LIN", "ROSEN", "FUNC_LIN", "FUNC_POW",
+		"NUMGRAD", "PROXY", "DATAPROXY", "DATAPROXY2", "KRIGCORR", "KRIGSIGMA", "LAGRSPHER", "SPHERICAL", "CUBEBOUND", "HAMILTONIAN", "POSTERIOR", "POSTERIOR_DIAG"};
 }
 //------------------------------------------------------------------------------------------
 void KW_physmodel::UpdateParams() noexcept

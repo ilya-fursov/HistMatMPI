@@ -473,10 +473,18 @@ Mat::Mat(std::vector<double> v, size_t I0, size_t J0) : Vector2<double>(std::mov
 #endif
 }
 //------------------------------------------------------------------------------------------
-Mat::Mat(std::vector<double> v) : Vector2<double>(std::move(v), v.size(), 1), op_switch(2), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
+// initialize N x 1 "matrix" equal to vector "v" _OR_ N x N diagonal matrix with diagonal "v"
+Mat::Mat(const std::vector<double> &v, bool IsDiag) : Vector2<double>(v, v.size(), 1), op_switch(2), chol_spo_cache(0), dsytrf_cache(0), dsytrf_ipiv(0)
 {
+	if (IsDiag)
+	{
+		const size_t N = v.size();
+		*this = Mat(N, N, 0.0);
+		for (size_t i = 0; i < N; i++)
+			data[i*N + i] = v[i];
+	}
 #ifdef TESTING
-	std::cout << "Mat::Mat(std::vector<double> v)" << std::endl;
+	std::cout << "Mat::Mat(const std::vector<double> &v, bool IsDiag)" << std::endl;
 #endif
 }
 //------------------------------------------------------------------------------------------
@@ -618,7 +626,7 @@ void Mat::Deserialize(const double *v)
 void Mat::SetOpSwitch(int s)						// sets op_switch
 {
 	if (s != 1 && s != 2)
-		throw Exception("Mat::SetOpSwitch requires s = 1 or 2");		// TODO check
+		throw Exception("Mat::SetOpSwitch requires s = 1 or 2");
 
 	op_switch = s;
 }
@@ -980,12 +988,18 @@ void Mat::operator-=(const Mat &m)
 		data[i] -= pm[i];
 }
 //------------------------------------------------------------------------------------------
-double InnerProd(const Mat &a, const Mat &b)
+double InnerProd(const Mat &a, const Mat &b)	// (a, b), inner product of two vectors; using Manual | BLAS depending on 'a.op_switch'
 {
 	if (a.jcount != 1 || b.jcount != 1 || a.icount != b.icount)
 		throw Exception(stringFormatArr("Inner product should be applied to vectors of equal size ({0:%zu} != 1 || {1:%zu} != 1 || {2:%zu} != {3:%zu})", std::vector<size_t>{a.jcount, b.jcount, a.icount, b.icount}));
 
-	return InnerProd(a.data, b.data);
+	const int swtch = a.GetOpSwitch();
+	if (swtch == 1)
+		return ManualMath::InnerProd(a.data, b.data);
+	else if (swtch == 2)
+		return InnerProd(a.data, b.data);
+	else
+		throw Exception("Bad a.op_switch in InnerProd(Mat, Mat)");
 }
 //------------------------------------------------------------------------------------------
 Mat OuterProd(const Mat &a, const Mat &b)
@@ -1073,7 +1087,7 @@ Mat operator%(Mat m, const std::vector<double> &v)	// Mat * diag
 Mat Mat::operator*(const Mat &m) const		// *this * Mat
 {
 	if (jcount != m.icount)
-		throw Exception("Inconsistent dimensions in Mat::operator*");
+		throw Exception("Inconsistent dimensions in Mat::operator*(Mat)");
 
 	size_t sz_I = icount;
 	size_t sz_J = m.jcount;
@@ -1095,6 +1109,30 @@ Mat Mat::operator*(const Mat &m) const		// *this * Mat
 		}
 
 	return res;
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> Mat::operator*(const std::vector<double> &v) const		// *this * v, using Manual | BLAS depending on 'op_switch'
+{
+	if (jcount != v.size())
+		throw Exception("Inconsistent dimensions in Mat::operator*(vector)");
+
+	if (op_switch == 1)
+	{
+		Mat res = (*this)*Mat(v);
+		return res.ToVector();
+	}
+	else if (op_switch == 2)
+	{
+		std::vector<double> res(icount);
+		const int lda = jcount;
+		const double alpha = 1;
+		const double beta = 0;
+		cblas_dgemv(CblasRowMajor, CblasNoTrans, icount, jcount, alpha, data.data(), lda, v.data(), 1, beta, res.data(), 1);
+
+		return res;
+	}
+	else
+		throw Exception("Bad op_switch in Mat::operator*(vector)");
 }
 //------------------------------------------------------------------------------------------
 Mat operator/(Mat A, Mat b)

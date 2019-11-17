@@ -105,6 +105,7 @@ std::string ToUpper(const std::string &s);				// converts string to uppercase
 std::string Replace(const std::string &source, const std::string &find, const std::string &repl, int *count = NULL);	// in 'source', replaces all occurrences of 'find' with 'repl'; replacements count is ADDED to "count" if the latter is not NULL
 std::string ReplaceArr(std::string source, const std::vector<std::string> &find, const std::vector<std::string> &repl, int *count = NULL);	// in 'source', replaces all occurrences of 'find[i]' with 'repl[i]'
 																																			// replacements count is ADDED to "count" if the latter is not NULL
+std::vector<const char *> vec_c_str_dodgy(const std::vector<std::string> &v);	// {string, string,...} -> {char*, char*,...}, DON'T use the resulting pointers once "v" is out of scope!
 std::string Trim(const std::string &s, const std::string &trim_chars);		// removes "trim_chars" from left and right
 std::string EraseSubstr(std::string s, const std::string &substr);			// erases all substrings 'substr' from 's'
 std::vector<std::string> ParseEclChar(const std::string &s);							// gets array of tokens {a1, a2, a3,..} from a string "'a1'  'a2'  'a3' ..." (CHAR entries in eclipse formatted output)
@@ -118,6 +119,7 @@ std::string getFile(std::string fullname);			// get 'file' from 'path+file'
 //------------------------------------------------------------------------------------------
 bool MPI_size_consistent();		// checks consistency of type sizes: 'size_t' -- MPI_UNSIGNED_LONG
 								// 'char' -- MPI_CHAR, 'bool' -- MPI_BYTE
+void MPI_BarrierSleepy(MPI_Comm comm);		// A (less responsive) barrier which does not consume much CPU
 std::string MPI_Ranks(std::vector<MPI_Comm> vc);	// get a string containing the ranks of each process (row) for each communicator in 'vc' (column)
 													// non-empty result is returned to RANK-0 of MPI_COMM_WORLD; to be called on MPI_COMM_WORLD
 int FileModCompare(std::string f1, std::string f2);	// returns -1 if modification time mt(f1) < mt(f2),
@@ -155,9 +157,11 @@ void write_ascii(FILE *fd, const std::vector<T, A> &v);
 void write_bin(FILE *fd, const std::string &s);									// auxiliary overloads for string
 void read_bin(FILE *fd, std::string &s);
 void write_ascii(FILE *fd, const std::string &s);
+
 void write_bin(FILE *fd, const std::pair<std::string, std::string> &p);			// auxiliary overloads for pair<string, string>
 void read_bin(FILE *fd, std::pair<std::string, std::string> &p);
 void write_ascii(FILE *fd, const std::pair<std::string, std::string> &p);
+
 struct Date;
 void write_bin(FILE *fd, const Date &d);										// auxiliary overloads for Date
 void read_bin(FILE *fd, Date &d);

@@ -33,6 +33,8 @@ class KW_item;
 //---------------------------------------------------------------------------
 class PhysModel : public HMMPI::ManagedObject
 {
+private:
+
 protected:
 	MPI_Comm comm = MPI_COMM_SELF;			// this communicator should be as minimal as possible to avoid unnecessary communication
 											// in most cases it's set to MPI_COMM_SELF by default
@@ -43,13 +45,12 @@ protected:
 	std::vector<int> act_ind;			// indices of active params within full-dim params; 0 <= act_ind[i] < ParamsDim; size = dimension of active parameters
 	std::vector<int> tot_ind;			// indices of full-dim params within active params; 0 <= tot_ind[i] < dimension of active parameters, or tot_ind[i] = -1; size = ParamsDim
 	const HMMPI::BoundConstr *con;		// object for checking constraints, see CheckLimits()
-
 	std::vector<double> modelled_data;	// vector of modelled data (ordered in some way); this is supposed to be filled, if possible, by ObjFunc()
+	mutable std::string limits_msg;		// message optionally created by CheckLimits()
 
 public:
 	std::string name;					// model name -- mostly for debug purposes
 	HMMPI::Mat DataSens;				// sensitivity matrix of modelled data, indexed as (ind_data, fulldim_ind_param); this is supposed to be filled, if possible, by ObjFuncGrad()
-	mutable std::string limits_msg;		// message optionally created by CheckLimits()
 
 	PhysModel(MPI_Comm c = MPI_COMM_SELF);
 	PhysModel(std::vector<double> in, std::vector<int> act, std::vector<int> tot, const HMMPI::BoundConstr *c);
@@ -80,7 +81,7 @@ public:
 	virtual bool CheckLimitsEps(std::vector<double> &params, const double eps) const;	// works as CheckLimits, but allows small violations 'eps'; where these violations take place, 'params' is adjusted
 	bool FindIntersect(const std::vector<double> &x0, const std::vector<double> &x1, std::vector<double> &xint, double &alpha, int &i) const;		// works like CheckLimits(x1), but also finds the intersection point if bounds are violated, see Constraints::FindIntersect
 	bool FindIntersect_ACT(const std::vector<double> &x0, const std::vector<double> &x1, std::vector<double> &xint, double &alpha, int &i) const;	// version which only works with active parameters (this concerns the three vectors and 'i')
-	virtual void WriteLimits(const std::vector<double> &p, std::string fname) const final;		// write parameters 'p' to file 'fname'
+	virtual void WriteLimits(const std::vector<double> &p, std::string fname) const;			// write parameters 'p' to file 'fname'
 	virtual void WriteLimits_ACT(const std::vector<double> &p, std::string fname) const final;	// write active parameters 'p' to file 'fname'
 	virtual int ParamsDim() const noexcept = 0;										// dimension of parameters space
 	int ParamsDim_ACT() const noexcept;												// dimension of active parameters
@@ -99,6 +100,7 @@ public:
 	MPI_Comm GetComm() const {return comm;};							// get communicator
 	const HMMPI::BoundConstr *GetConstr() const {return con;};			// get constraints
 	virtual std::string proc_msg() const {return "";};					// meaningful message - for PM_Proxy and its descendants; SHOULD BE CALLED ON ALL RANKS!
+	virtual std::string get_limits_msg() const {return limits_msg;};
 	virtual bool is_proxy() const {return false;};
 	virtual bool is_dataproxy() const {return false;};
 };
@@ -170,11 +172,11 @@ public:
 
 	// the following functions simply wrap the corresponding functions of "PM"; no Bcast over "comm" is done (to avoid MPI deadlocking)
 	virtual int ParamsDim() const noexcept;									// no Bcast -- make sure PM->ParamsDim produces correct results on all ranks in MPI_COMM_WORLD
-	virtual bool CheckLimits(const std::vector<double> &params) const;		// no Bcast -- make sure PM->CheckLimits produces correct results on all ranks in MPI_COMM_WORLD
 	virtual size_t ModelledDataSize() const;								// no Bcast -- make sure PM->ModelledDataSize produces correct results on all ranks in MPI_COMM_WORLD
 	virtual void PerturbData() {PM->PerturbData();};				// all ranks do the same job
 	virtual void SavePMState() {PM->SavePMState();};				// all ranks do the same job
 	virtual void RestorePMState() {PM->RestorePMState();};			// all ranks do the same job
+	virtual std::string get_limits_msg() const {return PM->get_limits_msg();};
 };
 //---------------------------------------------------------------------------
 // PhysModGradNum - wrapper class which can calculate gradients, Hessians, and data sensitivities numerically
@@ -380,16 +382,39 @@ public:
 	virtual Proxy_train_interface *Copy() const = 0;			// _DELETE_ in the end!
 };
 //---------------------------------------------------------------------------
-// This model adds the Gaussian prior term (x - x0)' * C^(-1) * (x - x0) to the underlying likelihood 'PM'
+// Sim_small_interface - common base class for the simulation models and PM_Posterior
+//---------------------------------------------------------------------------
+namespace HMMPI
+{
+	class SimSMRY;
+}
+class PM_PosteriorDiag;
+class Sim_small_interface : public PhysModel
+{
+protected:
+	const PM_PosteriorDiag *outer_post_diag;	// if (*this) is owned by some PM_PosteriorDiag, then 'outer_post_diag' points to the owner
+
+public:
+	Sim_small_interface(Parser_1 *K, KW_item *kw, MPI_Comm c) : PhysModel(K, kw, c), outer_post_diag(0) {};
+	Sim_small_interface(const Sim_small_interface &PM) : PhysModel(PM), outer_post_diag(0) {};
+	Sim_small_interface(MPI_Comm c) : PhysModel(c), outer_post_diag(0) {};
+
+	virtual void set_ignore_small_errors(bool flag) = 0;
+	virtual const HMMPI::SimSMRY *get_smry() const = 0;
+	virtual bool is_sim() const = 0;			// TRUE if the simulation model is around
+	void set_post_diag_owner(const PM_PosteriorDiag *pd){outer_post_diag = pd;};
+};
+//---------------------------------------------------------------------------
+// PM_Posterior: this model adds the Gaussian prior term (x - x0)' * C^(-1) * (x - x0) to the underlying likelihood 'PM'
 // Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
 // comm = PM->comm is taken;
 // 'modelled_data' is filled from PM, 'DataSens' is not filled.
 // If PM is PROXY, then PM_Posterior can delegate to it the training procedures.
 //---------------------------------------------------------------------------
-class PM_Posterior : public PhysModel, public Proxy_train_interface
+class PM_Posterior : public Sim_small_interface, public Proxy_train_interface
 {
 private:
-	PhysModel *copy_PM;					// filled by copy ctor, to free memory in the end
+	PhysModel *copy_PM;					// filled by COPY ctor, to free memory in the end
 
 protected:
 	PhysModel *PM;						// core PhysModel (likelihood)
@@ -397,7 +422,7 @@ protected:
 	HMMPI::Mat invCpr;					// Cpr^(-1)
 
 public:
-	PM_Posterior(PhysModel *pm, HMMPI::Mat C, HMMPI::Mat d);	// comm = PM->comm, con = PM->con (copy as ParamsInterface)
+	PM_Posterior(PhysModel *pm, HMMPI::Mat C, HMMPI::Mat d, const bool is_posterior_diag = false);	// comm = PM->comm, con = PM->con (copy as ParamsInterface), 'is_posterior_diag' = true if PM_PosteriorDiag is to be created further
 	PM_Posterior(const PM_Posterior &p);						// copy CTOR will copy PM if it is PM_Proxy*, and will borrow the pointer otherwise
 	virtual ~PM_Posterior();			// deletes 'con'
 	virtual double ObjFunc(const std::vector<double> &params);
@@ -405,12 +430,14 @@ public:
 	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);
+	virtual void WriteLimits(const std::vector<double> &p, std::string fname) const;
 	virtual int ParamsDim() const noexcept;
 	virtual size_t ModelledDataSize() const;
 	virtual std::string ObjFuncMsg() const;
 	virtual std::string proc_msg() const;
-	const HMMPI::Mat &cov_prior() const {return Cpr;};
-	void correct_of_grad(const std::vector<double> &params, double &y, std::vector<double> &grad) const;	// subtracts the prior component from the 'full posterior' y, grad; needed for training PROXY inside POSTERIOR based on POSTERIOR data
+	virtual std::string get_limits_msg() const {return PM->get_limits_msg();};
+	virtual const HMMPI::Mat &cov_prior() const {return Cpr;};
+	virtual void correct_of_grad(const std::vector<double> &params, double &y, std::vector<double> &grad) const;	// subtracts the prior component from the 'full posterior' y, grad; needed for training PROXY inside POSTERIOR based on POSTERIOR data
 
 	virtual std::vector<int> PointsSubset(const std::vector<std::vector<double>> &X0, int count) const;		// these functions delegate to PM which should be PM_Proxy
 	virtual std::string AddData(std::vector<std::vector<double>> X0, ValCont *VC, int Nfval_pts);
@@ -422,6 +449,43 @@ public:
 	virtual bool is_proxy() const {return PM->is_proxy();};
 	virtual bool is_dataproxy() const {return PM->is_dataproxy();};
 	const PhysModel *get_PM() const {return PM;};
+
+	virtual void set_ignore_small_errors(bool flag);		// delegates to PM, if PM can do this
+	virtual const HMMPI::SimSMRY *get_smry() const;			// delegates to PM, if PM can do this
+	virtual bool is_sim() const;							// delegates to PM, if PM can do this
+};
+//---------------------------------------------------------------------------
+// Like PM_Posterior, this model adds the Gaussian prior term (x - x0)' * C^(-1) * (x - x0) to the underlying likelihood 'PM'
+// *** Here, the prior covariance C is DIAGONAL; for components  "i" where C_ii = 0, weak prior is assumed
+// Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
+// comm = PM->comm is taken;
+// 'modelled_data' is filled from PM, 'DataSens' is not filled.
+// If PM is PROXY, then PM_PosteriorDiag can delegate to it the training procedures.
+//---------------------------------------------------------------------------
+class PM_PosteriorDiag : public PM_Posterior
+{
+//	PhysModel *copy_PM;					// filled by copy ctor, to free memory in the end
+//	PhysModel *PM;						// core PhysModel (likelihood)
+//	const HMMPI::Mat Cpr, dpr;			// these define the prior Gaussian distribution; Cpr is the diagonal (1D vector)
+//	HMMPI::Mat invCpr;					// Cpr^(-1), a vector
+private:
+	const HMMPI::Mat c_pr;		// Full matrix corresponding to Cpr
+
+public:
+	std::vector<double> prior_contrib;	// fulldim vector filled by ObjFunc(), contains contribution to _prior_ of each parameter
+
+	PM_PosteriorDiag(PhysModel *pm, const HMMPI::Mat &C_diag, HMMPI::Mat d);		// comm = PM->comm, con = PM->con (copy as ParamsInterface)
+	PM_PosteriorDiag(const PM_PosteriorDiag &p);			// copy CTOR will copy PM if it is PM_Proxy*, and will borrow the pointer otherwise
+	virtual ~PM_PosteriorDiag();
+	virtual double ObjFunc(const std::vector<double> &params);
+	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
+	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);									//  not implemented
+	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);		//  not implemented
+	virtual std::string proc_msg() const;
+	virtual const HMMPI::Mat &cov_prior() const {return c_pr;};
+	virtual void correct_of_grad(const std::vector<double> &params, double &y, std::vector<double> &grad) const;	// subtracts the prior component from the 'full posterior' y, grad; needed for training PROXY inside POSTERIOR based on POSTERIOR data
+	virtual Proxy_train_interface *Copy() const {return new PM_PosteriorDiag(*this);};						// _DELETE_ in the end!
 };
 //---------------------------------------------------------------------------
 // PM_Proxy - class for simple kriging proxy
@@ -711,6 +775,7 @@ class KrigStart
 {
 private:
 	const bool smooth_at_nugget = true;			// if 'true', there will be no discontinuity at design points for nugget > 0
+	int trend_order;
 
 	const char dump_D[100] = "proxy_dump_DistMat_%d_pr%d.txt";		// file names for debug output
 	const char dump_X[100] = "proxy_dump_X_%d_pr%d.txt";
@@ -750,7 +815,7 @@ public:
 	int index;					// index within "starts"
 	bool is_empty;				// 'true' for empty KrigStart objects (not for calculations, only for padding)
 
-	KrigStart() : R(0), func(NULL), sol(NULL), dump_flag(-1), index(-1), is_empty(true){};	// creates empty object
+	KrigStart() : trend_order(0), R(0), func(NULL), sol(NULL), dump_flag(-1), index(-1), is_empty(true){};	// creates empty object
 	KrigStart(Parser_1 *K, KW_item *kw, _proxy_params *config);			// easy CTOR; all data are taken from keywords of "K"; 1st LINSOLVER is used; "kw" is used only to handle prerequisites; "config" can be PROXY_CONFIG or MODEL
 	KrigStart(const KrigStart &p);						// 'index' is not copied
 	const KrigStart &operator=(const KrigStart &p);		// 'index' is not copied

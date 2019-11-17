@@ -8,6 +8,7 @@
 #ifndef PARSING2_H_
 #define PARSING2_H_
 
+#include <tuple>
 #include "Parsing.h"
 #include "MathUtils.h"
 #include "MonteCarlo.h"
@@ -744,6 +745,7 @@ protected:
 	virtual double minrpt(int i) const {return min[i];};	// used in BoundConstr::Check for reporting; here, return external representation
 	virtual double maxrpt(int i) const {return max[i];};
 	void check_names() noexcept;			// check names for repeats, empty names, and MOD, PATH, RANK, SIZE
+	void check_backvals() noexcept;			// check symbolic backvals
 	virtual void fill_norm_logmin() noexcept;
 	virtual void UpdateParams() noexcept;	// count active params, check names, check min <= val <= max, check min < max, check min > 0 for func=EXP, fill 'norm' and 'logmin', report
 											// also, initialize 'par_map'; fill init, BoundConstr::min, BoundConstr::max (internal representation)
@@ -789,7 +791,24 @@ public:
 	KW_parameters2();
 };
 //------------------------------------------------------------------------------------------
-// list of [day month year] - dates used for working with well production data
+// class defining the diagonal prior for certain parameters (the non-listed parameters are considered to have weak priors)
+class KW_prior : public KW_multparams
+{
+protected:
+	std::vector<int> inds_in_params;		// indices of "names" within the PARAMETERS, filled by UpdateParams()
+
+	virtual void UpdateParams() noexcept;	// count non-weak prior parameters, check validity
+public:
+	std::vector<std::string> names;			// should be consistent with keyword PARAMETERS
+	std::vector<double> mean;				// for the PRIOR parameter p_i corresponding to PARAMETER[S] x_j:
+	std::vector<double> std;				// in case x_j is LIN: 'mean' and 'std' correspond to the range of external x_j
+											// in case x_j is EXP: 'mean' and 'std' correspond to the range of log10 of external x_j
+	KW_prior();
+	void Mean_Cov(std::vector<double> &m, std::vector<double> &cov); 	// returns full-dim vectors "C_diag", "d" for PM_PosteriorDiag CTOR
+																		// they will correspond to the internal representation
+};
+//------------------------------------------------------------------------------------------
+// list of "day month year [hour min sec]" - dates/times used for working with well production data
 class KW_dates : public KW_multparams
 {
 protected:
@@ -799,10 +818,14 @@ public:
 	std::vector<int> D;	// day
 	std::vector<int> M;	// month
 	std::vector<int> Y;	// year
+
+	std::vector<int> h;	// hours
+	std::vector<int> m;	// minutes
+	std::vector<int> s;	// seconds
 	std::vector<HMMPI::Date> dates;
 
 	KW_dates();
-	std::vector<int> zeroBased();	  		// first date is subtracted from all dates, works for years from 1901 to 2099
+	std::vector<double> zeroBased();	  	// first date is subtracted from all dates, works for years from 1901 to 2099
 };
 //------------------------------------------------------------------------------------------
 class KW_pConnect_config : public KW_params	// settings for pConnect PHYSMODEL
@@ -931,7 +954,9 @@ public:
 class KW_model : public _proxy_params		// select between "SIM" (PMEclipse) and "PROXY" (PM_SimProxy), set simulator type (ECL, TNAV), and set proxy params
 {
 protected:
-	PhysModel *mod;			// may store PMEclipse for automatic deletion
+	PhysModel *mod;					// may store PMEclipse for automatic deletion
+	PM_PosteriorDiag *mod_post_sim;	// stores the returned PM_PosteriorDiag (for automatic deletion)
+	PM_PosteriorDiag *mod_post_proxy;
 
 public:
 	std::string type;		// SIM, PROXY
@@ -941,10 +966,16 @@ public:
 
 	KW_model();
 	virtual ~KW_model();
-	PhysModel *MakeModel(KW_item *kw, std::string cwd, std::string Type = "Default");
-															// generates PMEclipse or PM_SimProxy; the model is created on MPI_COMM_WORLD; it is deleted automatically when necessary;
-															// KW_item "kw" which called MakeModel() is only used to handle prerequisites.
-															// Type can be "SIM" or "PROXY"; if Type == "Default", then this->type is used
+	PhysModel *MakeModel(KW_item *kw, std::string cwd, bool is_posterior, std::string Type = "Default");
+					// IF is_posterior == true:
+							// generates PMEclipse or PM_SimProxy wrapped in PM_PosteriorDiag
+							// thus, the model is POSTERIOR = PRIOR + LIKELIHOOD
+					// IF is_posterior == false:
+							// generates PMEclipse or PM_SimProxy
+					// the model is created on MPI_COMM_WORLD
+					// KW_item "kw" which called MakeModel() is only used to handle prerequisites.
+					// Type can be "SIM" or "PROXY"; if Type == "Default", then this->type is used
+					// the returned model is DELETED AUTOMATICALLY by DTOR
 };
 //------------------------------------------------------------------------------------------
 class KW_matvecvec : public KW_item, public HMMPI::StdCreator, public HMMPI::DataCreator		// reads matrix and two vectors: Mat | Vec | Vec
@@ -1049,7 +1080,7 @@ class KW_physmodel : public KW_multparams
 {
 public:
 	std::vector<std::string> type;	// ECLIPSE, SIMECL, PCONNECT, CONC, SIMPROXY, LIN, ROSEN, FUNC_LIN, FUNC_POW (plain types);
-									// NUMGRAD, PROXY, DATAPROXY, DATAPROXY2, KRIGCORR, KRIGSIGMA, LAGRSPHER, SPHERICAL, CUBEBOUND, HAMILTONIAN, POSTERIOR (referencing types)
+									// NUMGRAD, PROXY, DATAPROXY, DATAPROXY2, KRIGCORR, KRIGSIGMA, LAGRSPHER, SPHERICAL, CUBEBOUND, HAMILTONIAN, POSTERIOR, POSTERIOR_DIAG (referencing types)
 	std::vector<int> ref;			// "ref" refers to another model defined in row № "ref"
 									// ref == 0 does not refer to any row, and should be used for 'plain' models
 	std::vector<bool> is_plain;		// indicates whether the given entry is of 'plain type'
@@ -1219,6 +1250,7 @@ public:
 	std::vector<int> taken_files;				// numbers of files (multiple output) taken by ReadData(#2) according to DATES list
 
 	KW_funsmry();
+	static int DateCmp(int Y1, int M1, int D1, int Y2, int M2, int D2);		// date comparison: -1, 0, 1
 	HMMPI::Vector2<double> ReadData(std::string fname, bool read_hist = false);
 	HMMPI::Vector2<double> ReadData(std::string mod_root, int i0, int i1);	// reads MULTIPLE formatted output from {mod_root.A000i}, i = [i0, i1), the file numbers "i" taken according to DATES are saved to "taken_files"
 																			// taken_files.size = DATES.size, taken_files[j] = -1 for not found dates j.
@@ -1228,7 +1260,7 @@ public:
 class KW_textsmry : public KW_fname, public HMMPI::SigmaMessage
 {
 private:
-	int warnings;					// inner count of warnings at DataIO
+	int warnings;						// inner count of warnings at DataIO
 protected:
 	HMMPI::Vector2<std::string> Hdr;	// 2-lines header, contains H and S columns
 	std::vector<int> ind;				// indices of H-columns
@@ -1237,7 +1269,6 @@ protected:
 	int found_ts;						// counts found time steps
 
 	void ReadInd(std::string *K_msg);	// reads from "Hdr", fills "ind", "ind_sigma", updates "not_found"
-	static void ParseDate(std::string S, int &Y, int &M, int &D);
 	virtual void DataIO(int i);
 public:
 	HMMPI::RandNormal randn;
@@ -1247,7 +1278,6 @@ public:
 
 	KW_textsmry();
 	HMMPI::Vector2<double> ReadData(std::string fname);
-	static int DateCmp(int Y1, int M1, int D1, int Y2, int M2, int D2);	// date comparison: -1, 0, 1
 	virtual std::string SigmaInfo(const std::string &wgname, const std::string &keyword) const;	// from HMMPI::SigmaMessage
 	std::vector<double> OnlySigmas() const;			// returns the 'sigmas' part of 'data', ordered as vec_0(all dates), vec_1(all dates), ...
 };

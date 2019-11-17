@@ -122,7 +122,7 @@ public:
 	Mat(size_t N);								// N x N unity matrix
 	Mat(size_t I0, size_t J0, double val);		// I0 x J0 matrix, all elements set to 'val'
 	Mat(std::vector<double> v, size_t I0, size_t J0);		// initialize I0 x J0 matrix, copy/move sequential data from vector "v"
-	Mat(std::vector<double> v);					// initialize N x 1 "matrix" equal to vector "v"
+	Mat(const std::vector<double> &v, bool IsDiag = false);	// initialize N x 1 "matrix" equal to vector "v" _OR_ N x N diagonal matrix with diagonal "v"
 	Mat(const Mat &m);							// copy constructor
 	Mat(Mat &&m) noexcept;						// move constructor
 	virtual ~Mat();
@@ -140,6 +140,7 @@ public:
 	std::vector<double> &ToVectorMutable();							// return the underlying 'data' vector (reference)
 	virtual void Deserialize(const double *v);		// fills values from "v"; current "icount", "jcount" are used for size
 	void SetOpSwitch(int s);						// sets op_switch
+	int GetOpSwitch() const {return op_switch;};	// gets op_switch
 
 	// math
 	// when many operations are used in one line, try to maximize the number of rvalues to minimize copying
@@ -164,6 +165,7 @@ public:
 	void operator+=(const Mat &m);			// *this += m
 	void operator-=(const Mat &m);			// *this -= m
 	Mat operator*(const Mat &m) const;		// *this * m
+	std::vector<double> operator*(const std::vector<double> &v) const;		// *this * v, using Manual | BLAS depending on 'op_switch'
 	Mat Autocorr() const;					// calculates vector of the same size as input, its values at [k] = sample autocorrelations at lag k (*this should be a vector)
 	int Ess(double &res) const;				// calculates effective sample size (res) using initial monotone sequence estimator (*this should be a vector); returns lag at which the estimator stopped
 	Mat Chol() const;						// Cholesky decomposition, uses some simple handwritten code; the lower triangular part is referenced (and returned)
@@ -182,7 +184,7 @@ public:
 	double ICond1SPO() const;				// reciprocal condition number (in 1-norm) of symmetric positive definite matrix [the upper triangle of *this is used]; uses DPOCON, DLANGE, DPOTRF
 	Mat BFGS_update_B(const Mat &dk, const Mat &gk) const;	// taking "this" as symmetric matrix B(k), returns BFGS update B(k+1) based on coordinate difference "dk" and gradient difference "gk"
 	Mat BFGS_update_B(const std::vector<Mat> &Xk, const std::vector<Mat> &Gk) const;  // makes a series of BFGS updates, "Xk" - coordinate vectors, "Gk" - gradient vectors; in total (Xk.size - 1) updates are done
-	friend double InnerProd(const Mat &a, const Mat &b);	// (a, b), inner product of two vectors
+	friend double InnerProd(const Mat &a, const Mat &b);	// (a, b), inner product of two vectors; using Manual | BLAS depending on 'a.op_switch'
 	friend Mat OuterProd(const Mat &a, const Mat &b);		// a * b', outer product of two vectors
 	friend Mat VecProd(const Mat &a, const Mat &b);			// a (x) b, vector product of two 3-dim vectors
 	friend Mat operator*(double d, Mat m);	// d * m

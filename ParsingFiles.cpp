@@ -1232,13 +1232,6 @@ double KW_fegrid::Sum()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
-KW_funsmry::KW_funsmry()
-{
-	name = "FUNSMRY";
-	erows = 1;
-	count_dates = count_vecs = 0;
-}
-//------------------------------------------------------------------------------------------
 void KW_funsmry::DataIO(int i)
 {
 	Start_pre();
@@ -1253,6 +1246,31 @@ void KW_funsmry::DataIO(int i)
 		count_vecs /= count_dates;
 	K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("(eng) {0:%d}, {1:%d}\n",
 										"Reading the file...\nLoaded time steps: {0:%d}, loaded vectors: {1:%d}\n"), std::vector<int>{count_dates, count_vecs}));
+}
+//------------------------------------------------------------------------------------------
+KW_funsmry::KW_funsmry()
+{
+	name = "FUNSMRY";
+	erows = 1;
+	count_dates = count_vecs = 0;
+}
+//------------------------------------------------------------------------------------------
+int KW_funsmry::DateCmp(int Y1, int M1, int D1, int Y2, int M2, int D2)
+{
+	if (Y1 < Y2)
+		return -1;
+	else if (Y1 > Y2)
+		return 1;
+	else if (M1 < M2)
+		return -1;
+	else if (M1 > M2)
+		return 1;
+	else if (D1 < D2)
+		return -1;
+	else if (D1 > D2)
+		return 1;
+	else
+		return 0;
 }
 //------------------------------------------------------------------------------------------
 HMMPI::Vector2<double> KW_funsmry::ReadData(std::string fname, bool read_hist)
@@ -1325,7 +1343,7 @@ HMMPI::Vector2<double> KW_funsmry::ReadData(std::string fname, bool read_hist)
 				M = int(aux[spec->M]);
 				Y = int(aux[spec->Y]);
 
-				while (KW_textsmry::DateCmp(Y, M, D, datesW->Y[j], datesW->M[j], datesW->D[j]) == 1)
+				while (DateCmp(Y, M, D, datesW->Y[j], datesW->M[j], datesW->D[j]) == 1)
 					j++;
 
 				if ((D == datesW->D[j])&&(M == datesW->M[j])&&(Y == datesW->Y[j]))
@@ -1434,7 +1452,7 @@ HMMPI::Vector2<double> KW_funsmry::ReadData(std::string mod_root, int i0, int i1
 					M = int(aux[spec->M]);
 					Y = int(aux[spec->Y]);
 
-					while (KW_textsmry::DateCmp(Y, M, D, datesW->Y[j], datesW->M[j], datesW->D[j]) == 1)
+					while (DateCmp(Y, M, D, datesW->Y[j], datesW->M[j], datesW->D[j]) == 1)
 						j++;
 
 					if ((D == datesW->D[j])&&(M == datesW->M[j])&&(Y == datesW->Y[j]))
@@ -1536,17 +1554,6 @@ void KW_textsmry::ReadInd(std::string *K_msg)
 		*K_msg += auxmsg;
 }
 //------------------------------------------------------------------------------------------
-void KW_textsmry::ParseDate(std::string S, int &Y, int &M, int &D)
-{
-	std::vector<std::string> aux;
-	HMMPI::tokenize(S, aux, " ./", true);
-	if (aux.size() != 3)
-		throw HMMPI::Exception(HMMPI::stringFormatArr("Неверный формат даты: {0:%s}", "Incorrect date format: {0:%s}", S));
-	Y = HMMPI::StoL(aux[2]);
-	M = HMMPI::StoL(aux[1]);
-	D = HMMPI::StoL(aux[0]);
-}
-//------------------------------------------------------------------------------------------
 KW_textsmry::KW_textsmry()
 {
 	name = "TEXTSMRY";
@@ -1571,7 +1578,7 @@ void KW_textsmry::DataIO(int i)
 
 	if (found_ts < (int)data.ICount())
 	{
-		K->AppText(HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: Не все временные шаги из DATES были загружены\n", "WARNING: Some time steps from DATES were not loaded\n"));
+		K->AppText(HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: Не все временные шаги из DATES были найдены в TEXTSMRY\n", "WARNING: Some time steps from DATES were not found in TEXTSMRY\n"));
 		K->TotalWarnings++;
 	}
 }
@@ -1617,8 +1624,8 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 					Hdr = HMMPI::Vector2<std::string>(2, vcount);
 				}
 				else if (vcount+1 != line_aux.size())
-					throw HMMPI::Exception("Во второй строке заголовка должно быть элементов на один (DD/MM/YYYY) больше, чем в первой строке",
-										   "Second line of header should have one element (DD/MM/YYYY) more than the first line");
+					throw HMMPI::Exception("Во второй строке заголовка должно быть элементов на один (дата/время) больше, чем в первой строке",
+										   "Second line of header should have one element (date/time) more than the first line");
 
 				for (size_t i = 0; i < vcount; i++)
 					Hdr(j, i) = HMMPI::ToUpper(line_aux[i + j]);		// "+j" is to shift the second line, since it has one extra element in the beginning
@@ -1635,8 +1642,8 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 		res = HMMPI::Vector2<double>(dcount, pcount*2);
 		found_ts = 0;
 
-		j = 0;		// date index
-		int D0 = 0, M0 = 0, Y0 = 0;			// previous date from TEXTSMRY
+		j = 0;						// date index
+		HMMPI::Date date0;			// previous date from TEXTSMRY
 		while (!sr.eof() && j < dcount)
 		{
 			std::string line;
@@ -1650,36 +1657,44 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 			HMMPI::tokenize(line, line_aux, file_delim, true);
 			if (line_aux.size() != 0)		// line is not empty
 			{
-				if (line_aux.size() != vcount+1)
-					throw HMMPI::Exception("Число элементов в строке не соответствует заголовку", "Number of items per line inconsistent with header");
-				int D, M, Y;
-				ParseDate(line_aux[0], Y, M, D);
+				HMMPI::Date date1;
+				int offset = 0;
+				if (line_aux.size() == vcount+1)		// only date
+				{
+					date1 = HMMPI::Date(line_aux[0]);
+					offset = 1;
+				}
+				else if (line_aux.size() == vcount+2)	// date + time
+				{
+					date1 = HMMPI::Date(line_aux[0] + " " + line_aux[1]);
+					offset = 2;
+				}
+				else
+					throw HMMPI::Exception("Число элементов в строке не соответствует заголовку", "Number of items per line is inconsistent with header");
 
-				if (DateCmp(Y0, M0, D0, Y, M, D) != -1)
+				if (!(date0 < date1))
 					throw HMMPI::Exception((std::string)HMMPI::MessageRE("Даты идут не в возрастающем порядке: ", "Dates are not in increasing order: ") +
-							HMMPI::Date(D0, M0, Y0).ToString() + ", " + HMMPI::Date(D, M, Y).ToString());
+							date0.ToString() + ", " + date1.ToString());
 
-				while (DateCmp(Y, M, D, datesW->Y[j], datesW->M[j], datesW->D[j]) == 1)		// "j" is the time step currently being filled
-					j++;																	// scroll the DATES
+				while (date1 > datesW->dates[j])		// "j" is the time step currently being filled
+					j++;								// scroll the DATES
 
-				if (D == datesW->D[j] && M == datesW->M[j] && Y == datesW->Y[j])			// date matches: fill the time step "j"
+				if (date1 == datesW->dates[j])			// date matches: fill the time step "j"
 				{
 					for (size_t k = 0; k < pcount; k++)
 					{
 						if (ind[k] >= 0 && ind[k] < (int)vcount)							// ind[k] is column index
-							res(j, k) = HMMPI::StoD(line_aux[ind[k]+1]);
+							res(j, k) = HMMPI::StoD(line_aux[ind[k]+offset]);
 
 						if (ind_sigma[k] >= 0 && ind_sigma[k] < (int)vcount)
-							res(j, k+pcount) = HMMPI::StoD(line_aux[ind_sigma[k]+1]);
+							res(j, k+pcount) = HMMPI::StoD(line_aux[ind_sigma[k]+offset]);
 						else
 							res(j, k+pcount) = vect->sigma[k];
 					}
 					found_ts++;
 					j++;
 				}
-				D0 = D;
-				M0 = M;
-				Y0 = Y;
+				date0 = date1;
 			}
 		}
 		sr.close();
@@ -1692,24 +1707,6 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 	}
 
 	return res;
-}
-//------------------------------------------------------------------------------------------
-int KW_textsmry::DateCmp(int Y1, int M1, int D1, int Y2, int M2, int D2)
-{
-	if (Y1 < Y2)
-		return -1;
-	else if (Y1 > Y2)
-		return 1;
-	else if (M1 < M2)
-		return -1;
-	else if (M1 > M2)
-		return 1;
-	else if (D1 < D2)
-		return -1;
-	else if (D1 > D2)
-		return 1;
-	else
-		return 0;
 }
 //------------------------------------------------------------------------------------------
 std::string KW_textsmry::SigmaInfo(const std::string &wgname, const std::string &keyword) const

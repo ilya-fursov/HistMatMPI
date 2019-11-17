@@ -92,15 +92,27 @@ inline double ReadVal<double>(FILE *f)
 //--------------------------------------------------------------------------------------------------
 // Date
 //--------------------------------------------------------------------------------------------------
-Date::Date(const std::string &s)
+Date::Date(const std::string &s)		// accepted 's' formats: DD.MM.YYYY, DD/MM/YYYY, optionally followed by " hh:mm::ss" or " hh:mm"
 {
-	std::vector<std::string> parsed;
-	tokenize(s, parsed, "./", true);
-	if (parsed.size() != 3)
-		throw Exception("Некорректный формат даты " + s, "Incorrect date format " + s);
-	Day = StoL(parsed[0]);
-	Month = StoL(parsed[1]);
-	Year = StoL(parsed[2]);
+	// parsing date-time
+	std::vector<std::string> date_time;
+	tokenize(s, date_time, " \t", true);
+
+	if (date_time.size() != 1 && date_time.size() != 2)
+		throw Exception("Некорректный формат даты/времени: " + s, "Incorrect date/time format: " + s);
+
+	// parsing date
+	parse_date_time(date_time[0], "./", Day, Month, Year);
+
+	// parsing time
+	if (date_time.size() == 2)
+	{
+		int hh, mm, ss;
+		parse_date_time(date_time[1], ":", hh, mm, ss);
+		sec = ss + mm*60 + hh*3600;
+	}
+	else
+		sec = 0;
 }
 //--------------------------------------------------------------------------------------------------
 bool Date::operator>(const Date &rhs) const
@@ -111,13 +123,57 @@ bool Date::operator>(const Date &rhs) const
 		return true;
 	if (Year == rhs.Year && Month == rhs.Month && Day > rhs.Day)
 		return true;
+	if (Year == rhs.Year && Month == rhs.Month && Day == rhs.Day && sec > rhs.sec)
+		return true;
 
 	return false;
 }
 //--------------------------------------------------------------------------------------------------
 std::string Date::ToString() const
 {
-	return stringFormatArr(MessageRE("{0:%02d}.{1:%02d}.{2:%04d}", "{0:%02d}/{1:%02d}/{2:%04d}"), std::vector<int>{Day, Month, Year});
+	std::string res = stringFormatArr(MessageRE("{0:%02d}.{1:%02d}.{2:%04d}", "{0:%02d}/{1:%02d}/{2:%04d}"), std::vector<int>{Day, Month, Year});
+
+	if (sec == 0)
+		return res;
+	else
+	{
+		const int s = sec;
+		int hh, mm, ss;
+		ss = s%60;
+		mm = (s - ss)/60%60;
+		hh = (s - ss - mm*60)/3600;
+		return res + stringFormatArr(" {0:%02d}:{1:%02d}:{2:%02d}", std::vector<int>{hh, mm, ss});
+	}
+}
+//--------------------------------------------------------------------------------------------------
+void Date::write_bin(FILE *fd) const
+{
+	fwrite(&Day, sizeof(Day), 1, fd);
+	fwrite(&Month, sizeof(Month), 1, fd);
+	fwrite(&Year, sizeof(Year), 1, fd);
+	fwrite(&sec, sizeof(sec), 1, fd);
+}
+//--------------------------------------------------------------------------------------------------
+void Date::read_bin(FILE *fd)
+{
+	fread_check(&Day, sizeof(Day), 1, fd);
+	fread_check(&Month, sizeof(Month), 1, fd);
+	fread_check(&Year, sizeof(Year), 1, fd);
+	fread_check(&sec, sizeof(sec), 1, fd);
+}
+//--------------------------------------------------------------------------------------------------
+void Date::parse_date_time(const std::string s, std::string delim, int &D, int &M, int &Y)	// can parse both DD.MM.YYYY, DD/MM/YYYY and hh:mm::ss
+{																							// if the last item ("YYYY" or "ss") is empty, then Y = 0
+	std::vector<std::string> parsed;
+	tokenize(s, parsed, delim, true);
+	if (parsed.size() != 3 && parsed.size() != 2)
+		throw Exception("Некорректный формат даты/времени: " + s, "Incorrect date/time format: " + s);
+	D = StoL(parsed[0]);		// TODO good to have StoL error report detailing who called it
+	M = StoL(parsed[1]);
+	if (parsed.size() == 3)
+		Y = StoL(parsed[2]);
+	else
+		Y = 0;
 }
 //--------------------------------------------------------------------------------------------------
 // class SmryKwd
@@ -439,7 +495,7 @@ void EclSMRY::readUNSMRY(std::string modname)
 		std::iota(date_seq.begin(), date_seq.end(), 0);
 		std::vector<double> date_dbl = Reorder(Data, dates.size(), vecs.size(), date_seq, date_ind);		// all dates put into a single array
 		for (size_t t = 0; t < dates.size(); t++)
-			dates[t] = Date((int)date_dbl[3*t], (int)date_dbl[3*t+1], (int)date_dbl[3*t+2]);
+			dates[t] = Date((int)date_dbl[3*t], (int)date_dbl[3*t+1], (int)date_dbl[3*t+2]);				// NB Date.sec = 0 is taken
 	}
 	catch (...)
 	{
@@ -667,7 +723,7 @@ void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fi
 		for (int j = 0; j < obj_N; j++)
 			vecs[i*obj_N + j] = pair(name_obj[j], ecl_prop_transform[i].name);		// "property-major" order: <W1, P1>, <W2, P1>, ... <Wn, P1>; <W1, P2>,...
 
-	// 4) handle dates
+	// 4) handle timesteps
 	dates.clear();
 	dates.resize(name_dates.size());
 	for (size_t i = 0; i < name_dates.size(); i++)
@@ -677,11 +733,14 @@ void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fi
 		if (i > 0 && ind_dates[i] <= ind_dates[i-1])
 			throw Exception("Indices in [timesteps] should be in increasing order in *.meta");
 
-		std::vector<std::string> parsed;
-		tokenize(name_dates[i], parsed, " \t", true);
-		if (parsed.size() == 0)
-			throw Exception("parsed.size() == 0 in tNavSMRY::read_meta");
-		dates[i] = Date(parsed[0]);
+		try
+		{
+			dates[i] = Date(name_dates[i]);
+		}
+		catch (const Exception &e)
+		{
+			throw Exception((std::string)e.what() + " (tNavSMRY::read_meta)");
+		}
 	}
 }
 //--------------------------------------------------------------------------------------------------
@@ -835,7 +894,7 @@ void tNavSMRY::ReadFiles(std::string modname)
 	mod = modname;
 }
 //--------------------------------------------------------------------------------------------------
-void tNavSMRY::dump_all(std::string fname)
+void tNavSMRY::dump_all(std::string fname) const
 {
 	FILE *f = fopen(fname.c_str(), "w");
 
@@ -879,9 +938,9 @@ void tNavSMRY::dump_all(std::string fname)
 
 	fprintf(f, "dates:");
 	for (auto x : dates)
-		fprintf(f, "\t%02d.%02d.%04d", x.Day, x.Month, x.Year);
+		fprintf(f, "\n%s", x.ToString().c_str());
 
-	fprintf(f, "\nvecs:");
+	fprintf(f, "\n\nvecs:");
 	for (auto x : vecs)
 		fprintf(f, "\t%s_%s", x.first.c_str(), x.second.c_str());
 
@@ -924,7 +983,7 @@ int SimProxyFile::check_stamp(FILE *fd) const
 		return 0;
 }
 //--------------------------------------------------------------------------------------------------
-std::string SimProxyFile::msg_contents() const
+std::string SimProxyFile::msg_contents() const			// message reporting what is stored; should be called on all ranks
 {
 	std::string msg;
 	std::vector<int> bs = block_starts();
@@ -1144,8 +1203,8 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 							const auto it = FindBinary(par_names.begin(), par_names.end(), bv_sorted[j]);		// binary search in a SORTED range [first, last); returns "last" if not found
 							const size_t ind = it - par_names.begin();
 							if (ind >= par_names.size())
-								throw Exception("Параметр '" + bv_sorted[j] + "', указанный в столбце 'backval', не найден в списке параметров",
-												"Parameter '" + bv_sorted[j] + "' specified in 'backval' column was not found in the parameters list");
+								throw Exception("Параметр '" + bv_sorted[j] + "', указанный в столбце 'backval', не найден в списке параметров ECLSMRY",
+												"Parameter '" + bv_sorted[j] + "' specified in 'backval' column was not found in the ECLSMRY parameters list");
 							params_new[i][j] = params[i][ind];			// take from back value of 'bv_sorted[j]'
 						}
 					}
@@ -1184,7 +1243,7 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 				if (FindDuplicate(dates_sorted, dup0))
 				{
 					char msg[BUFFSIZE];
-					sprintf(msg, "Adding a model with duplicate date %02d.%02d.%d in SimProxyFile::AddModel", dup0.Day, dup0.Month, dup0.Year);
+					sprintf(msg, "Adding a model with duplicate date %s in SimProxyFile::AddModel", dup0.ToString().c_str());
 					throw Exception(msg);
 				}
 
@@ -1247,6 +1306,14 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 		PopModel();
 
 	return msg;
+}
+//--------------------------------------------------------------------------------------------------
+std::string SimProxyFile::AddSimProxyFile(const SimProxyFile *smry_0)		// appends the proxy file 'smry_0' to 'this'
+{															// currently, both proxy files should contain 1 block, and have the same parameters names, same dates and vecs
+															// all input and "output" is only referenced on comm-RANKS-0
+	// TODO													// models from 'smry_0' which are too close to the existing models, are skipped (similar to AddModel())
+															// the function returns a message counting the added/skipped models
+															// Xmin, Xavg are not updated
 }
 //--------------------------------------------------------------------------------------------------
 void SimProxyFile::PopModel()
@@ -1462,7 +1529,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 			fprintf(file, "\t%-17.17s", "");
 		for (size_t v = 0; v < vecs.size(); v++)
 			for (size_t d = 0; d < dates.size(); d++)
-				fprintf(file, "\t%-17.17s", vecs[v].first.c_str());
+				fprintf(file, "\t%-21.21s", vecs[v].first.c_str());
 		fprintf(file, "\n");
 
 		fprintf(file, "%-5.5s\t%-11.11s", "", "");			// Header line 2: vector names
@@ -1470,7 +1537,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 			fprintf(file, "\t%-17.17s", "");
 		for (size_t v = 0; v < vecs.size(); v++)
 			for (size_t d = 0; d < dates.size(); d++)
-				fprintf(file, "\t%-17.17s", vecs[v].second.c_str());
+				fprintf(file, "\t%-21.21s", vecs[v].second.c_str());
 		fprintf(file, "\n");
 
 		fprintf(file, "%-5.5s\t%-11.11s", "#", "DIST(i-1,i)");					// Header line 3: number, param names, dates
@@ -1478,7 +1545,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 			fprintf(file, "\t%-17.17s", parameters->name[j].c_str());
 		for (size_t v = 0; v < vecs.size(); v++)
 			for (size_t d = 0; d < dates.size(); d++)
-				fprintf(file, "\t%-17.17s", dates[d].ToString().c_str());
+				fprintf(file, "\t%-21.21s", dates[d].ToString().c_str());
 		fprintf(file, "\n");
 
 		assert(datapoint_block.size() == N);									// datapoint_block is sync
@@ -1511,11 +1578,11 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 					int first_model = b_starts[bl];			// index of the first model where dp_ind exists
 
 					if (mod_indices[i] < first_model)
-						fprintf(file, "\t%-17.17s", "--");
+						fprintf(file, "\t%-21.21s", "--");
 					else
 					{
 						assert(mod_indices[i] - first_model < (int)vals[dp_ind].size());
-						fprintf(file, "\t%-17.12g", vals[dp_ind][mod_indices[i] - first_model]);
+						fprintf(file, "\t%-21.16g", vals[dp_ind][mod_indices[i] - first_model]);
 					}
 				}
 			fprintf(file, "\n");

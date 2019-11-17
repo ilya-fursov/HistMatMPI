@@ -796,9 +796,9 @@ void PhysModelHM::calc_derivatives_dRdP2(HMMPI::Vector2<std::vector<double>> &dr
 	for (size_t v = 0; v < drdp.JCount(); v++)
 		if (vect->vect[v] == "WWCT")
 		{
-			HMMPI::SimSMRY::pair wwct(vect->WGname[v], "WWCT");
-			HMMPI::SimSMRY::pair wopr(vect->WGname[v], "WOPR");
-			HMMPI::SimSMRY::pair wlpr(vect->WGname[v], "WLPR");
+			HMMPI::SimSMRY::pair wwct(vect->WGname[v], (std::string)"WWCT");
+			HMMPI::SimSMRY::pair wopr(vect->WGname[v], (std::string)"WOPR");
+			HMMPI::SimSMRY::pair wlpr(vect->WGname[v], (std::string)"WLPR");
 			int i_wwct = std::find(vect->vecs.begin(), vect->vecs.end(), wwct) - vect->vecs.begin();
 			int i_wopr = std::find(vect->vecs.begin(), vect->vecs.end(), wopr) - vect->vecs.begin();
 			int i_wlpr = std::find(vect->vecs.begin(), vect->vecs.end(), wlpr) - vect->vecs.begin();
@@ -836,7 +836,7 @@ void PhysModelHM::calc_derivatives_dRdP2(HMMPI::Vector2<std::vector<double>> &dr
 		}
 }
 //---------------------------------------------------------------------------
-PhysModelHM::PhysModelHM(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : PhysModel(k, kw, c), K(k), CWD(cwd), modelled_data_size(0)
+PhysModelHM::PhysModelHM(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Sim_small_interface(k, kw, c), K(k), CWD(cwd), modelled_data_size(0)
 {
 	DECLKWD(wghts, KW_ofweights, "OFWEIGHTS");		// declare and add to prerequisites
 	DECLKWD(gas, KW_gas, "GAS");
@@ -1036,7 +1036,7 @@ PhysModelHM::PhysModelHM(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) 
 #endif
 }
 //---------------------------------------------------------------------------
-PhysModelHM::PhysModelHM(const PhysModelHM &PM) : PhysModel(PM)
+PhysModelHM::PhysModelHM(const PhysModelHM &PM) : Sim_small_interface(PM)
 {
 	K = PM.K;
 	grid = PM.grid;
@@ -1230,10 +1230,13 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 	DECLKWD(file, KW_datafile, "DATAFILE");
 	DECLKWD(gas, KW_gas, "GAS");
 	DECLKWD(wghts, KW_ofweights, "OFWEIGHTS");
-	//DECLKWD(datesW, KW_dates, "DATES");
+#ifdef ECLFORMATTED
+	DECLKWD(spec, KW_fsmspec, "FSMSPEC");
+#else
+	DECLKWD(datesW, KW_dates, "DATES");
+#endif
 	DECLKWD(vect, KW_eclvectors, "ECLVECTORS");
 	DECLKWD(DIMS, KW_griddims, "GRIDDIMS");
-	DECLKWD(spec, KW_fsmspec, "FSMSPEC");
 	DECLKWD(smry, KW_funsmry, "FUNSMRY");			// f1 - well data
 	DECLKWD(textsmry, KW_textsmry, "TEXTSMRY");		// f1 - well data
 	DECLKWD(rst, KW_funrst, "FUNRST");				// f2 - SWAT
@@ -2205,25 +2208,40 @@ std::vector<double> PhysModelHM::Data() const
 	return res;
 }
 //---------------------------------------------------------------------------
+const HMMPI::SimSMRY *PhysModelHM::get_smry() const
+{
+	throw HMMPI::Exception("Illegal call to PhysModelHM::get_smry()");
+}
+//---------------------------------------------------------------------------
 // PMEclipse
 //---------------------------------------------------------------------------
 void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry_mod, const HMMPI::Vector2<double> &smry_hist, const std::vector<double> &of_vec, bool text_sigma, bool only_hist)
 {
 	DECLKWD(datesW, KW_dates, "DATES");
 	DECLKWD(vect, KW_eclvectors, "ECLVECTORS");
+	DECLKWD(params, KW_parameters, "PARAMETERS");		// kw->Add_pre("PARAMETERS") is in CTOR
 
 	size_t Nsteps = datesW->D.size();
 	size_t Nvect = vect->sigma.size();
 
 	const int Width = 14;			// each column's min width
+	const int DateWidth = 21;		// 'date' column min width
 	char buffM[HMMPI::BUFFSIZE], buffH[HMMPI::BUFFSIZE], buffS[HMMPI::BUFFSIZE];
 	char workM[HMMPI::BUFFSIZE], workH[HMMPI::BUFFSIZE], workS[HMMPI::BUFFSIZE];
 
 	// a) form the headers
-	std::string headerD1 = "          ", headerD2 = "          ", headerD3 = HMMPI::MessageRE("ДД/ММ/ГГГГ", "DD/MM/YYYY");
+	std::string headerD1, headerD2, headerD3;
 	std::string headerM1, headerM2, headerM3;																	// D1 [M1] H1 S1
 	std::string headerH1, headerH2, headerH3;																	// D2 [M2] H2 S2
 	std::string headerS1, headerS2, headerS3;																	// D3 [M3] H3 S3
+
+	sprintf(buffM, "%-*s", DateWidth, "");
+	sprintf(buffH, "%-*s", DateWidth, std::string(HMMPI::MessageRE("дата/время", "date/time")).c_str());
+	const std::string date_gap = buffM;
+	headerD1 += buffM;
+	headerD2 += buffM;
+	headerD3 += buffH;
+
 	for (size_t i = 0; i < Nvect; i++)
 	{
 		sprintf(workM, "mod%zu", i+1);
@@ -2262,7 +2280,8 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 	// b) output vectors
 	for (size_t i = 0; i < Nsteps; i++)
 	{
-		sprintf(buffM, "%.2d/%.2d/%.4d", datesW->D[i], datesW->M[i], datesW->Y[i]);
+		sprintf(buffM, "%-*s", DateWidth, datesW->dates[i].ToString().c_str());
+
 		sw << buffM;
 		if (!only_hist)
 			for (size_t j = 0; j < Nvect; j++)
@@ -2290,7 +2309,7 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 	}
 
 	// c) output "of_vec" etc
-	sw << "          ";
+	sw << date_gap;
 	if (!only_hist)
 		for (size_t j = 0; j < Nvect; j++)
 		{
@@ -2313,22 +2332,79 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 
 	if (!only_hist)
 	{
+		int MaxLen = Nvect;					// number of rows to be written
 		const int WidthWell = 10;			// min width for well, property columns
 		std::vector<int> perm = HMMPI::SortPermutation(of_vec.begin(), of_vec.end());
 		std::vector<std::string> wgname = HMMPI::Reorder(vect->WGname, perm);			// form the sorted arrays
 		std::vector<std::string> propname = HMMPI::Reorder(vect->vect, perm);
 		std::vector<double> ofval = HMMPI::Reorder(of_vec, perm);
 
-		sprintf(buffM, "\n%-*s\t%-*s\t%-*s\t\t\t\t\t\t%-*s\t%-*s\t%-*s\n", WidthWell, "Well", WidthWell, "property", Width, "o.f.", WidthWell, "well", WidthWell, "property", Width, "o.f. (decreasing order)");
-		sprintf(buffH, "\n%-*s\t%-*s\t%-*s\t\t\t\t\t\t%-*s\t%-*s\t%-*s\n", WidthWell, "Скважина", WidthWell, "свойство", Width, "ц.ф.", WidthWell, "скважина", WidthWell, "свойство", Width, "ц.ф. (по убыванию)");
-		sw << (std::string)HMMPI::MessageRE(buffH, buffM);
-		for (int j = 0; j < (int)Nvect; j++)
+		int Nparams = 0;
+		std::vector<std::string> parnames;												// sorted params names
+		std::vector<double> priorof;													// sorted prior o.f.
+		if (outer_post_diag != nullptr)
 		{
-			sprintf(buffM, "%-*s\t%-*s\t%-*.2f\t\t\t\t\t\t%-*s\t%-*s\t%-*.2f\n", WidthWell, vect->WGname[j].c_str(), WidthWell, vect->vect[j].c_str(), Width, of_vec[j],
-																				 WidthWell, wgname[Nvect-1-j].c_str(), WidthWell, propname[Nvect-1-j].c_str(), Width, ofval[Nvect-1-j]);
+			Nparams = outer_post_diag->prior_contrib.size();
+			if (Nparams > MaxLen)
+				MaxLen = Nparams;
+			std::vector<int> perm2 = HMMPI::SortPermutation(outer_post_diag->prior_contrib.begin(), outer_post_diag->prior_contrib.end());
+			parnames = HMMPI::Reorder(params->name, perm2);
+			priorof = HMMPI::Reorder(outer_post_diag->prior_contrib, perm2);
+		}
+
+		sprintf(buffM, "\n%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "Well", WidthWell, "property", Width, "o.f.", WidthWell, "well", WidthWell, "property", Width, "o.f. (decreasing order)");
+		sprintf(buffH, "\n%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "Скважина", WidthWell, "свойство", Width, "ц.ф.", WidthWell, "скважина", WidthWell, "свойство", Width, "ц.ф. (по убыванию)");
+
+		sprintf(workM, "\t\t\t\t\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\n", WidthWell+4, "parameter", Width, "prior o.f.", WidthWell+4, "parameter", Width, "prior o.f. (decreasing order)");
+		sprintf(workH, "\t\t\t\t\t\t%-*s\t%-*s\t\t\t\t\t\t%-*s\t%-*s\n", WidthWell+12, "параметр", Width, "апр. ц.ф.", WidthWell+12, "параметр", Width, "апр. ц.ф. (по убыванию)");
+
+		sw << (std::string)HMMPI::MessageRE(buffH, buffM);
+		if (outer_post_diag != nullptr)
+			sw << (std::string)HMMPI::MessageRE(workH, workM);
+		else
+			sw << "\n";
+
+		for (int j = 0; j < MaxLen; j++)
+		{
+			// Likelihood
+			if (j < (int)Nvect)
+				sprintf(buffM, "%-*s\t%-*s\t%-*.2f\t\t\t\t\t%-*s\t%-*s\t%-*.2f", WidthWell, vect->WGname[j].c_str(), WidthWell, vect->vect[j].c_str(), Width, of_vec[j],
+																				   WidthWell, wgname[Nvect-1-j].c_str(), WidthWell, propname[Nvect-1-j].c_str(), Width, ofval[Nvect-1-j]);
+			else
+				sprintf(buffM, "%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "", WidthWell, "", Width, "", WidthWell, "", WidthWell, "", Width, "");
+
 			sw << buffM;
+			if (outer_post_diag == nullptr)
+				sw << "\n";
+			else					// Prior
+			{
+				if (j < Nparams)
+					sprintf(buffM, "\t\t\t\t\t\t\t%-*s\t%-*.2f\t\t\t\t\t%-*s\t%-*.2f\n", WidthWell+4, params->name[j].c_str(), Width, outer_post_diag->prior_contrib[j],
+																			 	 	 	 WidthWell+4, parnames[Nparams-1-j].c_str(), Width, priorof[Nparams-1-j]);
+				else
+					sprintf(buffM, "\t\t\t\t\t\t\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\n", WidthWell+4, "", Width, "", WidthWell+4, "", Width, "");
+				sw << buffM;
+			}
 		}
 	}
+}
+//---------------------------------------------------------------------------
+std::string PMEclipse::form_prior(double &pr_of) const		// if prior info is available, returns a message (and fills its value 'pr_of'); returns "" otherwise
+{
+	if (outer_post_diag != nullptr)
+	{
+		int Nparams = outer_post_diag->prior_contrib.size();
+		pr_of = 0;
+		for (int i = 0; i < Nparams; i++)
+			pr_of += outer_post_diag->prior_contrib[i];
+
+		char buffEN[HMMPI::BUFFSIZE], buffRU[HMMPI::BUFFSIZE];
+		sprintf(buffEN, "Prior for %d parameter(s) = %.8g\n", Nparams, pr_of);
+		sprintf(buffRU, "Априорное распределение для %d параметр(ов) = %.8g\n", Nparams, pr_of);
+		return HMMPI::MessageRE(buffRU, buffEN);
+	}
+	else
+		return "";
 }
 //---------------------------------------------------------------------------
 void PMEclipse::perturb_well()
@@ -2346,7 +2422,7 @@ void PMEclipse::perturb_well()
 	  	  	  	  	  	  	  	  	  "Chi-2 statistical check for perturbed well data: {0:%g}\n", chi2));
 }
 //---------------------------------------------------------------------------
-PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : PhysModel(k, kw, c), K(k), CWD(cwd), log_file(cwd + "/ObjFuncLog.txt"), modelled_data_size(0), cov_is_diag(false), VCL(0)
+PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Sim_small_interface(k, kw, c), K(k), CWD(cwd), log_file(cwd + "/ObjFuncLog.txt"), modelled_data_size(0), cov_is_diag(false), VCL(0)
 {
 	DECLKWD(mod, KW_model, "MODEL");
 	DECLKWD(datesW, KW_dates, "DATES");
@@ -2391,7 +2467,7 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Ph
 	else if (print)
 		K->AppText(std::string(HMMPI::MessageRE("TEXTSMRY не задан -> история берется из модельного ",
 												"TEXTSMRY is not defined -> history is taken from model ")) + HMMPI::EraseSubstr(smry->data_file(), "./") + "\n");
-	name = "PMEclipse";
+	name = "SIM";
 	ignore_small_errors = true;
 
 #ifdef TESTCTOR
@@ -2401,11 +2477,10 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Ph
 #endif
 }
 //---------------------------------------------------------------------------
-PMEclipse::PMEclipse(const PMEclipse &PM) : PhysModel(PM), K(PM.K), CWD(PM.CWD), log_file(PM.log_file), obj_func_msg(PM.obj_func_msg), cov_is_diag(PM.cov_is_diag), VCL(PM.VCL), smry(PM.smry->Copy())
+PMEclipse::PMEclipse(const PMEclipse &PM) : Sim_small_interface(PM), K(PM.K), CWD(PM.CWD), log_file(PM.log_file), obj_func_msg(PM.obj_func_msg), cov_is_diag(PM.cov_is_diag), VCL(PM.VCL), smry(PM.smry->Copy())
 {
 	modelled_data_size = PM.modelled_data_size;
 	ignore_small_errors = PM.ignore_small_errors;
-	limits_msg = PM.limits_msg;
 
 	if (VCL != 0)
 		VCL->ownerCount++;
@@ -2578,7 +2653,13 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 						sw << templ_msg << "\n";
 						sw << msg_vect;
 						write_smry(sw, SMRY, smry_hist, of_vec, text_sigma);
-						sw << HMMPI::stringFormatArr("\nf = {0}\n", std::vector<double>{res});
+
+						double prior = 0;
+						std::string prior_msg = form_prior(prior);
+						sw << HMMPI::stringFormatArr("\nf = {0:%.8g}\n", std::vector<double>{res + prior});
+						sw << prior_msg;
+						if (prior_msg != "")
+							sw << HMMPI::stringFormatArr("Likelihood = {0:%.8g}\n", std::vector<double>{res});
 						if (text_sigma)
 						{
 							if (!cov_is_diag)
@@ -2632,6 +2713,8 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 
 	if (comm != MPI_COMM_NULL)
 	{
+		HMMPI::MPI_BarrierSleepy(comm);
+
 		MPI_Bcast(&warning_count, 1, MPI_INT, 0, comm);
 		if (!ignore_small_errors)
 			K->TotalWarnings += warning_count;
@@ -2937,7 +3020,6 @@ PMpConnect::PMpConnect(const PMpConnect &PM) : PhysModel(PM), of_cache(PM.of_cac
 		hist_cache(PM.hist_cache), sigma_cache(PM.sigma_cache), hist_sigmas_ok(PM.hist_sigmas_ok),
 		K(PM.K), CWD(PM.CWD), obj_func_msg(PM.obj_func_msg), scale(PM.scale)
 {
-	limits_msg = PM.limits_msg;
 }
 //---------------------------------------------------------------------------
 PMpConnect::~PMpConnect()
@@ -3447,7 +3529,7 @@ double PM_Linear::ObjFunc(const std::vector<double> &params)
 //---------------------------------------------------------------------------
 std::vector<double> PM_Linear::ObjFuncGrad(const std::vector<double> &params)
 {
-	HMMPI::Mat Gxd0 = G * params - d0;
+	HMMPI::Mat Gxd0 = HMMPI::Mat(G * params) - d0;
 	size_t sz = Gxd0.ICount();
 	if (DiagCov.size() != 0 && sz != DiagCov.size())
 		throw HMMPI::Exception("Неправильный размер DiagCov в PM_Linear::ObjFuncGrad", "Wrong size of DiagCov in PM_Linear::ObjFuncGrad");

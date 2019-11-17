@@ -1736,7 +1736,7 @@ VectCorrEntry::~VectCorrEntry()
 		delete [] L;
 }
 //---------------------------------------------------------------------------
-void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<int> &tm, double R, HMMPI::Func1D *func)
+void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, HMMPI::Func1D *func)
 {
 	R0 = R;
 
@@ -1752,7 +1752,7 @@ void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry,
 
 	// count valid data points
 	sz = 0;
-	std::vector<int> tvalid;
+	std::vector<double> tvalid;
 	sigma = std::vector<double>();
 	indvalid = std::vector<int>(dcount);
 	for (size_t i = 0; i < dcount; i++)
@@ -1966,7 +1966,7 @@ VectCorrList::VectCorrList()
 	ownerCount = 0;
 }
 //---------------------------------------------------------------------------
-void VectCorrList::LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<int> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D*> F)
+void VectCorrList::LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D*> F)
 {
 	size_t vcount = textsmry.JCount()/2;
 	if (vcount != R.size())

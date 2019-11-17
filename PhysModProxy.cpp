@@ -303,7 +303,7 @@ bool PM_Proxy::CheckLimits(const std::vector<double> &params) const
 	else
 	{
 		bool res = PM->CheckLimits(params);
-		limits_msg = PM->limits_msg;
+		limits_msg = PM->get_limits_msg();
 		return res;
 	}
 }
@@ -780,7 +780,7 @@ std::vector<double> PM_DataProxy::ObjFuncGrad(const std::vector<double> &params)
 	}
 
 	std::vector<double> div = *BDC / resid;			// 2 * C^(-1) * (d_m - d_o)
-	std::vector<double> Gr_div = (Gr * div).ToVector();
+	std::vector<double> Gr_div = Gr * div;
 
 	std::vector<double> res(params.size(), 0);
 	MPI_Reduce(Gr_div.data(), res.data(), res.size(), MPI_DOUBLE, MPI_SUM, 0, comm);
@@ -860,7 +860,7 @@ std::vector<double> PM_DataProxy::ObjFuncHess_l(const std::vector<double> &param
 		resid_loc = *BDC / resid_loc;		// 2 * C^(-1) * (d_m - d_o)
 
 	gr_l = *BDC / gr_l;						// C^(-1) * gr_l
-	std::vector<double> sum = (Hl*resid_loc + Gr_loc*gr_l).ToVector();
+	std::vector<double> sum = (HMMPI::Mat(Hl*resid_loc) + HMMPI::Mat(Gr_loc*gr_l)).ToVector();
 
 	std::vector<double> res(params.size(), 0);
 	MPI_Reduce(sum.data(), res.data(), res.size(), MPI_DOUBLE, MPI_SUM, 0, comm);
@@ -882,7 +882,7 @@ HMMPI::Mat PM_DataProxy::ObjFuncFisher(const std::vector<double> &params)
 	ObjFuncGrad(params);	// calculate DataSens_loc
 
 	HMMPI::Mat CinvSens = *BDC / DataSens_loc;
-	HMMPI::Mat FI_local = DataSens_loc.Tr() * CinvSens;		// fulldim x fulldim matrix on each rank
+	HMMPI::Mat FI_local = DataSens_loc.Tr() * CinvSens;		// fulldim x fulldim matrix on each rank			TODO add BLAS?
 
 	HMMPI::Mat res;
 	if (rank == 0)
@@ -898,7 +898,7 @@ HMMPI::Mat PM_DataProxy::ObjFuncFisher_dxi(const std::vector<double> &params, co
 		ObjFuncGrad(params);						// calculate DataSens_loc
 	HMMPI::Mat diS = ObjFuncSens_dxi(params, i);	// Sens derivative (local part)
 
-	HMMPI::Mat M1 = diS.Tr() * (*BDC / DataSens_loc);
+	HMMPI::Mat M1 = diS.Tr() * (*BDC / DataSens_loc);			// TODO add BLAS?
 	M1 += M1.Tr();
 
 	HMMPI::Mat res;
@@ -1045,6 +1045,8 @@ void PM_DataProxy2::RecalcVals()
 //---------------------------------------------------------------------------
 PM_DataProxy2::PM_DataProxy2(PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_params *config, const HMMPI::BlockDiagMat *bdc, const std::vector<double> &d) : PM_DataProxy(pm, K, kw, config, bdc, d)
 {
+	name = "PM_DataProxy2";
+
 	starts = std::vector<KrigStart>(ends.size(), KrigStart(K, kw, config));				// create 'starts' of the same size as 'ends' ('ends' were created in PM_DataProxy CTOR)
 	for (size_t i = 0; i < ends.size(); i++)				// link starts[i] with ends[i]
 		ends[i].set_start(&starts[i], i);
@@ -1215,7 +1217,7 @@ PM_SimProxy::PM_SimProxy(PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_params 
 	int rank;
 	MPI_Comm_rank(comm, &rank);
 
-	name = "SimProxy";
+	name = "PROXY";
 
 	kw->Start_pre();
 	DECLKWD(params, KW_parameters, "PARAMETERS");
@@ -1517,7 +1519,7 @@ std::vector<double> KrigCorr::obj_func_grad(const std::vector<double> &params) c
 
 	std::vector<double> res(3);
 	for (int i = 0; i < 3; i++)
-		res[i] = exp(lndet/n)/n * (invR*d_R[i]).Trace();
+		res[i] = exp(lndet/n)/n * (invR*d_R[i]).Trace();			// TODO add BLAS?
 
 	return res;
 }
@@ -1549,12 +1551,12 @@ HMMPI::Mat KrigCorr::obj_func_hess(const std::vector<double> &params) const
 
 	std::vector<HMMPI::Mat> work(3);	// invR * dR/dt_i
 	for (int i = 0; i < 3; i++)
-		work[i] = invR*d_R[i];
+		work[i] = invR*d_R[i];			// TODO add BLAS?
 
 	HMMPI::Mat res(3, 3, 0.0);
 	for (int i = 0; i < 3; i++)
 		for (int j = i; j < 3; j++)
-			res(j, i) = res(i, j) = exp(lndet/n)/n * (work[i].Trace()*work[j].Trace()/n - (work[i]*work[j]).Trace() + (invR*d2_R(i, j)).Trace());
+			res(j, i) = res(i, j) = exp(lndet/n)/n * (work[i].Trace()*work[j].Trace()/n - (work[i]*work[j]).Trace() + (invR*d2_R(i, j)).Trace());	// TODO add BLAS?
 
 	return res;
 }
@@ -1580,6 +1582,7 @@ KrigCorr::KrigCorr(const HMMPI::Func1D *cf, Parser_1 *K, _proxy_params *config) 
 {
 	DECLKWD(limitsKrig, KW_limitsKrig, "LIMITSKRIG");
 
+	name = "KRIGCORR";
 	K0 = K;
 	is_valid = 0;
 
@@ -1708,8 +1711,8 @@ const HMMPI::Mat &KrigSigma::get_U(const std::vector<double> &params) const
 #else
 		HMMPI::Mat invR = ref->Get_R().InvSY();
 #endif
-		HMMPI::Mat invR_F = invR * (*F);
-		U_cache = invR - invR_F * ((F->Tr()*invR_F)/(invR_F.Tr()));
+		HMMPI::Mat invR_F = invR * (*F);			// TODO add BLAS?
+		U_cache = invR - invR_F * ((F->Tr()*invR_F)/(invR_F.Tr()));		// TODO add BLAS?
 
 		par_cache = params;
 		is_valid = true;
@@ -1723,7 +1726,7 @@ double KrigSigma::sigma2(const std::vector<double> &params) const
 	HMMPI::Mat Y = *Ys;
 	double n = Ys->size();
 
-	return InnerProd(Y, get_U(params)*Y)/n;
+	return InnerProd(Y, get_U(params)*Y)/n;		// TODO add BLAS? is it Mat*Vec?
 }
 //---------------------------------------------------------------------------
 std::vector<double> KrigSigma::sigma2_grad(const std::vector<double> &params) const
@@ -1737,7 +1740,7 @@ std::vector<double> KrigSigma::sigma2_grad(const std::vector<double> &params) co
 	HMMPI::Mat U = get_U(params);
 
 	for (int i = 0; i < 3; i++)
-		res[i] = -InnerProd(Y, U.Tr()*ref->d_R[i]*U*Y)/n;
+		res[i] = -InnerProd(Y, U.Tr()*ref->d_R[i]*U*Y)/n;		// TODO add BLAS? more inner prods?
 
 	return res;
 }
@@ -1756,7 +1759,7 @@ HMMPI::Mat KrigSigma::sigma2_Hess(const std::vector<double> &params) const
 
 	for (int i = 0; i < 3; i++)
 		for (int j = i; j < 3; j++)
-			res(j, i) = res(i, j) = 2/n*InnerProd(Y, Ut*ref->d_R[i]*Ut*ref->d_R[j]*U*Y) - InnerProd(Y, Ut*ref->d2_R(i, j)*U*Y)/n;
+			res(j, i) = res(i, j) = 2/n*InnerProd(Y, Ut*ref->d_R[i]*Ut*ref->d_R[j]*U*Y) - InnerProd(Y, Ut*ref->d2_R(i, j)*U*Y)/n;		// TODO add BLAS? Mat*Vec here?
 
 	return res;
 }
@@ -1765,6 +1768,7 @@ KrigSigma::KrigSigma(Parser_1 *K, _proxy_params *config) : KrigSigma()
 {
 	DECLKWD(limitsKrig, KW_limitsKrig, "LIMITSKRIG");
 
+	name = "KRIGSIGMA";
 	is_valid = false;
 	if (limitsKrig->GetState() == "" && dynamic_cast<KW_proxy*>(config) != nullptr)		// LIMITSKRIG is defined _AND_ config == PROXY_CONFIG
 	{
@@ -1881,7 +1885,7 @@ void KrigStart::push_back_data(const std::vector<std::vector<double>> &X0, const
 }
 //---------------------------------------------------------------------------
 KrigStart::KrigStart(Parser_1 *K, KW_item *kw, _proxy_params *config) :		// easy constructor; all data are taken from keywords of "K"; 1st LINSOLVER is used; "kw" is used only to handle prerequisites; "config" can be PROXY_CONFIG or MODEL
-		kc(config->corr, K, config), dump_flag(-1), index(-1), is_empty(false)
+		trend_order(config->trend), kc(config->corr, K, config), dump_flag(-1), index(-1), is_empty(false)
 {
 	DECLKWD(solver, KW_LinSolver, "LINSOLVER");
 	DECLKWD(params, KW_parameters, "PARAMETERS");
@@ -1913,13 +1917,14 @@ KrigStart::KrigStart(Parser_1 *K, KW_item *kw, _proxy_params *config) :		// easy
 		throw HMMPI::Exception("Для вариограммы VARGAUSS тренд должен быть порядка >= 0", "For VARGAUSS variogram the trend order should be >= 0");
 }
 //---------------------------------------------------------------------------
-KrigStart::KrigStart(const KrigStart &p)
+KrigStart::KrigStart(const KrigStart &p) : smooth_at_nugget(p.smooth_at_nugget)
 {
 	*this = p;
 }
 //---------------------------------------------------------------------------
 const KrigStart &KrigStart::operator=(const KrigStart &p)
 {
+	trend_order = p.trend_order;
 	D = p.D;
 	DG = p.DG;
 	DGG = p.DGG;
@@ -2127,29 +2132,41 @@ void KrigStart::ObjFuncCommon(std::vector<double> params)
 	c0.Func(f0);
 
 	// 1a. Correlation part for gradients
-	const int Ngrad_comps = grad_inds.size();							// number of gradient components which participate in training
-	HMMPI::Mat mults = RHS_dist_matr(X_1, params);
-
-	const double R2 = R*R;
-	auto f1 = [this, R2](double x) -> double {return func->lim_df(x/R)/R2;};
-	mults.Func(f1);
+	const int Ngrad_comps = grad_inds.size();				// number of gradient components which participate in training
 	HMMPI::Mat c1(X_1.size()*Ngrad_comps, 1, 0.0);
-
-	const std::vector<double> par_reord = HMMPI::Reorder(params, grad_inds);
-	for (size_t j = 0; j < X_1.size(); j++)
+	if (X_1.size() > 0)
 	{
-		const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
-		for (int k = 0; k < Ngrad_comps; k++)
-			c1(j*Ngrad_comps + k, 0) = (x1j[k] - par_reord[k])*mults(j, 0);
+		HMMPI::Mat mults = RHS_dist_matr(X_1, params);
+		const double R2 = R*R;
+		auto f1 = [this, R2](double x) -> double {return func->lim_df(x/R)/R2;};
+		mults.Func(f1);
+
+		const std::vector<double> par_reord = HMMPI::Reorder(params, grad_inds);
+		for (size_t j = 0; j < X_1.size(); j++)
+		{
+			const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
+			for (int k = 0; k < Ngrad_comps; k++)
+				c1(j*Ngrad_comps + k, 0) = (x1j[k] - par_reord[k])*mults(j, 0);
+		}
 	}
 
 	// 2. Trend part
 	size_t len_trend = multi_ind.size();
 	HMMPI::Mat x0(len_trend, 1, 0.0);
-	for (size_t j = 0; j < len_trend; j++)
-		x0(j, 0) = HMMPI::Vec_pow_multiind(params, multi_ind[j]);
+	if (trend_order == 1)	// some code specialization
+	{
+		assert(len_trend-1 == params.size());
+		x0(0, 0) = 1;
+		for (size_t j = 1; j < len_trend; j++)
+			x0(j, 0) = params[j-1];
+	}
+	else					// general case
+	{
+		for (size_t j = 0; j < len_trend; j++)
+			x0(j, 0) = HMMPI::Vec_pow_multiind(params, multi_ind[j]);
+	}
 
-	C0 = c0||c1||x0;
+	C0 = std::move(c0)||c1||x0;
 
 #ifdef TESTNEWPROXY
 	int size00, RNK;
@@ -2184,26 +2201,38 @@ void KrigStart::ObjFuncGradCommon(std::vector<double> params)
 			gM(i, j) = (params[i] - X_0[j][i])*aux(j, 0);
 
 	// 1a. Correlation part for gradients
-	HMMPI::Mat aux1 = RHS_dist_matr(X_1, params);
-	HMMPI::Mat aux1_0 = aux1;
-	const double R4 = R2*R2;
-	auto f2 = [this, R4](double x) -> double {return func->lim_d2f(x/R)/R4;};
-	aux1.Func(f2);
-	aux1_0.Func(f1);
+	if (len_corr_1 > 0)
+	{
+		HMMPI::Mat aux1 = RHS_dist_matr(X_1, params);
+		HMMPI::Mat aux1_0 = aux1;
+		const double R4 = R2*R2;
+		auto f2 = [this, R4](double x) -> double {return func->lim_d2f(x/R)/R4;};
+		aux1.Func(f2);
+		aux1_0.Func(f1);
 
-	const std::vector<double> par_reord = HMMPI::Reorder(params, grad_inds);
-	for (size_t l = 0; l < dim; l++)
-		for (size_t j = 0; j < len_corr_1; j++)
-		{
-			const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
-			for (int i = 0; i < Ngrad_comps; i++)
-				gM(l, len_corr_0 + j*Ngrad_comps + i) = -(par_reord[i] - x1j[i])*(params[l] - X_1[j][l])*aux1(j, 0) - aux1_0(j, 0)*(grad_inds[i] == (int)l ? 1 : 0);
-		}
+		const std::vector<double> par_reord = HMMPI::Reorder(params, grad_inds);
+		for (size_t l = 0; l < dim; l++)
+			for (size_t j = 0; j < len_corr_1; j++)
+			{
+				const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
+				for (int i = 0; i < Ngrad_comps; i++)
+					gM(l, len_corr_0 + j*Ngrad_comps + i) = -(par_reord[i] - x1j[i])*(params[l] - X_1[j][l])*aux1(j, 0) - aux1_0(j, 0)*(grad_inds[i] == (int)l ? 1 : 0);
+			}
+	}
 
 	// 2. Fill the trend part
-	for (size_t j = 0; j < len_trend; j++)		// j - a trend component
-		for (size_t k = 0; k < multi_ind[j].size(); k++)	// go through multiindex 'j'
-			gM(multi_ind[j][k], len_corr_0 + len_corr_1*Ngrad_comps + j) += HMMPI::Vec_pow_multiind(params, multi_ind[j], k);		// add d/dk; multi_ind[j][k] -- index of the variable (parameter)
+	if (trend_order == 1)			// some code specialization
+	{
+		assert(len_trend-1 == params.size());
+		for (size_t j = 1; j < len_trend; j++)		// j - a trend component
+			gM(j-1, len_corr_0 + len_corr_1*Ngrad_comps + j) += 1;
+	}
+	else							// general case
+	{
+		for (size_t j = 0; j < len_trend; j++)		// j - a trend component
+			for (size_t k = 0; k < multi_ind[j].size(); k++)	// go through multiindex 'j'
+				gM(multi_ind[j][k], len_corr_0 + len_corr_1*Ngrad_comps + j) += HMMPI::Vec_pow_multiind(params, multi_ind[j], k);		// add d/dk; multi_ind[j][k] -- index of the variable (parameter)
+	}
 
 	// 3. Scaling
 	gM = pscale % std::move(gM);
@@ -2254,32 +2283,42 @@ void KrigStart::ObjFuncHess_lCommon(std::vector<double> params, int l)
 	}
 
 	// 1a. Correlation part for gradient points
-	HMMPI::Mat aux3 = RHS_dist_matr(X_1, params);		// [...]_*
-	HMMPI::Mat aux4 = aux3;
-	const double R6 = R2*R4;
-	auto f3 = [this, R6](double x) -> double {return func->lim_d3f(x/R)/R6;};
-	aux3.Func(f3);
-	aux4.Func(f2);
+	if (len_corr_1 > 0)
+	{
+		HMMPI::Mat aux3 = RHS_dist_matr(X_1, params);		// [...]_*
+		HMMPI::Mat aux4 = aux3;
+		const double R6 = R2*R4;
+		auto f3 = [this, R6](double x) -> double {return func->lim_d3f(x/R)/R6;};
+		aux3.Func(f3);
+		aux4.Func(f2);
 
-	const std::vector<double> par_reord = HMMPI::Reorder(params, grad_inds);
-	for (size_t k = 0; k < dim; k++)						// d/dk <-> row of lM
-		for (size_t j = 0; j < len_corr_1; j++)				// design point
-		{
-			const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
-			for (int i = 0; i < Ngrad_comps; i++)			// i - gradient component participating in proxy training
-				lM(k, len_corr_0 + j*Ngrad_comps + i) = (params[k] - X_1[j][k])*(par_reord[i] - x1j[i])*(params[l] - X_1[j][l])*aux3(j, 0) - aux4(j, 0)*(
-					   (grad_inds[i] == (int)k ? 1 : 0)*(params[l] - X_1[j][l]) +
-							      ((int)k == l ? 1 : 0)*(par_reord[i] - x1j[i]) +
-							(grad_inds[i] == l ? 1 : 0)*(params[k] - X_1[j][k]));
-		}
+		const std::vector<double> par_reord = HMMPI::Reorder(params, grad_inds);
+		for (size_t k = 0; k < dim; k++)						// d/dk <-> row of lM
+			for (size_t j = 0; j < len_corr_1; j++)				// design point
+			{
+				const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
+				for (int i = 0; i < Ngrad_comps; i++)			// i - gradient component participating in proxy training
+					lM(k, len_corr_0 + j*Ngrad_comps + i) = (params[k] - X_1[j][k])*(par_reord[i] - x1j[i])*(params[l] - X_1[j][l])*aux3(j, 0) - aux4(j, 0)*(
+						   (grad_inds[i] == (int)k ? 1 : 0)*(params[l] - X_1[j][l]) +
+									  ((int)k == l ? 1 : 0)*(par_reord[i] - x1j[i]) +
+								(grad_inds[i] == l ? 1 : 0)*(params[k] - X_1[j][k]));
+			}
+	}
 
 	// 2. Fill the trend part
-	for (size_t j = 0; j < len_trend; j++)
+	if (trend_order == 1)			// some code specialization
 	{
-		for (size_t i = 0; i < multi_ind[j].size(); i++)		// go through multiindex 'j'
-			for (size_t k = 0; k < multi_ind[j].size(); k++)	// go through multiindex 'j'
-				if (i != k && multi_ind[j][i] == l)
-					lM(multi_ind[j][k], len_corr_0 + len_corr_1*Ngrad_comps + j) += HMMPI::Vec_pow_multiind(params, multi_ind[j], i, k);		// add d2/(di*dk)
+		// pass
+	}
+	else							// general case
+	{
+		for (size_t j = 0; j < len_trend; j++)
+		{
+			for (size_t i = 0; i < multi_ind[j].size(); i++)		// go through multiindex 'j'
+				for (size_t k = 0; k < multi_ind[j].size(); k++)	// go through multiindex 'j'
+					if (i != k && multi_ind[j][i] == l)
+						lM(multi_ind[j][k], len_corr_0 + len_corr_1*Ngrad_comps + j) += HMMPI::Vec_pow_multiind(params, multi_ind[j], i, k);		// add d2/(di*dk)
+		}
 	}
 
 	// 3. Scaling
@@ -2526,12 +2565,12 @@ double KrigEnd::ObjFuncPrivate()
 //---------------------------------------------------------------------------
 std::vector<double> KrigEnd::ObjFuncGradPrivate()
 {
-	return (start->gM * CinvZ).ToVector();
+	return start->gM * (CinvZ.ToVector());
 }
 //---------------------------------------------------------------------------
 std::vector<double> KrigEnd::ObjFuncHess_lPrivate()
 {
-	return (start->lM * CinvZ).ToVector();
+	return start->lM * (CinvZ.ToVector());
 }
 //---------------------------------------------------------------------------
 void KrigEnd::OptimizeKrig()									// optimizes kriging parameters (via "ks") for ends[i] in DataProxy2 (or stand alone simple proxy), and takes these parameters; should be called after adding vals, RecalcPoints()
