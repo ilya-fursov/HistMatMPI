@@ -163,6 +163,13 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
+class KW_runIntegPoro : public KW_run			// numerical integration based on kriging mean and variance
+{												// settings: KW_integporo_config
+public:
+	KW_runIntegPoro();
+    virtual void Run();
+};
+//------------------------------------------------------------------------------------------
 class KW_runsoboltest : public KW_run
 {
 public:
@@ -432,6 +439,23 @@ public:
 	double actnum_min;
 
 	KW_griddimens();
+};
+//------------------------------------------------------------------------------------------
+class KW_integporo_config : public KW_params
+{
+public:
+	double phi0;				// cut-off, integration is in [phi0, +inf]
+	int n;						// number of integration intervals, more precisely, the number of quantiles in [-inf, inf]
+	int Nx;						// grid dimensions
+	int Ny;
+	int Nz;
+
+	std::string file_mean;		// mean cube (kriging)
+	std::string file_var;		// variance cube
+	std::string file_out_templ;	// this output template should contain %d format specifier
+
+	KW_integporo_config();
+	virtual void UpdateParams() noexcept;
 };
 //------------------------------------------------------------------------------------------
 class KW_satsteps : public KW_parint

@@ -930,6 +930,41 @@ KW_griddimens::KW_griddimens()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+KW_integporo_config::KW_integporo_config()
+{
+	name = "INTEGPORO_CONFIG";
+
+	DEFPAR(phi0, 0.05);				// cut-off, integration is in [phi0, +inf]
+	DEFPAR(n, 100);					// number of integration intervals, more precisely, the number of quantiles in [-inf, inf]
+	DEFPAR(Nx, 1);					// grid dimensions
+	DEFPAR(Ny, 1);
+	DEFPAR(Nz, 1);
+
+	DEFPAR(file_mean, "");			// mean cube (kriging)
+	DEFPAR(file_var, "");			// variance cube
+	DEFPAR(file_out_templ, "%d");	// this output template should contain %d format specifier
+
+	FinalizeParams();
+}
+//------------------------------------------------------------------------------------------
+void KW_integporo_config::UpdateParams() noexcept
+{
+	file_mean = this->CWD + "/" + file_mean;
+	file_var = this->CWD + "/" + file_var;
+	file_out_templ = this->CWD + "/" + file_out_templ;
+	if (n <= 1)
+		SilentError(HMMPI::MessageRE("n должно быть > 1", "n should be > 1"));
+	if (Nx < 1 || Ny < 1 || Nz < 1)
+		SilentError(HMMPI::MessageRE("Все размеры грида должны быть >= 1", "All grid dimensions should be >= 1"));
+	if (file_mean == this->CWD + "/" || !HMMPI::FileExists(file_mean))
+		SilentError((std::string)HMMPI::MessageRE("Не найден файл: ", "File not found: ") + "'" + file_mean + "'");
+	if (file_var == this->CWD + "/" || !HMMPI::FileExists(file_var))
+		SilentError((std::string)HMMPI::MessageRE("Не найден файл: ", "File not found: ") + "'" + file_var + "'");
+	if (file_out_templ.find("%d") == std::string::npos)
+		SilentError(HMMPI::MessageRE("file_out_templ должен содержать '%d'", "file_out_templ should contain '%d'"));
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_satsteps::KW_satsteps()
 {
 	name = "SATSTEPS";

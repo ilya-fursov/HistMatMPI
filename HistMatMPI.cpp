@@ -88,6 +88,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_griddimens);
 		kw1.AddKW_item(new KW_CoordZcorn);
 		kw1.AddKW_item(new KW_Actnum);
+		kw1.AddKW_item(new KW_integporo_config);
 
 		kw1.AddKW_item(new KW_datafile);
 		kw1.AddKW_item(new KW_funrst);
@@ -144,6 +145,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_runPinchMarkFromGrid);
 		kw1.AddKW_item(new KW_runGridIJK_to_XYZ);
 		kw1.AddKW_item(new KW_runXYZ_to_GridIJK);
+		kw1.AddKW_item(new KW_runIntegPoro);
 
 		kw1.AddKW_item(new KW_LinSolver);
 		kw1.AddKW_item(new KW_soboltest);

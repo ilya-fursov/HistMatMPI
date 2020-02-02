@@ -120,6 +120,8 @@ std::string getFile(std::string fullname);			// get 'file' from 'path+file'
 bool MPI_size_consistent();		// checks consistency of type sizes: 'size_t' -- MPI_UNSIGNED_LONG
 								// 'char' -- MPI_CHAR, 'bool' -- MPI_BYTE
 void MPI_BarrierSleepy(MPI_Comm comm);		// A (less responsive) barrier which does not consume much CPU
+void MPI_count_displ(MPI_Comm comm, int M, std::vector<int> &counts, std::vector<int> &displs);		// fills 'counts' and 'displs' needed for MPI_Gatherv/MPI_Scatterv for distributing the vector of size M on "comm"
+																									// all inputs and outputs are sync on "comm"
 std::string MPI_Ranks(std::vector<MPI_Comm> vc);	// get a string containing the ranks of each process (row) for each communicator in 'vc' (column)
 													// non-empty result is returned to RANK-0 of MPI_COMM_WORLD; to be called on MPI_COMM_WORLD
 int FileModCompare(std::string f1, std::string f2);	// returns -1 if modification time mt(f1) < mt(f2),

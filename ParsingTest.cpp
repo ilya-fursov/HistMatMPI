@@ -397,8 +397,8 @@ void KW_rundebug::Run()
 {
 	// test ...
 	Start_pre();
-	IMPORTKWD(datesW, KW_dates, "DATES");
-	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
+//	IMPORTKWD(datesW, KW_dates, "DATES");
+//	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
 
 //	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
@@ -431,19 +431,37 @@ void KW_rundebug::Run()
 //		printf("%d\t%d\t%d\t-\t%.0f\t%.0f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y);
 //	}
 
-	std::vector<double> diff = datesW->zeroBased();
-	std::cout << "-----\n" << HMMPI::ToString(diff, "%.16g", "\n");
+	auto g = [](double x) -> double {return x;};
+	auto g2 = [](double x) -> double {return x*x;};
+	auto g3 = [](double x) -> double {return x*x*x;};
+	auto g4 = [](double x) -> double {return x*x*x*x;};
+	auto g5 = [](double x) -> double {return x*x*x*x*x;};
+	int n = 1000000;
+	double mu = 3;
+	double x0 = -20;
+//	std::cout << HMMPI::integr_Gauss(g,  n, x0, mu, 2) << "\n";
+//	std::cout << HMMPI::integr_Gauss(g2, n, x0, mu, 2) << "\n";
+//	std::cout << HMMPI::integr_Gauss(g3, n, x0, mu, 2) << "\n";
+//	std::cout << HMMPI::integr_Gauss(g4, n, x0, mu, 2) << "\n";
+//	std::cout << HMMPI::integr_Gauss(g5, n, x0, mu, 2) << "\n";
 
-	std::cout << HMMPI::Date("01/03/2019").ToString() << "\n";
-	std::cout << HMMPI::Date("01/03/2019 12:15").ToString() << "\n";
+//	for (double d = -1; d <= 1; d += 0.1)
+//		std::cout << d << "\t" << HMMPI::integr_Gauss(g2, n, d, 0.5, 0) << "\n";
 
-	FILE *fd = fopen("smry_ascii_test.txt", "w");
-	eclsmry->get_Data().SaveToAscii(fd);
-	fclose(fd);
-	//std::cout << HMMPI::Date("01/03/2019 12").ToString() << "\n";
-	//std::cout << HMMPI::Date("01/03/2019 12:15.40").ToString() << "\n";
-	//std::cout << HMMPI::Date("01/03/2019 12:15:40:50").ToString() << "\n";
-	//std::cout << HMMPI::Date("01/03/2019 12:15 40:50").ToString() << "\n";
+//	for (int n = 10; n <= 10000000; n *= 10)
+//		std::cout << n << "\t" << HMMPI::integr_Gauss(g3, n, 0, 0, 2) << "\n";
 
+//	for (double s = 0; s <= 5; s += 0.5)
+//		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
+
+	int M = 55, r;
+	MPI_Comm_rank(MPI_COMM_WORLD, &r);
+	std::vector<int> counts, displs;
+	HMMPI::MPI_count_displ(MPI_COMM_WORLD, M, counts, displs);
+	if (r == 0)
+	{
+		std::cout << "counts\t" << HMMPI::ToString(counts, "%d", "\t") << "\n";
+		std::cout << "displs\t" << HMMPI::ToString(displs, "%d", "\t") << "\n";
+	}
 }
 //------------------------------------------------------------------------------------------

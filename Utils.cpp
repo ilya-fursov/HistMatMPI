@@ -202,7 +202,7 @@ std::vector<const char *> vec_c_str_dodgy(const std::vector<std::string> &v)	// 
 	return res;
 }
 //------------------------------------------------------------------------------------------
-std::string Trim(const std::string &s, const std::string &trim_chars)		// removes "trim_chars" from left and right
+std::string Trim(const std::string &s, const std::string &trim_chars)			// removes "trim_chars" from left and right
 {
 	size_t first, last;
 	first = s.find_first_not_of(trim_chars);
@@ -214,7 +214,7 @@ std::string Trim(const std::string &s, const std::string &trim_chars)		// remove
 		return s.substr(first, last-first+1);
 }
 //------------------------------------------------------------------------------------------
-std::string EraseSubstr(std::string s, const std::string &substr)			// erases all substrings 'substr' from 's'
+std::string EraseSubstr(std::string s, const std::string &substr)				// erases all substrings 'substr' from 's'
 {
 	size_t N = substr.length();
 	for (size_t i = s.find(substr); i != std::string::npos; i = s.find(substr))
@@ -308,6 +308,24 @@ void MPI_BarrierSleepy(MPI_Comm comm)		// A (less responsive) barrier which does
 		std::this_thread::sleep_for(std::chrono::milliseconds(barrier_sleep_ms));
 		MPI_Test(&req, &finished, MPI_STATUS_IGNORE);
 	}
+}
+//------------------------------------------------------------------------------------------
+void MPI_count_displ(MPI_Comm comm, int M, std::vector<int> &counts, std::vector<int> &displs)		// fills 'counts' and 'displs' needed for MPI_Gatherv/MPI_Scatterv for distributing the vector of size M on "comm"
+{																									// all inputs and outputs are sync on "comm"
+	if (comm == MPI_COMM_NULL)
+		return;
+
+	int n, r, szr;
+	MPI_Comm_size(comm, &n);
+	MPI_Comm_rank(comm, &r);
+	szr = M/n + (r < M%n);		// number of points on the given process
+
+	displs = counts = std::vector<int>(n);
+	MPI_Allgather(&szr, 1, MPI_INT, counts.data(), 1, MPI_INT, comm);	// counts is sync
+
+	displs[0] = 0;
+	for (int i = 1; i < n; i++)
+		displs[i] = displs[i-1] + counts[i-1];							// displs is sync
 }
 //------------------------------------------------------------------------------------------
 std::string MPI_Ranks(std::vector<MPI_Comm> vc)

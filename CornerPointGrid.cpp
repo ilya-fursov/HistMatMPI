@@ -743,8 +743,8 @@ void CornGrid::SavePropertyToFile(std::string fname, std::string prop_name, cons
 {
 	assert(prop.size() > 0);
 	const int max_items = 12;
-	const char *fmt1 = "    %-8.6g";
-	const char *fmt = "%3d*%-8.6g";
+	const char *fmt1 = "     %-9.6g";
+	const char *fmt = "%4d*%-9.6g";
 
 	FILE *F = fopen(fname.c_str(), "w");
 	if (F == 0)

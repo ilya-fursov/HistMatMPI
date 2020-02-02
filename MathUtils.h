@@ -31,6 +31,7 @@ inline double Max(double x, double y){return (x > y) ? x : y;};
 double NumD(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative df/dx; h - increment, oh - precision
 double NumD2(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative d2f/dx2; h - increment, oh - precision
 double NumD3(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative d3f/dx3; h - increment, oh - precision
+double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma);		// calculate int_{x0...+inf} g(x)f(x)dx, where f = PDF Normal(mu, sigma^2), using "n" integration intervals with trapezoid rule
 bool IsNaN(double d);
 double _sqrt(double d);
 void Sobol(long long int &seed, std::vector<double> &vec);	// generates a new quasirandom Sobol vector with each call; it's a wrapper for "i8_sobol"; dimension is taken according to the vec.size(); 'seed' is incremented with each call

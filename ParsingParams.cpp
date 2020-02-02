@@ -17,6 +17,7 @@
 #include "Parsing2.h"
 #include "PhysModels.h"
 #include "ConcretePhysModels.h"
+#include "CornerPointGrid.h"
 #include "CMAES_interface.h"
 #include "Tracking.h"
 #include "GradientOpt.h"
@@ -1426,6 +1427,119 @@ void KW_runXYZ_to_GridIJK::Run()
 		}
 	}
 	K->AppText(cz->CG.report_find_cell_stats() + "\n");
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_runIntegPoro::KW_runIntegPoro()
+{
+	name = "RUNINTEGPORO";
+}
+//------------------------------------------------------------------------------------------
+void KW_runIntegPoro::Run()
+{
+	// * USER * define a list of lambda-functions (double->double) which are to be integrated
+	std::vector<std::function<double(double)>> Funcs;
+	Funcs.push_back([](double x) -> double {return 1;});		// NTG	#0
+	Funcs.push_back([](double x) -> double {return exp(1.76531*log(x) + 8.10649);});			// PERMX	#1
+	
+	Funcs.push_back([](double x) -> double {return x;});		// PORO*NTG		#2
+	
+	Funcs.push_back([](double x) -> double {return x*(HMMPI::Min(0.0123*pow(x, -1.0085), 0.98));});		// SWL*PORO		#3
+	Funcs.push_back([](double x) -> double {return x*(1 - HMMPI::Min(0.0123*pow(x, -1.0085), 0.98) - log((x - 0.0372)/0.0017)/7);});	// SOWCR*PORO	#4
+	Funcs.push_back([](double x) -> double {return 7.446369753*(pow(x/exp(1.663*log(x) + 7.17), 0.5));});		// PCW	#5
+	
+	// NTG : 1
+	// PERMX = exp(1.76531*log(PORO) + 8.10649)	-- Variable
+	// SWL = min(0.0123*PORO^(-1.0085), 0.98)
+	// SOWCR = 1 - min(0.0123*PORO^(-1.0085), 0.98) - log((PORO - 0.0372)/0.0017)/7		-- black trend
+	// PCW=7.446369753*((PORO/exp(1.663*log(PORO) + 7.17))^0.5)		-- NOTE PERM_gas is used here
+	
+	// * USER *
+
+	Start_pre();
+	IMPORTKWD(config, KW_integporo_config, "INTEGPORO_CONFIG");
+	Finish_pre();
+
+	const std::string mean_name = "PORO";
+	const std::string var_name = "VAR";
+	const size_t grid_size = size_t(config->Nx)*config->Ny*config->Nz;
+	std::vector<std::vector<double>> data_mean(1), data_var(1);				// inputs, only at rank-0; the outermost size is sync though
+
+	// MPI kicks in here
+	int rank;
+	std::vector<int> counts, displs;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	HMMPI::MPI_count_displ(MPI_COMM_WORLD, grid_size, counts, displs);		// ** NOTE ** too large 'grid_size' is not handled properly!
+
+	std::vector<double> mean(counts[rank]), var(counts[rank]);		// these two are MPI-distributed
+
+	// read the inputs
+	char err[HMMPI::BUFFSIZE];		// error message
+	err[0] = 0;						// this default state stands for 'no errors'
+	if (rank == 0)
+	{
+		try
+		{
+			// read the mean
+			HMMPI::CornGrid::ReadGrids(config->file_mean.c_str(), std::vector<size_t>{grid_size}, data_mean, std::vector<std::string>{mean_name}, "/");
+			assert(data_mean.size() == 1);
+			assert(data_mean[0].size() == grid_size);
+
+			// read the variance
+			HMMPI::CornGrid::ReadGrids(config->file_var.c_str(), std::vector<size_t>{grid_size}, data_var, std::vector<std::string>{var_name}, "/");
+			assert(data_var.size() == 1);
+			assert(data_var[0].size() == grid_size);
+		}
+		catch (HMMPI::Exception &e)
+		{
+			sprintf(err, "%.*s", HMMPI::BUFFSIZE-2, e.what());
+		}
+	}
+	MPI_Bcast(err, HMMPI::BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+	if (err[0] != 0)				// err is sync
+		throw HMMPI::Exception(err);
+
+	// make MPI-distribution
+	MPI_Scatterv(data_mean[0].data(), counts.data(), displs.data(), MPI_DOUBLE, mean.data(), counts[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	MPI_Scatterv(data_var[0].data(), counts.data(), displs.data(), MPI_DOUBLE, var.data(), counts[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+	// calculate integral for each function and save
+	std::vector<double> res, loc_res(counts[rank]);
+	if (rank == 0)
+		res = std::vector<double>(grid_size);		// res : a big guy on rank-0 only
+
+	for (int f = 0; f < (int)Funcs.size(); f++)
+	{
+		for (int i = 0; i < counts[rank]; i++)
+		{
+			assert(var[i] >= 0);
+			loc_res[i] = HMMPI::integr_Gauss(Funcs[f], config->n, config->phi0, mean[i], sqrt(var[i]));
+		}
+		MPI_Gatherv(loc_res.data(), counts[rank], MPI_DOUBLE, res.data(), counts.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);	// gather the result
+
+		char prop_name[HMMPI::BUFFSIZE], fname[HMMPI::BUFFSIZE], msg[HMMPI::BUFFSIZE];
+		sprintf(prop_name, "PROP_%d", f);
+		sprintf(fname, config->file_out_templ.c_str(), f);
+		sprintf(msg, "Saved %.30s to %.460s\n", prop_name, fname);
+
+		err[0] = 0;
+		if (rank == 0)
+		{
+			try
+			{
+				HMMPI::CornGrid::SavePropertyToFile(fname, prop_name, res);
+			}
+			catch (HMMPI::Exception &e)
+			{
+				sprintf(err, "%.*s", HMMPI::BUFFSIZE-2, e.what());
+			}
+		}
+		MPI_Bcast(err, HMMPI::BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+		if (err[0] != 0)				// err is sync
+			throw HMMPI::Exception(err);
+
+		K->AppText(msg);
+	}
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

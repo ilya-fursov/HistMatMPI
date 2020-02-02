@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <gsl/gsl_sf_bessel.h>
 #include <gsl/gsl_errno.h>
+#include <gsl/gsl_randist.h>
+#include <gsl/gsl_cdf.h>
 
 //#define TESTING
 //#define TESTBCAST
@@ -58,6 +60,40 @@ double NumD3(const std::function<double(double)> &f, double x, double h, OH oh)	
 		return ((f(x-h) - f(x+h))*13/8 + (f(x+2*h) - f(x-2*h)) + (f(x-3*h) - f(x+3*h))/8)/(h*h*h);
 	else
 		throw Exception("Unrecognised OH type in NumD3");
+}
+//------------------------------------------------------------------------------------------
+double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma)		// calculate int_{x0...+inf} g(x)f(x)dx, where f = PDF Normal(mu, sigma^2), using "n" integration intervals with trapezoid rule
+{
+	assert(n > 1);
+
+	if (sigma == 0)				// degenerate case
+	{
+		if (x0 <= mu)
+			return g(mu);
+		else
+			return 0;
+	}
+
+	double res = 0;
+	const double p0 = gsl_cdf_gaussian_P(x0 - mu, sigma);	// first integration point (corresp. to x0)
+	double f0 = gsl_ran_gaussian_pdf(x0 - mu, sigma);		// f at the first point
+	double G0 = g(x0);										// g at the first point
+
+	const int i0 = floor(p0*(n+2)) + 1;						// first index of the next integration point
+	for (int i = i0; i <= n+1; i++)			// i is the index of the next integration point
+	{
+		double x = mu + gsl_cdf_gaussian_Pinv((double)i/(n+2), sigma);	// next integration point
+		double f = gsl_ran_gaussian_pdf(x - mu, sigma);		// f at the next point
+		double G = g(x);									// g at the next point
+
+		res += (f0*G0 + f*G)/2*(x - x0);	// trapezoid term
+
+		x0 = x;								// update the quantities
+		f0 = f;
+		G0 = G;
+	}
+
+	return res;
 }
 //------------------------------------------------------------------------------------------
 bool IsNaN(double d)
