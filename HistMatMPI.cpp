@@ -31,8 +31,6 @@ int main(int argc, char *argv[])
 	HMMPI::TextAttr TA;
 	try
 	{
-		std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now(), time2;
-
 		std::string control_file;
 		std::string cwd;
 		if (argc == 0 || argc == 1)
@@ -54,8 +52,13 @@ int main(int argc, char *argv[])
 			std::string lang = HMMPI::ToUpper(argv[2]);
 			if (lang == "RUS" || lang == "ENG")
 				HMMPI::MessageRE::lang = lang;
+			else if (lang == "NULL")
+			{
+				HMMPI::MessageRE::lang = "ENG";
+				kw1.silent = true;
+			}
 			else
-				throw HMMPI::Exception("Неправильный язык", "Incorrect language");
+				throw HMMPI::Exception("Неправильный язык, ожидается: eng, rus, null", "Incorrect language, expected: eng, rus, null");
 		}
 
 		cwd += "/" + control_file;						// cwd where control file is located
@@ -97,6 +100,8 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_refmap);
 		kw1.AddKW_item(new KW_refmap_w);
 		kw1.AddKW_item(new KW_dates);
+		kw1.AddKW_item(new KW_startdate);
+		kw1.AddKW_item(new KW_groups);
 		kw1.AddKW_item(new KW_3points);
 		kw1.AddKW_item(new KW_satsteps);
 		kw1.AddKW_item(new KW_delta);
@@ -163,6 +168,8 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_MCMC_config);
 		kw1.AddKW_item(new KW_pConnect_config);
 		kw1.AddKW_item(new KW_viewsmry_config);
+		kw1.AddKW_item(new KW_view_tNavsmry_config);
+		kw1.AddKW_item(new KW_view_tNavsmry_properties);
 		kw1.AddKW_item(new KW_corrstruct);
 
 		kw1.AddKW_item(new KW_physmodel);
@@ -184,6 +191,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_runOptProxy);
 		kw1.AddKW_item(new KW_runPopModel);
 		kw1.AddKW_item(new KW_runViewSmry);
+		kw1.AddKW_item(new KW_runView_tNavSmry);
 
 		// Adding console text tweaks
 		//kw1.AddCTT(new CTT_Keyword(&TA));
@@ -215,10 +223,6 @@ int main(int argc, char *argv[])
 
 		kw1.DeleteItems();
 		kw1.DeleteCTTs();
-
-		time2 = std::chrono::high_resolution_clock::now();
-		if (Parser_1::MPI_rank == 0)
-			std::cout << HMMPI::stringFormatArr("Время {0:%.3f} сек.\n", "CPU time {0:%.3f} sec.\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count());
 	}
 	catch (const std::exception &e)
 	{
@@ -228,7 +232,17 @@ int main(int argc, char *argv[])
 			std::cerr << "Error: " << e.what() << std::endl;
 	}
 
+	MPI_Comm parent_comm;
+	MPI_Comm_get_parent(&parent_comm);
+	if (parent_comm != MPI_COMM_NULL)				// child process
+	{												// should have a sync point here to signal the parent that it has finished
+		HMMPI::MPI_BarrierSleepy(parent_comm);
+		MPI_Comm_free(&parent_comm);
+	}
+
+	MPI_Bcast(&kw1.TotalErrors, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
 	MPI_Finalize();
-	return 0;
+	return kw1.TotalErrors;		// non-zero exit status on errors
 }
 

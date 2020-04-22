@@ -176,6 +176,33 @@ void Date::parse_date_time(const std::string s, std::string delim, int &D, int &
 		Y = 0;
 }
 //--------------------------------------------------------------------------------------------------
+std::vector<double> Date::SubtractFromAll(const std::vector<Date> &vec) const		// subtracts *this from all elements of 'vec'
+{																					// the resulting elementwise difference in _days_ is returned
+	const size_t count = vec.size();
+	std::vector<double> res(count);
+	const std::vector<int> MLEN{0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};		// length of months
+
+	for (size_t i = 0; i < count; i++)
+	{
+		int deltaD = vec[i].Day - Day;
+		int deltaM = MLEN[vec[i].Month-1] - MLEN[Month-1];
+		int deltaY = (vec[i].Year - Year)*365;
+		double deltaSec = (vec[i].sec - sec)/86400;
+
+		// count leap years
+		int leap1 = Year/4;
+		int leap2 = vec[i].Year/4;
+		if (Year%4 == 0 && Month <= 2)
+			leap1--;
+		if (vec[i].Year%4 == 0 && vec[i].Month <= 2)
+			leap2--;
+
+		res[i] = deltaD + deltaM + deltaY + leap2-leap1 + deltaSec;
+	}
+
+	return res;
+}
+//--------------------------------------------------------------------------------------------------
 // class SmryKwd
 //--------------------------------------------------------------------------------------------------
 KwdType SmryKwd::type_from_str(std::string s)
@@ -547,12 +574,73 @@ std::string EclSMRY::data_file() const				// name of file with data
 //--------------------------------------------------------------------------------------------------
 // tNavSMRY
 //--------------------------------------------------------------------------------------------------
+// tNavSMRY::T_sec_obj
+//--------------------------------------------------------------------------------------------------
+void tNavSMRY::T_sec_obj::func(double *x, int flag, int wght_offset) const		// HIGHLIGHT: calculation of *x based on the other data from array 'x'
+{																				// 'flag' and 'wght_offset' should be taken from T_ecl_prop_transform
+	if (flag == 0)
+		*x = 0;
+	else if (flag == 1)		// simple summation
+	{
+		double d = 0;
+		for (size_t i = 0; i < offsets.size(); i++)
+			d += *(x + offsets[i]);
+		*x = d;
+	}
+	else					// weighted summation
+	{
+		double d = 0;
+		for (size_t i = 0; i < offsets.size(); i++)
+			d += *(x + offsets[i]) * *(x + offsets[i] + wght_offset);
+		*x = d;
+	}
+}
+//--------------------------------------------------------------------------------------------------
+// NB! primary and secondary objects are assumed to be arranged in consecutive chunks: [primary | secondary]
+// in the two CTORs below 'ind' is the index of the secondary object in the [secondary] chunk, i.e. 0, 1, 2,...
+tNavSMRY::T_sec_obj::T_sec_obj(int ind, int obj_N) : name("FIELD")
+{															// takes name = 'FIELD' and assumes that all (obj_N) primary objects will be summed
+	offsets = std::vector<int>(obj_N);
+	std::iota(offsets.begin(), offsets.end(), -obj_N - ind);
+}
+//--------------------------------------------------------------------------------------------------
+tNavSMRY::T_sec_obj::T_sec_obj(int ind, std::string Name, const std::vector<std::string> &subord, const std::vector<std::string> &full) : name(Name)
+{															// subordinate objects are found in the full list of primary objects to fill 'offsets'
+	offsets = std::vector<int>(subord.size());
+	for (size_t i = 0; i < subord.size(); i++)
+	{
+		size_t k = std::find(full.begin(), full.end(), subord[i]) - full.begin();
+		if (k == full.size())		// object not found
+		{
+			char msgrus[BUFFSIZE], msgeng[BUFFSIZE];
+			sprintf(msgrus, "При чтении *_well.meta НЕ НАЙДЕН объект/скважина %.100s из группы %.100s", subord[i].c_str(), name.c_str());
+			sprintf(msgeng, "Object/well %.100s from group %.100s NOT FOUND while reading *_well.meta", subord[i].c_str(), name.c_str());
+			throw Exception(msgrus, msgeng);
+		}
+		offsets[i] = (int)k - (int)full.size() - ind;
+	}
+}
+//--------------------------------------------------------------------------------------------------
+std::string tNavSMRY::T_sec_obj::ToString() const			// for debug output
+{
+	char msg[BUFFSIZE];
+	sprintf(msg, "%.100s:", name.c_str());
+	if (offsets.size() > 0)
+		return (std::string)msg + " offsets = " + HMMPI::ToString(offsets, "%d");
+	else
+		return (std::string)msg + "\n";
+}
+//--------------------------------------------------------------------------------------------------
 void tNavSMRY::ecl_prop_transform_check() const
 {
 	for (const auto x : ecl_prop_transform)
 	{
 		if ((x.flag == 1 && x.args.size() == 0)||(x.flag != 1 && x.args.size() != 0))
 			throw Exception("In 'ecl_prop_transform' found an element with inconsistent 'flag' and 'args'");
+		if (x.wght_flag != 0 && x.wght_flag != 1 && x.wght_flag != 2)
+			throw Exception("wght_flag = 0, 1, or 2 is expected in 'ecl_prop_transform' elements");
+		if (x.wght_flag == 2 && x.wght_prop == "")
+			throw Exception("In 'ecl_prop_transform' found an element with wght_flag == 2 and empty 'wght_prop'");
 		if (x.args.size() != x.offsets.size())
 			throw Exception("In 'ecl_prop_transform' found an element with inconsistent 'args' and 'offsets' sizes");
 		if (x.name == "")
@@ -639,7 +727,7 @@ void tNavSMRY::close_meta()						// closes 'file_meta'
 	file_meta = NULL;
 }
 //--------------------------------------------------------------------------------------------------
-void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fills 'vecs', 'dates', 'ind_dates', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'prop_N'
+void tNavSMRY::read_meta(std::string modname)	// reads "modname_well.meta"; fills 'vecs', 'dates', 'ind_dates', 'cumul_days', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'sec_objects', 'prop_N', 'obj_N'
 {
 	std::vector<std::string> name_prop, name_dates, name_obj;
 	std::vector<int> ind_prop;
@@ -651,10 +739,11 @@ void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fi
 	close_meta();
 
 	prop_N = ind_prop.size();
-	int obj_N = ind_obj.size();
+	obj_N = ind_obj.size();						// primary objects
+	const int fullobj_N = obj_N + sec_obj_N;	// all objects
 
-	// 1) handle properties
-	std::map<std::string, int> tnav_prop_map;			// <WELL_CALC_BHP, 1>
+	// 1) handle primary properties
+	std::map<std::string, int> tnav_prop_map;			// <WELL_CALC_BHP, 1> - in fact, the list from [properties], without -1's
 	for (int i = 0; i < prop_N; i++)
 		if (ind_prop[i] != -1)
 			tnav_prop_map[name_prop[i]] = ind_prop[i];	// only take entries with informative (!= -1) indices
@@ -694,7 +783,7 @@ void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fi
 					break;			// go to #'add the secondary property', which will be skipped
 				}
 				else
-					aux.offsets[j] = (c - (int)ecl_prop_transform.size())*obj_N;
+					aux.offsets[j] = (c - (int)ecl_prop_transform.size())*fullobj_N;		// note the changing size of ecl_prop_transform[]
 			}
 			if (all_args_found)		// add the secondary property
 			{
@@ -704,6 +793,16 @@ void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fi
 		}
 	}
 	ecl_prop_transform_check();
+
+	// 1b) fill 'wght_offset' for all properties in 'ecl_prop_transform'
+	for (int i = 0; i < (int)ecl_prop_transform.size(); i++)
+		if (ecl_prop_transform[i].wght_flag == 2)
+		{
+			const int k0 = find_ind(ecl_prop_transform, ecl_prop_transform[i].wght_prop);
+			if (k0 == -1)
+				throw Exception("Property '" + ecl_prop_transform[i].wght_prop + "' specified for weighting is not found in 'ecl_prop_transform' in tNavSMRY::read_meta");
+			ecl_prop_transform[i].wght_offset = (k0 - i)*fullobj_N;
+		}
 
 	// 2) handle wells
 	for (int i = 0; i < obj_N; i++)
@@ -715,13 +814,45 @@ void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fi
 			throw Exception("Indices in [objects] should be in increasing order in *.meta");
 	}
 
+	// 2a) fill the secondary objects
+	sec_objects.clear();
+	sec_objects.reserve(sec_obj_N);
+	for (size_t i = 0; i < sec_objects_raw.size(); i++)
+		sec_objects.push_back(T_sec_obj(i, sec_objects_raw[i].first, sec_objects_raw[i].second, name_obj));
+
+	sec_objects.push_back(T_sec_obj(sec_objects_raw.size(), obj_N));		// 'FIELD'
+
+	// 2b) check the objects names are not duplicating
+	std::vector<std::string> all_obj_names = name_obj;
+	all_obj_names.reserve(name_obj.size() + sec_objects.size());
+	for (const auto &x : sec_objects)
+		all_obj_names.push_back(x.name);
+
+	std::string dup;
+	if (FindDuplicate(all_obj_names, dup))
+	{
+		std::string mfile = "RESULTS/" + modname + "_well.meta";
+		char msgrus[BUFFSIZE], msgeng[BUFFSIZE];
+		sprintf(msgrus, "При чтении файла тНавигатора %.200s найдены имена скважин, совпадающие с именами групп из кл. слова GROUPS: '%.100s'", mfile.c_str(), dup.c_str());
+		sprintf(msgeng, "While reading tNavigator file %.200s, found well names which duplicate the group names from GROUPS keyword: '%.100s'", mfile.c_str(), dup.c_str());
+
+		std::cout << "DEBUG name_obj\t" << HMMPI::ToString(name_obj, "%s", "\t");	//DEBUG
+		std::cout << "DEBUG all_obj_names\t" << HMMPI::ToString(all_obj_names, "%s", "\t");	//DEBUG
+
+		throw Exception(msgrus, msgeng);
+	}
+
 	// 3) fill the vectors pairs
 	size_t props_found = ecl_prop_ind.size();
 	vecs.clear();
-	vecs.resize(props_found * obj_N);
+	vecs.resize(props_found * fullobj_N);
 	for (size_t i = 0; i < props_found; i++)
-		for (int j = 0; j < obj_N; j++)
-			vecs[i*obj_N + j] = pair(name_obj[j], ecl_prop_transform[i].name);		// "property-major" order: <W1, P1>, <W2, P1>, ... <Wn, P1>; <W1, P2>,...
+	{
+		for (int j = 0; j < obj_N; j++)				// primary objects
+			vecs[i*fullobj_N + j] = pair(name_obj[j], ecl_prop_transform[i].name);		// "property-major" order: <W1, P1>, <W2, P1>, ... <Wn, P1>; <W1, P2>,...
+		for (int j = obj_N; j < fullobj_N; j++)		// secondary objects
+			vecs[i*fullobj_N + j] = pair(sec_objects[j-obj_N].name, ecl_prop_transform[i].name);
+	}
 
 	// 4) handle timesteps
 	dates.clear();
@@ -742,6 +873,16 @@ void tNavSMRY::read_meta(std::string modname)			// reads "modname_well.meta"; fi
 			throw Exception((std::string)e.what() + " (tNavSMRY::read_meta)");
 		}
 	}
+
+	// 4a) fill cumul_days[]
+	if (start > dates[0])
+	{
+		char msgrus[BUFFSIZE], msgeng[BUFFSIZE];
+		sprintf(msgrus, "Начальная дата STARTDATE (%s) идет после первой даты в *.meta (%s)", start.ToString().c_str(), dates[0].ToString().c_str());
+		sprintf(msgeng, "Initial date STARTDATE (%s) is later than the first date in *.meta (%s)", start.ToString().c_str(), dates[0].ToString().c_str());
+		throw Exception(msgrus, msgeng);
+	}
+	cumul_days = start.SubtractFromAll(dates);
 }
 //--------------------------------------------------------------------------------------------------
 void tNavSMRY::read_res(std::string modname)		// reads data from "modname_well.res"; makes consistency checks and fills 'Data'
@@ -754,7 +895,6 @@ void tNavSMRY::read_res(std::string modname)		// reads data from "modname_well.r
 		{
 			// 1) consistency checks
 			int size_num, Nwb, Nprop, Nsteps;
-			int obj_N = ind_obj.size();
 			size_t props_found = ecl_prop_ind.size();
 
 			if (fseek(f, 128, SEEK_SET))
@@ -785,13 +925,18 @@ void tNavSMRY::read_res(std::string modname)		// reads data from "modname_well.r
 				throw Exception("ecl_prop_ind[0] < 0 in tNavSMRY::read_res");
 
 			// 2) read and fill 'Data'
-			int propsfound_obj_N = props_found * obj_N;
+			const int fullobj_N = obj_N + sec_obj_N;
+			const int propsfound_fullobj_N = props_found * fullobj_N;
 			int Nprop_Nwb = Nprop * Nwb;
 			size_t curr_offset = 0;					// offset in the file w.r.t. current position
-			Data = std::vector<double>(ind_dates.size() * propsfound_obj_N);
+			Data = std::vector<double>(ind_dates.size() * propsfound_fullobj_N);
+			assert(ind_dates.size() == cumul_days.size());
+			assert(sec_objects.size() == (size_t)sec_obj_N);
+
 			for (size_t t = 0; t < ind_dates.size(); t++)
-				for (size_t i = 0; i < props_found; i++)
-					for (int j = 0; j < obj_N; j++)
+			{
+				for (size_t i = 0; i < props_found; i++)		// fill all props
+					for (int j = 0; j < obj_N; j++)				// for the primary objects
 					{
 						if (ecl_prop_transform[i].flag == 0 || ecl_prop_transform[i].flag == -1)	// read number from file
 						{
@@ -810,12 +955,38 @@ void tNavSMRY::read_res(std::string modname)		// reads data from "modname_well.r
 							fread(&d, sizeof(d), 1, f);
 							if (ecl_prop_transform[i].flag == -1 && d != 0)
 								d = -d;
-							Data[t*propsfound_obj_N + i*obj_N + j] = d;
+
+							// a very special case: extract WEFAC from 'WELL_CALC_WORKING_DAYS'
+							if (ecl_prop_transform[i].name == "WEFAC")
+							{
+								double days_interval = 0;
+								if (t == 0)
+									days_interval = cumul_days[t];
+								else
+									days_interval = cumul_days[t] - cumul_days[t-1];
+
+								if (fabs(days_interval) < 1e-10)
+									d = 1.0;		// too small time step -> take WEFAC = 1.0
+								else
+									d /= days_interval;
+							}
+
+							Data[t*propsfound_fullobj_N + i*fullobj_N + j] = d;
 							curr_offset = new_offset + sizeof(d);
 						}
 						else
-							ecl_prop_transform[i].func(Data.data() + t*propsfound_obj_N + i*obj_N + j);			// recalculate
+							ecl_prop_transform[i].func(Data.data() + t*propsfound_fullobj_N + i*fullobj_N + j);			// recalculate
 					}
+
+				for (size_t i = 0; i < props_found; i++)		// then fill all props
+					for (int j = obj_N; j < fullobj_N; j++)		// for the secondary objects
+					{
+						if (ecl_prop_transform[i].flag == 0 || ecl_prop_transform[i].flag == -1)	// primary property
+							sec_objects[j-obj_N].func(Data.data() + t*propsfound_fullobj_N + i*fullobj_N + j, ecl_prop_transform[i].wght_flag, ecl_prop_transform[i].wght_offset);
+						else																		// secondary property
+							ecl_prop_transform[i].func(Data.data() + t*propsfound_fullobj_N + i*fullobj_N + j);			// recalculate
+					}
+			}
 
 			fclose(f);
 		}
@@ -829,8 +1000,10 @@ void tNavSMRY::read_res(std::string modname)		// reads data from "modname_well.r
 		throw Exception("Невозможно открыть файл (для чтения) " + fname, "Cannot open file (for reading) " + fname);
 }
 //--------------------------------------------------------------------------------------------------
-tNavSMRY::tNavSMRY() : SimSMRY(), last_header(""), file_meta(NULL), prop_N(0)
+tNavSMRY::tNavSMRY(std::vector<SecObj> secobj, Date s) : SimSMRY(), last_header(""), file_meta(NULL), sec_objects_raw(std::move(secobj)), prop_N(0), obj_N(0), sec_obj_N(0), start(s)
 {
+	sec_obj_N = sec_objects_raw.size() + 1;			// '+1' for 'FIELD' group
+
 	// NOTE this "table" establishes the link between Eclipse vector names and tNavigator vector names, expand it as appropriate
 	ecl_tnav["WBHP"] = "WELL_CALC_BHP";
 	ecl_tnav["WBP9"] = "WELL_WPAVE9_PRESSURE";
@@ -842,25 +1015,28 @@ tNavSMRY::tNavSMRY() : SimSMRY(), last_header(""), file_meta(NULL), prop_N(0)
 	ecl_tnav["WWPT"] = "WELL_CALC_ACCUM_WATER_RATE";
 	ecl_tnav["WGPT"] = "WELL_CALC_ACCUM_GAS_RATE";
 	ecl_tnav["WWIT"] = "WELL_CALC_ACCUM_WATER_INJ";
+	ecl_tnav["WEFAC"] = "WELL_CALC_WORKING_DAYS";
 
 	// NOTE this "table" says how the vectors should be processed: e.g. some (WOPR etc) should be negated, the others (WWCT etc) recalculated; expand as appropriate
 	// all expected Eclipse vectors should be listed here
-	ecl_prop_transform_full.resize(15);
-	ecl_prop_transform_full[0] = {"WBHP", 0, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[1] = {"WBP9", 0, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[2] = {"WOPR", -1, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[3] = {"WWPR", -1, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[4] = {"WGPR", -1, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[5] = {"WWIR", 0, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[6] = {"WOPT", -1, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[7] = {"WWPT", -1, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[8] = {"WGPT", -1, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[9] = {"WWIT", 0, [](const int*, double*){}, {}, {}};
-	ecl_prop_transform_full[10] = {"WWCT", 1, T_ecl_prop_transform::f_wct, {}, {"WOPR", "WWPR"}};
-	ecl_prop_transform_full[11] = {"WGOR", 1, T_ecl_prop_transform::f_gor, {}, {"WOPR", "WGPR"}};
-	ecl_prop_transform_full[12] = {"WLPR", 1, T_ecl_prop_transform::f_sum, {}, {"WOPR", "WWPR"}};
-	ecl_prop_transform_full[13] = {"WLPT", 1, T_ecl_prop_transform::f_sum, {}, {"WOPT", "WWPT"}};
-	ecl_prop_transform_full[14] = {"WPI", 1, T_ecl_prop_transform::f_wpi, {}, {"WOPR", "WWPR", "WBP9", "WBHP"}};
+	ecl_prop_transform_full.resize(16);
+	ecl_prop_transform_full[0] = {"WBHP", 0, [](const int*, double*){}, {}, {}, 0, 0, ""};						// primary props
+	ecl_prop_transform_full[1] = {"WBP9", 0, [](const int*, double*){}, {}, {}, 0, 0, ""};
+	ecl_prop_transform_full[2] = {"WOPR", -1, [](const int*, double*){}, {}, {}, 2, 0, "WEFAC"};
+	ecl_prop_transform_full[3] = {"WWPR", -1, [](const int*, double*){}, {}, {}, 2, 0, "WEFAC"};
+	ecl_prop_transform_full[4] = {"WGPR", -1, [](const int*, double*){}, {}, {}, 2, 0, "WEFAC"};
+	ecl_prop_transform_full[5] = {"WWIR", 0, [](const int*, double*){}, {}, {}, 2, 0, "WEFAC"};
+	ecl_prop_transform_full[6] = {"WOPT", -1, [](const int*, double*){}, {}, {}, 1, 0, ""};
+	ecl_prop_transform_full[7] = {"WWPT", -1, [](const int*, double*){}, {}, {}, 1, 0, ""};
+	ecl_prop_transform_full[8] = {"WGPT", -1, [](const int*, double*){}, {}, {}, 1, 0, ""};
+	ecl_prop_transform_full[9] = {"WWIT", 0, [](const int*, double*){}, {}, {}, 1, 0, ""};
+	ecl_prop_transform_full[10] = {"WEFAC", 0, [](const int*, double*){}, {}, {}, 0, 0, ""};
+
+	ecl_prop_transform_full[11] = {"WWCT", 1, T_ecl_prop_transform::f_wct, {}, {"WOPR", "WWPR"}, 0, 0, ""};		// secondary props: group summation will not be applied anyway
+	ecl_prop_transform_full[12] = {"WGOR", 1, T_ecl_prop_transform::f_gor, {}, {"WOPR", "WGPR"}, 0, 0, ""};
+	ecl_prop_transform_full[13] = {"WLPR", 1, T_ecl_prop_transform::f_sum, {}, {"WOPR", "WWPR"}, 0, 0, ""};
+	ecl_prop_transform_full[14] = {"WLPT", 1, T_ecl_prop_transform::f_sum, {}, {"WOPT", "WWPT"}, 0, 0, ""};
+	ecl_prop_transform_full[15] = {"WPI", 1, T_ecl_prop_transform::f_wpi, {}, {"WOPR", "WWPR", "WBP9", "WBHP"}, 0, 0, ""};
 };
 //--------------------------------------------------------------------------------------------------
 tNavSMRY::~tNavSMRY()
@@ -872,12 +1048,19 @@ const tNavSMRY &tNavSMRY::operator=(const tNavSMRY &p)
 {
 	close_meta();
 	SimSMRY::operator=(p);
+	ecl_tnav = p.ecl_tnav;
 	ind_dates = p.ind_dates;
+	cumul_days = p.cumul_days;
 	ind_obj = p.ind_obj;
 	ecl_prop_ind = p.ecl_prop_ind;
 	ecl_prop_transform = p.ecl_prop_transform;
 	ecl_prop_transform_full = p.ecl_prop_transform_full;
+	sec_objects_raw = p.sec_objects_raw;
+	sec_objects = p.sec_objects;
 	prop_N = p.prop_N;
+	obj_N = p.obj_N;
+	sec_obj_N = p.sec_obj_N;
+	start = p.start;
 
 	return *this;
 }
@@ -906,18 +1089,31 @@ void tNavSMRY::dump_all(std::string fname) const
 	for (auto x : ecl_tnav)
 		fprintf(f, "%s\t%s\n", x.first.c_str(), x.second.c_str());
 
-	fprintf(f, "\nprop_N: %d\n", prop_N);
+	fprintf(f, "\nprop_N: %d\nobj_N: %d\nsec_obj_N: %d\n\n", prop_N, obj_N, sec_obj_N);
+	fprintf(f, "start date: %s\n\n", start.ToString().c_str());
 	fprintf(f, "ind_dates:\t%s\n", HMMPI::ToString(ind_dates, "%d").c_str());
+	fprintf(f, "cumul_days:\t%s\n", HMMPI::ToString(cumul_days, "%g").c_str());
 	fprintf(f, "ind_obj:\t%s\n", HMMPI::ToString(ind_obj, "%d").c_str());
 	fprintf(f, "ecl_prop_ind:\t%s\n", HMMPI::ToString(ecl_prop_ind, "%d").c_str());
 
-	fprintf(f, "ecl_prop_transform:\n");
-	for (auto x : ecl_prop_transform)
+	fprintf(f, "ecl_prop_transform (%zu):\n", ecl_prop_transform.size());
+	for (const auto x : ecl_prop_transform)
 	{
-		fprintf(f, "%s - flag = %d\n", x.name.c_str(), x.flag);
+		fprintf(f, "%s -> flag = %d, wght_flag = %d, wght_offset = %d ('%s')\n", x.name.c_str(), x.flag, x.wght_flag, x.wght_offset, x.wght_prop.c_str());
 		for (size_t i = 0; i < x.offsets.size(); i++)
 			fprintf(f, "* %s\t%d\n", x.args[i].c_str(), x.offsets[i]);
 	}
+
+	fprintf(f, "\nsec_objects_raw (%zu):\n", sec_objects_raw.size());
+	for (const auto &x : sec_objects_raw)
+		if (x.second.size() > 0)
+			fprintf(f, "%s:\t%s", x.first.c_str(), HMMPI::ToString(x.second, "%s").c_str());
+		else
+			fprintf(f, "%s:\n", x.first.c_str());
+
+	fprintf(f, "\nsec_objects (%zu):\n", sec_objects.size());
+	for (const auto &x : sec_objects)
+		fprintf(f, "%s", x.ToString().c_str());
 
 	const size_t Nvecs = vecs.size();
 	fprintf(f, "\nData:\n");
@@ -936,7 +1132,7 @@ void tNavSMRY::dump_all(std::string fname) const
 	else
 		fprintf(f, "N/A\n");
 
-	fprintf(f, "dates:");
+	fprintf(f, "\ndates:");
 	for (auto x : dates)
 		fprintf(f, "\n%s", x.ToString().c_str());
 

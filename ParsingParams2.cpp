@@ -33,6 +33,7 @@ KW_verbosity::KW_verbosity()
 	FinalizeParams();
 }
 //------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_gas::KW_gas()
 {
 	name = "GAS";
@@ -65,6 +66,107 @@ KW_viewsmry_config::KW_viewsmry_config()
 
 	FinalizeParams();
 	EXPECTED[1] = std::vector<std::string>{"DIRECT", "SORT"};
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_view_tNavsmry_config::KW_view_tNavsmry_config()
+{
+	name = "VIEW_TNAVSMRY_CONFIG";
+
+	DEFPAR(model, "");  						// model dataset name (without .DATA)
+	DEFPAR(title, "");							// any description
+	DEFPAR(outfile, "tNav_SMRY_output.txt"); 	// output ascii file
+	DEFPAR(width, 9);							// min column width
+
+	FinalizeParams();
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+void KW_view_tNavsmry_properties::PrintParams() noexcept
+{
+	if (K->verbosity - dec_verb >= 1)		// report all parameter values
+	{
+		std::string MSG = HMMPI::MessageRE("Текущие значения:\n", "Current values:\n");
+		char buff[HMMPI::BUFFSIZE];
+		for (const auto &x : Conv)
+		{
+			sprintf(buff, "%-8.40s%-10g%.400s\n", x.first.c_str(), x.second.first, x.second.second.c_str());
+			MSG += buff;
+		}
+		K->AppText(MSG);
+	}
+}
+//------------------------------------------------------------------------------------------
+void KW_view_tNavsmry_properties::UpdateParams() noexcept
+{
+	for (auto &x : eclprop)
+		x = HMMPI::Trim(HMMPI::ToUpper(x), " \t\r");
+
+	for (auto &x : title)
+		x = HMMPI::Trim(x, " \t\r");
+
+	std::string dup;
+	if (HMMPI::FindDuplicate(eclprop, dup))
+		SilentError(HMMPI::stringFormatArr("Повторяющееся название свойства: {0:%.100s}", "Duplicate property name: {0:%.100s}", dup));
+
+	for (size_t i = 0; i < eclprop.size(); i++)
+		Conv[eclprop[i]] = Prop(factor[i], title[i]);
+}
+//------------------------------------------------------------------------------------------
+KW_view_tNavsmry_properties::KW_view_tNavsmry_properties()
+{
+	name = "VIEW_TNAVSMRY_PROPERTIES";
+
+	delim = "\t\r";			// 'space' is not a delimiter, it can be used e.g. in 'title'
+	dec_verb = -1;
+	DEFPARMULT(eclprop);	// property in question, e.g. WOPR
+	DEFPARMULT(factor);		// e.g. density, or 1e-6
+	DEFPARMULT(title);		// for reporting, e.g. 'Oil rate, t/day'
+
+	FinalizeParams();
+}
+//------------------------------------------------------------------------------------------
+void KW_view_tNavsmry_properties::make_headers(std::string &hdr1, std::string &hdr2, std::vector<double> &factors)
+{													// generates headers for SMRY output to ASCII, and fills a vector of scaling factors
+	Start_pre();
+	IMPORTKWD(eclvecs, KW_eclvectors, "ECLVECTORS");
+	IMPORTKWD(config, KW_view_tNavsmry_config, "VIEW_TNAVSMRY_CONFIG");
+	Finish_pre();
+
+	const size_t N = eclvecs->vecs.size();
+	factors = std::vector<double>(N);
+	hdr1 = hdr2 = "";
+
+	const int DateWidth = 21;						// 'date' column width
+	const int wid = config->width;					// other columns width
+	char buff1[HMMPI::BUFFSIZE], buff2[HMMPI::BUFFSIZE];
+
+	assert(wid < 400);
+	sprintf(buff1, "%-*.*s", DateWidth, DateWidth, config->title.c_str());
+	sprintf(buff2, "%-*.*s", DateWidth, DateWidth, std::string(HMMPI::MessageRE("дата/время", "date/time")).c_str());
+
+	hdr1 += buff1;
+	hdr2 += buff2;
+
+	for (size_t i = 0; i < N; i++)
+	{
+		sprintf(buff1, "\t%-*.*s", wid, wid, eclvecs->vecs[i].first.c_str());
+
+		const std::string prop = eclvecs->vecs[i].second;
+		std::string title = prop;
+		double f = 1;
+		if (Conv.count(prop) > 0)	// apply conversion
+		{
+			title = Conv[prop].second;
+			f = Conv[prop].first;
+		}
+
+		sprintf(buff2, "\t%-*.*s", wid, wid, title.c_str());
+		factors[i] = f;
+
+		hdr1 += buff1;
+		hdr2 += buff2;
+	}
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -131,8 +233,9 @@ void KW_simcmd::UpdateParams() noexcept
 //------------------------------------------------------------------------------------------
 void KW_simcmd::RunCmd() const
 {
+	HMMPI::CmdLauncher launcher;
 	for (const std::string &c : cmd_work)
-		system(c.c_str());
+		launcher.Run(c);
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -149,14 +252,15 @@ KW_shell::KW_shell()
 //------------------------------------------------------------------------------------------
 void KW_shell::FinalAction() noexcept
 {
-	int rank;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-	for (size_t i = 0; i < cmd.size(); i++)
+	try
 	{
-		if (rank == 0)
-			system(cmd[i].c_str());
-		MPI_Barrier(MPI_COMM_WORLD);
+		HMMPI::CmdLauncher launcher;
+		for (size_t i = 0; i < cmd.size(); i++)
+			launcher.Run(cmd[i]);
+	}
+	catch (const std::exception &e)
+	{
+		SilentError(e.what());
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -1384,7 +1488,7 @@ void KW_eclvectors::UpdateParams() noexcept
 
 	int count = 0;			// counts 'R' replacements
 	size_t L = R.size();
-	corr = std::vector<HMMPI::Func1D*>(L);
+	corr = std::vector<HMMPI::Func1D_corr*>(L);
 	vecs = std::vector<HMMPI::SimSMRY::pair>(L);
 
 	for (size_t i = 0; i < L; i++)
@@ -1400,7 +1504,7 @@ void KW_eclvectors::UpdateParams() noexcept
 			count++;
 		}
 
-		corr[i] = HMMPI::Func1D_factory::New(func[i]);
+		corr[i] = HMMPI::Func1D_corr_factory::New(func[i]);
 	}
 
 	HMMPI::SimSMRY::pair dup;
@@ -2862,33 +2966,115 @@ KW_dates::KW_dates()
 //------------------------------------------------------------------------------------------
 std::vector<double> KW_dates::zeroBased()
 {
-	size_t count = D.size();
-	assert(dates.size() == count);
-	std::vector<double> res(count);
-	if (count != 0)
+	return dates[0].SubtractFromAll(dates);
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+void KW_startdate::UpdateParams() noexcept	// fills 'start'
+{
+	try
 	{
-		std::vector<int> MLEN{0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};	// length of months
-		res[0] = 0;
-		for (size_t i = 1; i < count; i++)
+		start = HMMPI::Date(date0);
+	}
+	catch (const HMMPI::Exception &e)
+	{
+		SilentError(e.what());
+	}
+}
+//------------------------------------------------------------------------------------------
+void KW_startdate::PrintParams() noexcept
+{
+	K->AppText((std::string)HMMPI::MessageRE("Дата: ", "Date: ") + start.ToString() + "\n");
+}
+//------------------------------------------------------------------------------------------
+KW_startdate::KW_startdate()
+{
+	name = "STARTDATE";
+	delim = "\r";
+
+	DEFPAR(date0, "01/01/2020");
+	FinalizeParams();
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+void KW_groups::PrintParams() noexcept
+{
+	if (K->verbosity - dec_verb >= 0)		// report all parameter values
+	{
+		std::string MSG = HMMPI::MessageRE("Текущие значения:\n", "Current values:\n");
+		char buff[HMMPI::BUFFSIZE];
+
+		if (sec_obj.size() == 0)
+			MSG += (std::string)HMMPI::MessageRE("< пользовательские группы не заданы >\n", "< user groups are not specified >\n");
+		else
+			for (size_t i = 0; i < sec_obj.size(); i++)
+			{
+				sprintf(buff, "%-10.400s:\t", sec_obj[i].first.c_str());
+				MSG += buff;
+				if (sec_obj[i].second.size() > 0)
+					MSG += HMMPI::ToString(sec_obj[i].second, "%-7.100s", "\t");
+				else
+					MSG += "\n";
+			}
+
+		MSG += (std::string)HMMPI::MessageRE("* Группа 'FIELD' (все скважины) добавляется автоматически\n", "* Group 'FIELD' (all wells) is added automatically\n");
+		K->AppText(MSG);
+	}
+}
+//------------------------------------------------------------------------------------------
+void KW_groups::UpdateParams() noexcept						// fills "sec_obj"
+{
+	sec_obj = std::vector<HMMPI::tNavSMRY::SecObj>(group.size());
+	std::vector<std::string> g_names(group.size());			// to check duplicates
+
+	for (size_t i = 0; i < group.size(); i++)
+	{
+		std::vector<std::string> toks;
+		HMMPI::tokenize(group[i], toks, " \t\r\n", true);
+
+		assert(toks.size() > 0);
+		sec_obj[i].first = HMMPI::ToUpper(toks[0]);
+
+		if (sec_obj[i].first == "FIELD")
 		{
-			int deltaD = D[i] - D[0];
-			int deltaM = MLEN[M[i]-1] - MLEN[M[0]-1];
-			int deltaY = (Y[i] - Y[0])*365;
-			double deltaSec = (dates[i].get_sec() - dates[0].get_sec())/86400;
-
-			// count leap years
-			int leap1 = Y[0]/4;
-			int leap2 = Y[i]/4;
-			if (Y[0]%4 == 0 && M[0] <= 2)
-				leap1--;
-			if (Y[i]%4 == 0 && M[i] <= 2)
-				leap2--;
-
-			res[i] = deltaD + deltaM + deltaY + leap2-leap1 + deltaSec;
+			char msgrus[HMMPI::BUFFSIZE], msgeng[HMMPI::BUFFSIZE];
+			sprintf(msgrus, "Имя группы не должно равняться 'FIELD' (строка %zu)", i+1);
+			sprintf(msgeng, "Group name should not be equal to 'FIELD' (line %zu)", i+1);
+			SilentError(HMMPI::MessageRE(msgrus, msgeng));
 		}
+
+		std::vector<std::string> list(toks.size() - 1);		// the wells list
+		for (size_t j = 1; j < toks.size(); j++)
+			list[j-1] = HMMPI::ToUpper(toks[j]);
+
+		// check duplicates in the wells list
+		std::string dup;
+		if (HMMPI::FindDuplicate(list, dup))
+		{
+			char msgrus[HMMPI::BUFFSIZE], msgeng[HMMPI::BUFFSIZE];
+			sprintf(msgrus, "Найдено повторяющееся имя скважины %.200s в группе %.200s", dup.c_str(), sec_obj[i].first.c_str());
+			sprintf(msgeng, "Found duplicate well name %.200s in group %.200s", dup.c_str(), sec_obj[i].first.c_str());
+			SilentError(HMMPI::MessageRE(msgrus, msgeng));
+		}
+
+		sec_obj[i].second = list;
+		g_names[i] = sec_obj[i].first;
 	}
 
-	return res;
+	std::string dup;
+	if (HMMPI::FindDuplicate(g_names, dup))
+		SilentError(HMMPI::stringFormatArr("Найдено повторяющееся имя группы: {0:%.400s}", "Found a duplicate group name: {0:%.400s}", dup));
+}
+//------------------------------------------------------------------------------------------
+KW_groups::KW_groups()
+{
+	name = "GROUPS";
+	delim = "";
+	ecols = 1;
+
+	DEFPARMULT(group);
+
+	FinalizeParams();
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -3011,7 +3197,7 @@ KW_proxylin::KW_proxylin()
 //------------------------------------------------------------------------------------------
 void _proxy_params::UpdateParams() noexcept
 {
-	corr = HMMPI::Func1D_factory::New(cfunc);
+	corr = HMMPI::Func1D_corr_factory::New(cfunc);
 	corr->SetNugget(nugget);
 	if (cfunc == "MATERN")
 		dynamic_cast<HMMPI::CorrMatern*>(corr)->SetNu(nu);
@@ -3650,7 +3836,7 @@ std::vector<HMMPI::Mat> KW_corrstruct::CorrBlocks() const
 
 			M1 = (1/R[i]) * std::move(M1);
 
-			HMMPI::Func1D *F1D = HMMPI::Func1D_factory::New(type[i]);
+			HMMPI::Func1D_corr *F1D = HMMPI::Func1D_corr_factory::New(type[i]);
 			auto f2 = [F1D](double d){return F1D->f(d);};
 			M1.Func(f2);
 

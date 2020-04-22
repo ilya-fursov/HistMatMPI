@@ -2613,7 +2613,7 @@ PM_PosteriorDiag::PM_PosteriorDiag(PhysModel *pm, const HMMPI::Mat &C_diag, HMMP
 	if (Cpr.JCount() != 1)
 	{
 		char msg[HMMPI::BUFFSIZE];
-		sprintf(msg, "Cpr.jcount (%zu) should equal 1 in PM_PosteriorDiag::PM_PosteriorDiag", Cpr.JCount());	// TODO test
+		sprintf(msg, "Cpr.jcount (%zu) should equal 1 in PM_PosteriorDiag::PM_PosteriorDiag", Cpr.JCount());
 		throw HMMPI::Exception(msg);
 	}
 

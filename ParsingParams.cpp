@@ -608,6 +608,64 @@ void KW_runViewSmry::Run()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+KW_runView_tNavSmry::KW_runView_tNavSmry()
+{
+	name = "RUNVIEW_TNAVSMRY";
+}
+//------------------------------------------------------------------------------------------
+void KW_runView_tNavSmry::Run()
+{
+	Start_pre();
+	IMPORTKWD(dates, KW_dates, "DATES");
+	IMPORTKWD(groups, KW_groups, "GROUPS");
+	IMPORTKWD(Sdate, KW_startdate, "STARTDATE");
+	IMPORTKWD(vect, KW_eclvectors, "ECLVECTORS");
+	IMPORTKWD(config, KW_view_tNavsmry_config, "VIEW_TNAVSMRY_CONFIG");
+	IMPORTKWD(props, KW_view_tNavsmry_properties, "VIEW_TNAVSMRY_PROPERTIES");
+	Finish_pre();
+
+	std::string msg_dat, msg_vec;
+	std::string hdr1, hdr2;
+	std::vector<double> fac;
+
+	HMMPI::tNavSMRY smry(groups->sec_obj, Sdate->start);
+	smry.ReadFiles(config->model);
+	HMMPI::Mat M = smry.ExtractSummary(dates->dates, vect->vecs, msg_dat, msg_vec);
+
+	if (msg_dat != "")
+	{
+		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat + "\n");
+		K->TotalWarnings++;
+	}
+	if (msg_vec != "")
+	{
+		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec + "\n");
+		K->TotalWarnings++;
+	}
+
+	props->make_headers(hdr1, hdr2, fac);
+
+	assert(fac.size() == M.JCount());
+	assert(dates->dates.size() == M.ICount());
+	M = M % fac;										// scaling by factors
+
+	// saving to file
+	const int DateWidth = 21;							// 'date' column width
+	const int wid = config->width;						// other columns width
+	FILE *f0 = fopen(config->outfile.c_str(), "w");
+	fprintf(f0, "%s\n", hdr1.c_str());
+	fprintf(f0, "%s\n", hdr2.c_str());
+	for (size_t i = 0; i < dates->dates.size(); i++)
+	{
+		fprintf(f0, "%-*.*s", DateWidth, DateWidth, dates->dates[i].ToString().c_str());
+		for (size_t j = 0; j < M.JCount(); j++)
+			fprintf(f0, "\t%-*.*g", wid, wid-5, M(i, j));
+		fprintf(f0, "\n");
+	}
+	fclose(f0);
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_runPlot::KW_runPlot()
 {
 	name = "RUNPLOT";
@@ -1439,26 +1497,35 @@ void KW_runIntegPoro::Run()
 {
 	// * USER * define a list of lambda-functions (double->double) which are to be integrated
 	std::vector<std::function<double(double)>> Funcs;
-	Funcs.push_back([](double x) -> double {return 1;});		// NTG	#0
-	Funcs.push_back([](double x) -> double {return exp(1.76531*log(x) + 8.10649);});			// PERMX	#1
-	
-	Funcs.push_back([](double x) -> double {return x;});		// PORO*NTG		#2
-	
-	Funcs.push_back([](double x) -> double {return x*(HMMPI::Min(0.0123*pow(x, -1.0085), 0.98));});		// SWL*PORO		#3
-	Funcs.push_back([](double x) -> double {return x*(1 - HMMPI::Min(0.0123*pow(x, -1.0085), 0.98) - log((x - 0.0372)/0.0017)/7);});	// SOWCR*PORO	#4
-	Funcs.push_back([](double x) -> double {return 7.446369753*(pow(x/exp(1.663*log(x) + 7.17), 0.5));});		// PCW	#5
-	
-	// NTG : 1
-	// PERMX = exp(1.76531*log(PORO) + 8.10649)	-- Variable
-	// SWL = min(0.0123*PORO^(-1.0085), 0.98)
-	// SOWCR = 1 - min(0.0123*PORO^(-1.0085), 0.98) - log((PORO - 0.0372)/0.0017)/7		-- black trend
-	// PCW=7.446369753*((PORO/exp(1.663*log(PORO) + 7.17))^0.5)		-- NOTE PERM_gas is used here
-	
+	Funcs.push_back([](double x) -> double {return 1;});		// NTG
+	Funcs.push_back([](double x) -> double {return x;});		// test
 	// * USER *
 
 	Start_pre();
 	IMPORTKWD(config, KW_integporo_config, "INTEGPORO_CONFIG");
+	DECLKWD(func, KW_functionXY, "FUNCTIONXY");
 	Finish_pre();
+
+	// set up the transform, if any
+	HMMPI::Func1D_CDF *transform = nullptr;
+	if (func->data.size() > 0 && func->data[0].Length() > 0)
+	{
+		const size_t Ni = func->data[0].ICount();
+		std::vector<double> x1(Ni, 0.0);
+		std::vector<double> y1(Ni, 0.0);
+		for (size_t i = 0; i < Ni; i++)
+		{
+			x1[i] = func->data[0](i, 0);
+			y1[i] = func->data[0](i, 1);
+		}
+		transform = new HMMPI::Func1D_CDF(x1, y1);
+
+		K->AppText(HMMPI::MessageRE("* Делается интегрирование с преобразованием, заданным через PDF из FUNCTIONXY *\n",
+									"* Integrating with transform defined via PDF from FUNCTIONXY *\n"));
+	}
+	else
+		K->AppText(HMMPI::MessageRE("В FUNCTIONXY не задана PDF -> делается интегрирование без преобразования...\n",
+									"No PDF defined in FUNCTIONXY -> integrating without transform...\n"));
 
 	const std::string mean_name = "PORO";
 	const std::string var_name = "VAR";
@@ -1513,14 +1580,17 @@ void KW_runIntegPoro::Run()
 		for (int i = 0; i < counts[rank]; i++)
 		{
 			assert(var[i] >= 0);
-			loc_res[i] = HMMPI::integr_Gauss(Funcs[f], config->n, config->phi0, mean[i], sqrt(var[i]));
+			if (transform == nullptr)
+				loc_res[i] = HMMPI::integr_Gauss(Funcs[f], config->n, config->phi0, mean[i], sqrt(var[i]));
+			else
+				loc_res[i] = HMMPI::integr_Gauss(Funcs[f], config->n, config->phi0, mean[i], sqrt(var[i]), *transform);
 		}
 		MPI_Gatherv(loc_res.data(), counts[rank], MPI_DOUBLE, res.data(), counts.data(), displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);	// gather the result
 
 		char prop_name[HMMPI::BUFFSIZE], fname[HMMPI::BUFFSIZE], msg[HMMPI::BUFFSIZE];
 		sprintf(prop_name, "PROP_%d", f);
 		sprintf(fname, config->file_out_templ.c_str(), f);
-		sprintf(msg, "Saved %.30s to %.460s\n", prop_name, fname);
+		sprintf(msg, "Saved %.30s to %.450s\n", prop_name, fname);
 
 		err[0] = 0;
 		if (rank == 0)
@@ -1540,6 +1610,8 @@ void KW_runIntegPoro::Run()
 
 		K->AppText(msg);
 	}
+
+	delete transform;
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

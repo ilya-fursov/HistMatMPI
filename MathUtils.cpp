@@ -62,7 +62,7 @@ double NumD3(const std::function<double(double)> &f, double x, double h, OH oh)	
 		throw Exception("Unrecognised OH type in NumD3");
 }
 //------------------------------------------------------------------------------------------
-double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma)		// calculate int_{x0...+inf} g(x)f(x)dx, where f = PDF Normal(mu, sigma^2), using "n" integration intervals with trapezoid rule
+double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma)		// calculate int_{x0...+inf} g(x)p(x)dx, where p = PDF Normal(mu, sigma^2), using "n" integration intervals with trapezoid rule
 {
 	assert(n > 1);
 
@@ -94,6 +94,18 @@ double integr_Gauss(const std::function<double(double)> &g, int n, double x0, do
 	}
 
 	return res;
+}
+//------------------------------------------------------------------------------------------
+double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma, const Func1D_CDF &F)	// similar to above, with user-defined CDF F, employing Normal score transform:
+{																															// int_{invP0(F(x0))...+inf} g(invF(P0(y)))p(y)dy, where p = PDF Normal(mu, sigma^2), P0 is Standard Normal CDF
+	double y0 = gsl_cdf_gaussian_Pinv(F.val(x0), 1.0);		// P0 = N(0, 1)
+	auto gnew = [&F, &g](double y) -> double
+	{
+		double p = gsl_cdf_gaussian_P(y, 1.0);				// P0 = N(0, 1)
+		return g(F.inv(p));
+	};
+
+	return integr_Gauss(gnew, n, y0, mu, sigma);
 }
 //------------------------------------------------------------------------------------------
 bool IsNaN(double d)
@@ -1686,12 +1698,111 @@ std::vector<double> RandNormal::get(int n)
 //------------------------------------------------------------------------------------------
 // Func1D
 //------------------------------------------------------------------------------------------
-double Func1D::d3f(double x) const
+double Func1D::inv(double y) const					// inverse function value
 {
-	throw Exception("Illegal call to Func1D::d3f");
+	throw Exception("Illegal call to Func1D::inv");
 }
 //------------------------------------------------------------------------------------------
-double Func1D::lim_df(double y) const			// f'(y)/y
+// Func1D_pwlin
+//------------------------------------------------------------------------------------------
+size_t Func1D_pwlin::locate_point(const std::vector<double> &vec, const double x) const		// returns a "rough index" of 'x' in array 'vec' (which should be SORTED in increasing order), namely:
+{																							// for x <= vec[0] returns 0, for vec[last] < x returns vec.size()
+	assert(vec.size() > 0);																	// for vec[i-1] < x <= vec[i] returns 'i'
+	if (locate_cache > 0 && locate_cache < vec.size() && vec[locate_cache-1] < x && x <= vec[locate_cache])
+		return locate_cache;
+	else if (locate_cache == vec.size() && vec[locate_cache-1] < x)
+		return locate_cache;
+	else if (locate_cache == 0 && x <= vec[locate_cache])
+		return locate_cache;
+	else
+	{
+		locate_cache = std::lower_bound(vec.begin(), vec.end(), x) - vec.begin();
+		return locate_cache;
+	}
+}
+//------------------------------------------------------------------------------------------
+Func1D_pwlin::Func1D_pwlin(std::vector<double> x, std::vector<double> y) : xi(std::move(x)), yi(std::move(y)), locate_cache(0)
+{
+	// check the sizes
+	if (xi.size() != yi.size())
+		throw Exception("Input arrays differ in size in Func1D_pwlin::Func1D_pwlin");
+
+	// check monotonicity of 'xi'
+	if (!is_strictly_sorted(xi.begin(), xi.end()))
+		throw Exception("Array 'xi' should be strictly increasing in Func1D_pwlin::Func1D_pwlin");
+
+	dri = std::vector<double>(xi.size(), 0.0);		// fill the auxiliary array
+	for (size_t k = 1; k < xi.size(); k++)
+		dri[k] = (yi[k] - yi[k-1])/(xi[k] - xi[k-1]);
+}
+//------------------------------------------------------------------------------------------
+double Func1D_pwlin::val(double x) const
+{
+	size_t ind = locate_point(xi, x);
+	if (ind == 0 || ind == xi.size())
+		return 0;
+	else
+		return yi[ind-1] + dri[ind]*(x - xi[ind-1]);
+}
+//------------------------------------------------------------------------------------------
+// Func1D_CDF
+//------------------------------------------------------------------------------------------
+Func1D_CDF::Func1D_CDF(std::vector<double> x, std::vector<double> y) : Func1D_pwlin(std::move(x), std::move(y))	// the input is a pdf; the resulting CDF should be strictly increasing
+{
+	Fi = std::vector<double>(xi.size(), 0.0);
+
+	for (size_t k = 1; k < Fi.size(); k++)
+		Fi[k] = Fi[k-1] + (yi[k] + yi[k-1])*(xi[k] - xi[k-1])/2;
+
+	if (!is_strictly_sorted(Fi.begin(), Fi.end()))
+		throw Exception("CDF (Fi) should be strictly increasing in Func1D_CDF::Func1D_CDF");
+
+	for (size_t k = 0; k < yi.size(); k++)
+		if (yi[k] < 0)
+			throw Exception("All 'yi' should be non-negative in Func1D_CDF::Func1D_CDF");
+
+	const double norm = *--Fi.end(); 			// normalize to 1.0
+	for (size_t k = 0; k < Fi.size(); k++)
+	{
+		yi[k] /= norm;
+		dri[k] /= norm;
+		Fi[k] /= norm;
+	}
+}
+//------------------------------------------------------------------------------------------
+double Func1D_CDF::val(double x) const
+{
+	size_t ind = locate_point(xi, x);
+	if (ind == 0)
+		return 0;
+	else if (ind == xi.size())
+		return 1;
+	else
+		return Fi[ind-1] + (yi[ind-1] + dri[ind]*(x - xi[ind-1])/2)*(x - xi[ind-1]);
+}
+//------------------------------------------------------------------------------------------
+double Func1D_CDF::inv(double y) const							// inverse CDF
+{
+	if (y < 0 || y > 1)
+		throw Exception("'y' out of range [0, 1] in Func1D_CDF::inv");
+
+	size_t ind = locate_point(Fi, y);
+	if (ind == 0)
+		return xi[0];
+	else if (ind == Fi.size())
+		return *--xi.end();
+	else
+		return xi[ind-1] + 2*(y - Fi[ind-1])/(sqrt(yi[ind-1]*yi[ind-1] + 2*dri[ind]*(y - Fi[ind-1])) + yi[ind-1]);
+}
+//------------------------------------------------------------------------------------------
+// Func1D_corr
+//------------------------------------------------------------------------------------------
+double Func1D_corr::d3f(double x) const
+{
+	throw Exception("Illegal call to Func1D_corr::d3f");
+}
+//------------------------------------------------------------------------------------------
+double Func1D_corr::lim_df(double y) const			// f'(y)/y
 {
 	if (y == 0)
 		return std::numeric_limits<double>::infinity();
@@ -1699,7 +1810,7 @@ double Func1D::lim_df(double y) const			// f'(y)/y
 		return df(y)/y;
 }
 //------------------------------------------------------------------------------------------
-double Func1D::lim_d2f(double y) const			// [f''(y) - f'(y)/y]/(y^2)
+double Func1D_corr::lim_d2f(double y) const			// [f''(y) - f'(y)/y]/(y^2)
 {
 	if (y == 0)
 		return std::numeric_limits<double>::infinity();
@@ -1707,7 +1818,7 @@ double Func1D::lim_d2f(double y) const			// [f''(y) - f'(y)/y]/(y^2)
 		return (d2f(y) - df(y)/y)/(y*y);
 }
 //------------------------------------------------------------------------------------------
-double Func1D::lim_d3f(double y) const			// [3*f''/y - 3*f'/(y^2) - f''']/(y^3)
+double Func1D_corr::lim_d3f(double y) const			// [3*f''/y - 3*f'/(y^2) - f''']/(y^3)
 {
 	if (y == 0)
 		return std::numeric_limits<double>::infinity();
@@ -1762,7 +1873,7 @@ double CorrGauss::lim_d3f(double y) const
 	return (1-nugget)*216*exp(-3*y*y);
 }
 //------------------------------------------------------------------------------------------
-Func1D* CorrGauss::Copy() const
+Func1D_corr* CorrGauss::Copy() const
 {
 	return new CorrGauss(*this);
 }
@@ -2103,7 +2214,7 @@ double CorrMatern::lim_d3f(double y) const
 	}
 }
 //------------------------------------------------------------------------------------------
-Func1D* CorrMatern::Copy() const
+Func1D_corr* CorrMatern::Copy() const
 {
 	CorrMatern *res = new CorrMatern(*this);
 	return res;
@@ -2119,9 +2230,9 @@ double CorrMatern::GetNu() const
 	return lnbess.nu;
 }
 //------------------------------------------------------------------------------------------
-// Func1D_factory
+// Func1D_corr_factory
 //------------------------------------------------------------------------------------------
-Func1D *Func1D_factory::New(std::string type)
+Func1D_corr *Func1D_corr_factory::New(std::string type)
 {
 	if (type == "GAUSS")
 		return new CorrGauss();

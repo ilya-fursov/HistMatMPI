@@ -1380,7 +1380,7 @@ void KrigCorr::CalculateDerivatives(const std::vector<double> &par) const				// 
 		if (dynamic_cast<HMMPI::CorrMatern*>(func) != nullptr)
 			dynamic_cast<HMMPI::CorrMatern*>(func)->SetNu(Nu);
 
-		HMMPI::Func1D *func_var = 0;
+		HMMPI::Func1D_corr *func_var = 0;
 		if (tot_ind[2] != -1)						// "nu" is active
 			func_var = func->Copy();
 
@@ -1430,7 +1430,7 @@ void KrigCorr::CalculateDerivatives2(const std::vector<double> &par) const				//
 		if (dynamic_cast<HMMPI::CorrMatern*>(func) != nullptr)
 			dynamic_cast<HMMPI::CorrMatern*>(func)->SetNu(Nu);
 
-		HMMPI::Func1D *func_var = 0;
+		HMMPI::Func1D_corr *func_var = 0;
 		if (tot_ind[2] != -1)						// "nu" is active
 			func_var = func->Copy();
 
@@ -1569,7 +1569,7 @@ KrigCorr::KrigCorr() : PhysModel(MPI_COMM_SELF), is_valid(0), K0(0), D(0), func(
 	init_msg = "";
 }
 //---------------------------------------------------------------------------
-KrigCorr::KrigCorr(const HMMPI::Func1D *cf) : PhysModel(MPI_COMM_SELF), is_valid(0), K0(0), D(0), func(cf->Copy()), cfunc(cf)
+KrigCorr::KrigCorr(const HMMPI::Func1D_corr *cf) : PhysModel(MPI_COMM_SELF), is_valid(0), K0(0), D(0), func(cf->Copy()), cfunc(cf)
 {
 	// comm = MPI_COMM_SELF, since communication is not needed
 	name = "KRIGCORR";
@@ -1578,7 +1578,7 @@ KrigCorr::KrigCorr(const HMMPI::Func1D *cf) : PhysModel(MPI_COMM_SELF), is_valid
 	init_msg = "";
 }
 //---------------------------------------------------------------------------
-KrigCorr::KrigCorr(const HMMPI::Func1D *cf, Parser_1 *K, _proxy_params *config) : KrigCorr(cf)
+KrigCorr::KrigCorr(const HMMPI::Func1D_corr *cf, Parser_1 *K, _proxy_params *config) : KrigCorr(cf)
 {
 	DECLKWD(limitsKrig, KW_limitsKrig, "LIMITSKRIG");
 
@@ -1644,9 +1644,9 @@ const KrigCorr &KrigCorr::operator=(const KrigCorr &p)
 	return *this;
 }
 //---------------------------------------------------------------------------
-const HMMPI::Func1D *KrigCorr::CalculateR(const std::vector<double> &par) const
+const HMMPI::Func1D_corr *KrigCorr::CalculateR(const std::vector<double> &par) const
 {
-	const HMMPI::Func1D *corr_func;
+	const HMMPI::Func1D_corr *corr_func;
 	if (func == nullptr)				// case of correlation != GAUSS or MATERN
 	{
 		corr_func = cfunc;
@@ -1676,7 +1676,7 @@ const HMMPI::Func1D *KrigCorr::CalculateR(const std::vector<double> &par) const
 	return corr_func;
 }
 //---------------------------------------------------------------------------
-const HMMPI::Func1D *KrigCorr::GetFuncFromCalculateR() const
+const HMMPI::Func1D_corr *KrigCorr::GetFuncFromCalculateR() const
 {
 	return func == nullptr ? cfunc : func;
 }

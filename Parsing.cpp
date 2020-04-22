@@ -8,6 +8,7 @@
 #include "Utils.h"
 #include "Abstract.h"
 #include "Parsing.h"
+#include "Parsing2.h"
 #include "Tracking.h"
 #include "mpi.h"
 #include "ConsoleCntr.h"
@@ -399,11 +400,18 @@ void KW_fwrite::Action() noexcept	// (OK)
 				if (fnames[i] == "")
 				{
 					char buff[HMMPI::BUFFSIZE];
+					char buffrus[HMMPI::BUFFSIZE];
 					if (L > 1)
+					{
 						sprintf(buff, "File name not specified in row %d", (int)i+1);
+						sprintf(buffrus, "Не задано имя файла в строке %d", (int)i+1);
+					}
 					else
+					{
 						sprintf(buff, "File name not specified");
-					throw HMMPI::Exception(buff);
+						sprintf(buffrus, "Не задано имя файла");
+					}
+					throw HMMPI::Exception(buffrus, buff);
 				}
 				DataIO(i);
 			}
@@ -488,9 +496,9 @@ void KW_params::ProcessParamTable()  noexcept		// (OK)
 			if (par_table(0, j) != "")
 			{
 				if (TYPE[j] == 0)
-					*(int*)DATA[j] = HMMPI::StoL(par_table(0, j));
+					*(int*)DATA[j] = HMMPI::StoL(HMMPI::Trim(par_table(0, j), " "));		// trim spaces in case the items are delimited by TAB
 				else if (TYPE[j] == 1)
-					*(double*)DATA[j] = HMMPI::StoD(par_table(0, j));
+					*(double*)DATA[j] = HMMPI::StoD(HMMPI::Trim(par_table(0, j), " "));
 				else if (TYPE[j] == 2)
 				{
 					if (EXPECTED[j].size() == 0)
@@ -674,9 +682,9 @@ void KW_multparams::ProcessParamTable()  noexcept		// (OK)
 				if (par_table(i, j) != "")		// non-default value
 				{
 					if (TYPE[j] == 0)
-						(*(std::vector<int>*)DATA[j])[i] = HMMPI::StoL(par_table(i, j));
+						(*(std::vector<int>*)DATA[j])[i] = HMMPI::StoL(HMMPI::Trim(par_table(i, j), " "));		// trim spaces in case the items are delimited by TAB
 					else if (TYPE[j] == 1)
-						(*(std::vector<double>*)DATA[j])[i] = HMMPI::StoD(par_table(i, j));
+						(*(std::vector<double>*)DATA[j])[i] = HMMPI::StoD(HMMPI::Trim(par_table(i, j), " "));
 					else if (TYPE[j] == 2)
 					{
 						if (EXPECTED[j].size() == 0)
@@ -837,19 +845,15 @@ void Parser_1::DeleteCTTs()
 	}
 }
 //------------------------------------------------------------------------------------------
-Parser_1::Parser_1()	// (OK)
+Parser_1::Parser_1() : report(""), msg(""), echo(true), silent(false), TotalErrors(0), TotalWarnings(0)		// (OK)
 {
-	TotalErrors = 0;
-	TotalWarnings = 0;
-
 	Shift = 0;
-	echo = true;
-	report = "";
+	time1 = std::chrono::high_resolution_clock::now();
 }
 //------------------------------------------------------------------------------------------
 void Parser_1::AppText(std::string s)	// (OK)
 {
-	if (echo && MPI_rank == 0)
+	if (!silent && echo && MPI_rank == 0)
 	{
 		s = HMMPI::Replace(s, "/./", "/", NULL);	// print paths in a more clear way
 		if (Shift == 0 || s == "\n")
@@ -974,6 +978,13 @@ void Parser_1::ReadAll2()	// (OK)
     AppText(HMMPI::MessageRE("Чтение управляющего файла завершено\n", "Finished reading control file\n"));
 	AppText(HMMPI::stringFormatArr("Предупреждений: {0:%d}\n", "Warnings: {0:%d}\n", TotalWarnings));
 	AppText(HMMPI::stringFormatArr("Ошибок: {0:%d}\n", "Errors: {0:%d}\n", TotalErrors));
+
+	const std::chrono::high_resolution_clock::time_point time2 = std::chrono::high_resolution_clock::now();
+	AppText(HMMPI::stringFormatArr("Время: {0:%.3f} сек.\n", "Time elapsed: {0:%.3f} sec.\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
+
+	KW_report *report = dynamic_cast<KW_report*>(GetKW_item("REPORT"));
+	if (report->GetState() == "")
+		report->data_io();
 }
 //------------------------------------------------------------------------------------------
 

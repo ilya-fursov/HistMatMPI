@@ -114,6 +114,51 @@ void ParseEclSmallHdr(const std::string &s, std::string &a, int &b, std::string 
 std::string getCWD(std::string fullname);			// get 'path' from 'path+file'
 std::string getFile(std::string fullname);			// get 'file' from 'path+file'
 //------------------------------------------------------------------------------------------
+// CmdLauncher - class for executing commands via system() or MPI_Comm_spawn()
+// Currently only deals with MPI_COMM_WORLD, since only one hostfile is currently supported
+//
+// The compatibility of mpi calls (spawn) and non-mpi (system) calls of HistMatMPI
+// and another program (standard one: std, or MPI one: MPI) is shown in the scheme below:
+// 				 call type	:	mpi	 non-mpi	mpi	 non-mpi
+// 				 prog type	:	std	   std		MPI	   MPI
+// --------------------------------------------------------
+// 	   mpi HMMPI			|	hang   ok		ok*	   --
+// non-mpi HMMPI			|	hang   ok		ok*	   ok		 ok* = no exit code handling
+//------------------------------------------------------------------------------------------
+class CmdLauncher
+{
+private:
+	mutable std::vector<char*> mem;			// holds the memory to be freed
+
+	void clear_mem() const;			// clears 'mem'
+
+protected:
+	const char *host_templ;			// host file template name (with %d)
+	int rank;						// rank in MPI_COMM_WORLD
+
+public:
+	void ParseCmd(std::string cmd, bool &IsMPI, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const;
+									// Parses 'cmd' to decide whether it is an MPI command (and setting IsMPI flag)
+									// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
+									// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
+									//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
+	std::vector<std::string> HostList() const;		// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
+	std::string MakeHostFile() const;				// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
+
+	int sync_tNav(std::string data_file) const noexcept;	// waits until an up-to-date tNavigator *.err file is available, returns the (mpi-sync) number of tNav errors
+	static std::string get_end_file(const std::string &data_file);	// get the end file name
+	int get_sync_flag(std::string main_cmd) const;			// returns the sync flag for 'main_cmd'
+
+public:
+	CmdLauncher();					// CTOR to be called on MPI_COMM_WORLD
+	~CmdLauncher();
+
+	void Run(std::string cmd) const;	// Runs command "cmd" (significant at rank-0), followed by a Barrier; should be called on all ranks of MPI_COMM_WORLD.
+										// For non-MPI command: uses system() on rank-0, and throws a sync exception if the exit status is non-zero
+										// For MPI command: uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
+										//					if tNavigator is invoked, the synchronization is based on *.end file
+};
+//------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
 // some other utilities
 //------------------------------------------------------------------------------------------

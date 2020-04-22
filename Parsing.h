@@ -18,6 +18,7 @@
 #include <map>
 #include <list>
 #include <typeinfo>
+#include <chrono>
 
 class Grid2D;
 class Parser_1;				// defined later
@@ -292,6 +293,7 @@ public:
 	std::string report;					// accumulates message for KW_report
 	std::string msg;                	// buffer for accumulating messages for one keyword which is being parsed and processed
 	bool echo;                    		// if 'true', text will be output by MPI process 0
+	bool silent;						// if 'true', AppText doesn't do anything (similar to 'echo')
 	static std::string InitCWD;		// initial CWD (where program starts)
 	static int verbosity;			// global verbosity for printing messages, default = 0, larger positive numbers - more verbose
 
@@ -300,6 +302,7 @@ public:
 	static int MPI_size;			// in MPI_COMM_WORLD
 	int TotalErrors;					// counts all errors for the final report
 	int TotalWarnings;
+	std::chrono::high_resolution_clock::time_point time1;		// records the construction time
 
 	Parser_1();
 	void AddKW_item(KW_item *kwi);      // adds 'kwi' to 'KWList'

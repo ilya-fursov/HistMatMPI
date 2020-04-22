@@ -397,9 +397,13 @@ void KW_rundebug::Run()
 {
 	// test ...
 	Start_pre();
-//	IMPORTKWD(datesW, KW_dates, "DATES");
-//	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
+//	IMPORTKWD(dates, KW_dates, "DATES");
+//	IMPORTKWD(groups, KW_groups, "GROUPS");
+//	IMPORTKWD(vecs, KW_eclvectors, "ECLVECTORS");
+//	IMPORTKWD(sdate, KW_startdate, "STARTDATE");
 
+//	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
+//	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
 //	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
 //	IMPORTKWD(pts, KW_3points, "3POINTS");
@@ -436,7 +440,7 @@ void KW_rundebug::Run()
 	auto g3 = [](double x) -> double {return x*x*x;};
 	auto g4 = [](double x) -> double {return x*x*x*x;};
 	auto g5 = [](double x) -> double {return x*x*x*x*x;};
-	int n = 1000000;
+	int n = 10000;
 	double mu = 3;
 	double x0 = -20;
 //	std::cout << HMMPI::integr_Gauss(g,  n, x0, mu, 2) << "\n";
@@ -454,14 +458,146 @@ void KW_rundebug::Run()
 //	for (double s = 0; s <= 5; s += 0.5)
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
-	int M = 55, r;
-	MPI_Comm_rank(MPI_COMM_WORLD, &r);
-	std::vector<int> counts, displs;
-	HMMPI::MPI_count_displ(MPI_COMM_WORLD, M, counts, displs);
-	if (r == 0)
-	{
-		std::cout << "counts\t" << HMMPI::ToString(counts, "%d", "\t") << "\n";
-		std::cout << "displs\t" << HMMPI::ToString(displs, "%d", "\t") << "\n";
-	}
+	std::vector<double> x1 = {
+			-4,
+			3,
+			3.5,
+			4,
+	};
+
+	std::vector<double> y1 = {
+			0.0539909665131881,
+			0.0175283004935685,
+			0.00443184841193801,
+			0.00087268269504576,
+		};
+
+	HMMPI::Func1D_CDF F(x1, y1);		// N(0, 1)
+
+	for (double x0 = -4+1e-9; x0 <= 5; x0 += 0.5)
+		std::cout << x0 << "\t" << HMMPI::integr_Gauss(g2, n, x0, 1.2, 0.001, F) << "\t" << HMMPI::integr_Gauss(g2, n, x0, 1.2, 0.001) << "\n";
+
+//	FILE *f0 = fopen("R_output_ECLSMRY_.txt", "w");
+//	eclsmry->get_Data().SaveToAscii(f0);
+//	fclose(f0);
+
+
+//	std::cout << "Hostfile check\n";
+//	HMMPI::CmdLauncher cmd;
+//	std::string L = cmd.MakeHostFile();
+//	std::cout << L << "\n";
+//
+//	std::cout << "Parsing test\n";
+//	bool mpi;
+//	n = 0;
+//	std::string main_cmd;
+//	std::vector<char*> argv;
+//
+//	cmd.ParseCmd("./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	cmd.ParseCmd("mpirun -n 4 ./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	cmd.ParseCmd("mpiexec 	 ./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	std::cout << "------------------------------\n";
+//	cmd.ParseCmd("Mpirun -n 4 ./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	cmd.ParseCmd("mpiexec -n 4 ./swof.exe ", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	std::cout << "---------A---------------------\n";
+//	cmd.ParseCmd("mpiexec -n 4 ", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	cmd.ParseCmd("mpiexec ./swof.exe ", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	std::cout << "-------------------B-----------\n";
+//	cmd.ParseCmd("mpiexec  ", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	cmd.ParseCmd("./swof.exe  ", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	cmd.ParseCmd("   ", mpi, n, main_cmd, argv);
+//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
+//	std::cout << "NP = " << n << "\n";
+//	std::cout << main_cmd << "\n";
+//	printf("argv[%zu]: ", argv.size());
+//	for (auto v : argv)
+//		printf(" %s", v);
+//	std::cout << "\n\n";
+//
+//	std::cout << "-----=================------\n";
+
+	HMMPI::CmdLauncher cmd;
+	std::cout << "\nget_sync_flag\n";
+	std::cout << cmd.get_sync_flag("model") << "\n";
+	std::cout << cmd.get_sync_flag("/progs/tNavigator_launcher") << "\n";
+	std::cout << cmd.get_sync_flag("tnav11") << "\n";
+	std::cout << cmd.get_sync_flag("TNAV11") << "\n";
+	std::cout << cmd.get_sync_flag("tna11") << "\n";
+	std::cout << cmd.get_sync_flag("ntav11") << "\n";
+	std::cout << cmd.get_sync_flag("NTAV11") << "\n";
+
+
 }
 //------------------------------------------------------------------------------------------

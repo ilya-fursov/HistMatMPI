@@ -1736,7 +1736,7 @@ VectCorrEntry::~VectCorrEntry()
 		delete [] L;
 }
 //---------------------------------------------------------------------------
-void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, HMMPI::Func1D *func)
+void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, HMMPI::Func1D_corr *func)
 {
 	R0 = R;
 
@@ -1966,7 +1966,7 @@ VectCorrList::VectCorrList()
 	ownerCount = 0;
 }
 //---------------------------------------------------------------------------
-void VectCorrList::LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D*> F)
+void VectCorrList::LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D_corr*> F)
 {
 	size_t vcount = textsmry.JCount()/2;
 	if (vcount != R.size())

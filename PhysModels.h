@@ -695,8 +695,8 @@ private:
 protected:
 	Parser_1 *K0;				// used for messaging (warnings)
 	const HMMPI::Mat *D;		// distance matrix
-	HMMPI::Func1D *func;		// 1D correlation function; its parameters can be changed
-	const HMMPI::Func1D *cfunc;	// same as "func", but used only when "func" happens to be 0 after copying
+	HMMPI::Func1D_corr *func;		// 1D correlation function; its parameters can be changed
+	const HMMPI::Func1D_corr *cfunc;	// same as "func", but used only when "func" happens to be 0 after copying
 
 	const double dh = 1e-4;			// for numerical derivatives
 	const HMMPI::OH oh = HMMPI::OH2;
@@ -712,8 +712,8 @@ public:
 	friend class KrigSigma;
 
 	KrigCorr();
-	KrigCorr(const HMMPI::Func1D *cf);										// cf - corr. func.
-	KrigCorr(const HMMPI::Func1D *cf, Parser_1 *K, _proxy_params *config);	// this ctor takes 'init' from: MODEL (if "config" == MODEL),
+	KrigCorr(const HMMPI::Func1D_corr *cf);										// cf - corr. func.
+	KrigCorr(const HMMPI::Func1D_corr *cf, Parser_1 *K, _proxy_params *config);	// this ctor takes 'init' from: MODEL (if "config" == MODEL),
 																			// 				 or from PROXY_CONFIG (if "config" == PROXY_CONFIG, LIMITSKRIG not defined), or from LIMITSKRIG (otherwise)
 	KrigCorr(const KrigCorr &kc);											// NOTE: this does not copy "D", which should be set manually
 	const KrigCorr &operator=(const KrigCorr &p);							// "D" is not copied
@@ -721,8 +721,8 @@ public:
 	const std::vector<double> &get_init() const {return init;};
 	void set_init(const std::vector<double> &v) {init = v;};
 	void take_refs(const HMMPI::Mat *d) {D = d; is_valid = 0;};
-	const HMMPI::Func1D *CalculateR(const std::vector<double> &par) const;		// calculates R, returns the 1D function used; par = {nugget, r, nu}
-	const HMMPI::Func1D *GetFuncFromCalculateR() const;							// returns the same Func1D* as was returned by the last CalculateR()
+	const HMMPI::Func1D_corr *CalculateR(const std::vector<double> &par) const;		// calculates R, returns the 1D function used; par = {nugget, r, nu}
+	const HMMPI::Func1D_corr *GetFuncFromCalculateR() const;							// returns the same Func1D_corr* as was returned by the last CalculateR()
 	const HMMPI::Mat &Get_R() const {return R;};
 	void reset_cache() const {is_valid = 0;};									// manual cache reset (e.g. in PM_Proxy::AddData)
 
@@ -801,7 +801,7 @@ protected:
 	KrigCorr kc;		// object for creating "correlation" part of kriging matrix (func. vals only), and its derivatives; kc.init stores the current kriging parameters
 
 	double R;					// correlation radius in all directions
-	const HMMPI::Func1D *func;	// correlation function
+	const HMMPI::Func1D_corr *func;	// correlation function
 	const HMMPI::Solver *sol;	// solver for inverting kriging matrix C
 	std::vector<std::vector<int>> multi_ind;		// multiindices describing the polynomial trend components, e.g. for 2D case, [[], [0], [1], [0,1], [0,0], [1,1]] means trend components are: 1, x, y, xy, x^2, y^2
 													// multi_ind[][] range is [0, dim)

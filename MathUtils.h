@@ -31,7 +31,11 @@ inline double Max(double x, double y){return (x > y) ? x : y;};
 double NumD(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative df/dx; h - increment, oh - precision
 double NumD2(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative d2f/dx2; h - increment, oh - precision
 double NumD3(const std::function<double(double)> &f, double x, double h = 1e-4, OH oh = OH2);		// numerical derivative d3f/dx3; h - increment, oh - precision
-double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma);		// calculate int_{x0...+inf} g(x)f(x)dx, where f = PDF Normal(mu, sigma^2), using "n" integration intervals with trapezoid rule
+
+class Func1D_CDF;
+double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma);		// calculate int_{x0...+inf} g(x)p(x)dx, where p = PDF Normal(mu, sigma^2), using "n" integration intervals with trapezoid rule
+double integr_Gauss(const std::function<double(double)> &g, int n, double x0, double mu, double sigma, const Func1D_CDF &F);	// similar to above, with user-defined CDF F, employing Normal score transform:
+																											// int_{invP0(F(x0))...+inf} g(invF(P0(y)))p(y)dy, where p = PDF Normal(mu, sigma^2), P0 is Standard Normal CDF
 bool IsNaN(double d);
 double _sqrt(double d);
 void Sobol(long long int &seed, std::vector<double> &vec);	// generates a new quasirandom Sobol vector with each call; it's a wrapper for "i8_sobol"; dimension is taken according to the vec.size(); 'seed' is incremented with each call
@@ -60,28 +64,40 @@ double Vec_pow_multiind(const std::vector<double> &v, const std::vector<int> &mi
 // some template functions
 template <class RandomAccessIterator>
 std::vector<int> SortPermutation(RandomAccessIterator first, RandomAccessIterator last);	// sorts [first, last) - not via modification, but by returning the indices of permutation
+
 template <class FwdIterator, class T>
 FwdIterator FindBinary(FwdIterator first, FwdIterator last, const T &val);		// binary search of "val" in a SORTED range [first, last); returns iterator to the first found element == "val", returns "last" if not found
+
 template <class T>
 std::vector<T> Reorder(const std::vector<T> &v, const std::vector<int> &ord);	// creates vector from elements of "v" with indices from "ord" (indices may be repeated)
+
 template <class T>																		// treats "v" as row-major storage of M x N matrix, extracts ordi.size() x ordj.size() sub-matrix with indices "ordi", "ordj" (indices may be repeated)
 std::vector<T> Reorder(const std::vector<T> &v, size_t M, size_t N, const std::vector<int> &ordi, const std::vector<int> &ordj, bool skipneg = false, T defval = T());	// returns its row-major storage vector
 																						// if 'skipneg' == true, indices ordi, ordj equal to -1 will be populated with 'defval'
 template <class T>																				// returns vector of indices of "subvec" elements within "mainvec" elements (only first encounter);
 std::vector<int> GetSubvecInd(const std::vector<T> &mainvec, const std::vector<T> &subvec);	 	// index is set to -1 if element is not found in "mainvec"; result.size = subvec.size
+
 template <class T>
 std::vector<int> GetSubvecIndSorted(const std::vector<T> &mainvec_sorted, const std::vector<T> &subvec);	 	// same as GetSubvecInd, but "mainvec_sorted" should be a sorted vector; uses binary search
+
 template <class T>																						// returns subvector of "subvec" composed of elements with corresponding subvec_ind[i] == -1 (lengths of "subvec", "subvec_ind" should be the same)
 std::vector<T> SubvecNotFound(const std::vector<T> &subvec, const std::vector<int> &subvec_ind);		// if subvec_ind := GetSubvecInd[Sorted](mainvec, subvec), then the returned vector is the not-found part of "subvec"
+
 template <class T>
 void VecAssign(std::vector<T> &vec, const std::vector<int> &ind, const std::vector<T> &rhs);	// vec[ind] = rhs; sizes of 'ind' and 'rhs' should be the same; 'ind' are indices in 'vec'
 																								// for indices not in 'ind', 'vec' values are not changed
 template <class T>
 std::vector<std::vector<T>> VecTranspose(const std::vector<std::vector<T>> &arr2d);		// transposes 2D array: res[i][j] = arr2d[j][i]
+
 template <class T>
 bool FindDuplicate(std::vector<T> vec, T &dup);									// 'true' if "vec" has duplicate elements, in this case 'dup' is set to the found duplicate
+
 template <class T>
 std::vector<T> Unique(const std::vector<T> &vec);								// returns a vector of unique elements of 'vec' (uses std::set)
+
+template <class FwdIterator>
+bool is_strictly_sorted(FwdIterator first, FwdIterator last);					// 'true' if [first, last) contains strictly ascending elements
+
 template <class T>
 std::string ToString(const std::vector<T> &v, const std::string fmt = "%12.8g", const std::string delim = "\t");	// convert to string, applying format "fmt" to each element, separating them by "delim", adding '\n' in the end
 template <class T>
@@ -212,14 +228,52 @@ public:
 //------------------------------------------------------------------------------------------
 // *** classes for 1D functions
 //------------------------------------------------------------------------------------------
-// base class for 1D functions (and their derivatives) - e.g. correlation functions, or radial basis functions
+// the very base 1D function class
 class Func1D
+{
+public:
+	virtual ~Func1D(){};
+	virtual double val(double x) const = 0;
+	virtual double inv(double y) const;			// inverse function value
+};
+//------------------------------------------------------------------------------------------
+// base class for piecewise linear functions
+class Func1D_pwlin : public Func1D
+{
+protected:
+	std::vector<double> xi, yi;
+	std::vector<double> dri;						// same size as 'xi', 'yi'; dri[k] = (yi[k] - yi[k-1])/(xi[k] - xi[k-1]);
+
+	mutable size_t locate_cache;					// cache for the locate_point()
+	size_t locate_point(const std::vector<double> &vec, const double x) const;	// returns a "rough index" of 'x' in array 'vec' (which should be SORTED in increasing order), namely:
+																				// for x <= vec[0] returns 0, for vec[last] < x returns vec.size()
+public:																			// for vec[i-1] < x <= vec[i] returns 'i'
+
+	Func1D_pwlin(std::vector<double> x, std::vector<double> y);
+	virtual double val(double x) const;
+};
+//------------------------------------------------------------------------------------------
+// class for piecewise-quadratic CDF (_automatically_ normalized to 1.0) based on piecewise-linear pdf
+class Func1D_CDF : public Func1D_pwlin
+{
+protected:
+	std::vector<double> Fi;							// normalized CDF at nodes
+
+public:
+	Func1D_CDF(std::vector<double> x, std::vector<double> y);	// the input is a pdf; the resulting CDF should be strictly increasing
+	virtual double val(double x) const;
+	virtual double inv(double y) const;							// inverse CDF
+};
+//------------------------------------------------------------------------------------------
+// base class for 1D correlation functions (and their derivatives) - or radial basis functions
+class Func1D_corr : public Func1D
 {
 protected:
 	double nugget = 0;					// at the moment only used in Gauss and Matern
 
 public:
-	virtual ~Func1D(){};
+	virtual ~Func1D_corr(){};
+	virtual double val(double x) const {return f(x);};
 	virtual double f(double x, bool smooth_at_nugget = false) const = 0;	// if smooth_at_nugget = true, there will be no discontinuity at x = 0; otherwise (default), discontinuity exists
 	virtual double df(double x) const = 0;			// f'
 	virtual double d2f(double x) const = 0;			// f''
@@ -227,11 +281,11 @@ public:
 	virtual double lim_df(double y) const;			// f'(y)/y, where y = x/R should be used in kriging	--	the names "lim" are historical; originally they were the limits
 	virtual double lim_d2f(double y) const;			// [f''(y) - f'(y)/y]/(y^2)
 	virtual double lim_d3f(double y) const;			// [3*f''/y - 3*f'/(y^2) - f''']/(y^3)
-	virtual Func1D* Copy() const {return 0;};		// some derived classes may override this; *** delete *** the returned pointer in the end
+	virtual Func1D_corr* Copy() const {return 0;};		// some derived classes may override this; *** delete *** the returned pointer in the end
 	void SetNugget(double n){nugget = n;};
 };
 //------------------------------------------------------------------------------------------
-class CorrGauss : public Func1D			// Gaussian correlation
+class CorrGauss : public Func1D_corr		// Gaussian correlation
 {
 public:
 	virtual double f(double x, bool smooth_at_nugget) const;
@@ -241,10 +295,10 @@ public:
 	virtual double lim_df(double y) const;
 	virtual double lim_d2f(double y) const;
 	virtual double lim_d3f(double y) const;
-	virtual Func1D* Copy() const;					// *** delete *** the returned pointer in the end
+	virtual Func1D_corr* Copy() const;					// *** delete *** the returned pointer in the end
 };
 //------------------------------------------------------------------------------------------
-class CorrSpher : public Func1D			// Spherical correlation
+class CorrSpher : public Func1D_corr		// Spherical correlation
 {
 public:
 	virtual double f(double x, bool smooth_at_nugget) const;
@@ -252,7 +306,7 @@ public:
 	virtual double d2f(double x) const;
 };
 //------------------------------------------------------------------------------------------
-class CorrExp : public Func1D			// Exponential correlation
+class CorrExp : public Func1D_corr			// Exponential correlation
 {
 public:
 	virtual double f(double x, bool smooth_at_nugget) const;
@@ -260,7 +314,7 @@ public:
 	virtual double d2f(double x) const;
 };
 //------------------------------------------------------------------------------------------
-class VarGauss : public Func1D			// Gaussian variogram
+class VarGauss : public Func1D_corr			// Gaussian variogram
 {
 public:
 	virtual double f(double x, bool smooth_at_nugget) const;
@@ -268,7 +322,7 @@ public:
 	virtual double d2f(double x) const;
 };
 //------------------------------------------------------------------------------------------
-class BesselMod2k : public Func1D		// modified Bessel function of second kind K_nu -- not to be used as correlation function
+class BesselMod2k : public Func1D_corr		// modified Bessel function of second kind K_nu -- not to be used as correlation function
 {
 protected:
 	double Kn(double Nu, double x) const;
@@ -283,7 +337,7 @@ public:
 	virtual double d3f(double x) const;		// f'''
 };
 //------------------------------------------------------------------------------------------
-class LnBesselMod2k : public Func1D		// logarithm of modified Bessel function of second kind ln(K_nu) -- not to be used as correlation function
+class LnBesselMod2k : public Func1D_corr	// logarithm of modified Bessel function of second kind ln(K_nu) -- not to be used as correlation function
 {
 public:
 	double nu;		// set at any moment before usage
@@ -298,7 +352,7 @@ public:
 	static double lnKn(double Nu, double x);			// ln(Kn(Nu, x)) -- library function
 };
 //------------------------------------------------------------------------------------------
-class CorrMatern : public Func1D		// Matern correlation
+class CorrMatern : public Func1D_corr		// Matern correlation
 {
 protected:
 	LnBesselMod2k lnbess;
@@ -313,23 +367,23 @@ protected:
 	const double limtol3 = 1e-8;		// --"--										lim_d3f
 
 public:
-	virtual double f(double x, bool smooth_at_nugget = false) const;	// NOTE the default value is the same as for Func1D::f()
+	virtual double f(double x, bool smooth_at_nugget = false) const;	// NOTE the default value is the same as for Func1D_corr::f()
 	virtual double df(double x) const;
 	virtual double d2f(double x) const;
 	virtual double d3f(double x) const;
 	virtual double lim_df(double y) const;
 	virtual double lim_d2f(double y) const;
 	virtual double lim_d3f(double y) const;
-	virtual Func1D* Copy() const;		// *** delete *** the returned pointer in the end
-	void SetNu(double n);				// sets bess::nu
+	virtual Func1D_corr* Copy() const;		// *** delete *** the returned pointer in the end
+	void SetNu(double n);					// sets bess::nu
 	double GetNu() const;
 };
 //------------------------------------------------------------------------------------------
-class Func1D_factory
+class Func1D_corr_factory
 {
 public:
-	static Func1D *New(std::string type);		// produces 1D function according to type: GAUSS, SPHER, EXPVARGAUSS, MATERN
-												// in the end, *** delete *** the returned pointer
+	static Func1D_corr *New(std::string type);		// produces 1D correlation function according to type: GAUSS, SPHER, EXPVARGAUSS, MATERN
+													// in the end, *** delete *** the returned pointer
 };
 //------------------------------------------------------------------------------------------
 // *** classes for block-diagonal matrix
@@ -686,7 +740,7 @@ std::vector<std::vector<T>> VecTranspose(const std::vector<std::vector<T>> &arr2
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-bool FindDuplicate(std::vector<T> vec, T &dup)
+bool FindDuplicate(std::vector<T> vec, T &dup)				// 'true' if "vec" has duplicate elements, in this case 'dup' is set to the found duplicate
 {
 	std::sort(vec.begin(), vec.end());						// note: the copy "vec" is sorted
 	auto rpt = std::adjacent_find(vec.begin(), vec.end());	// find repeats
@@ -704,6 +758,12 @@ std::vector<T> Unique(const std::vector<T> &vec)			// returns a vector of unique
 {
 	std::set<T> work(vec.begin(), vec.end());
 	return std::vector<T>(work.begin(), work.end());
+}
+//------------------------------------------------------------------------------------------
+template <class FwdIterator>
+bool is_strictly_sorted(FwdIterator first, FwdIterator last)					// 'true' if [first, last) contains strictly increasing elements
+{
+	return std::adjacent_find(first, last, std::greater_equal<typename std::iterator_traits<FwdIterator>::value_type>()) == last;
 }
 //------------------------------------------------------------------------------------------
 template <>

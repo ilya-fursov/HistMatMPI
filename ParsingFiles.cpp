@@ -73,8 +73,8 @@ HMMPI::Vector2<double> KW_functionXY::ReadData(std::string fn)
 				if (SA.size() > 0)
 				{
 					if (SA.size() != 2)
-						throw HMMPI::Exception("(eng)",
-											   "Wrong file format: 2 parameters per line expected");
+						throw HMMPI::Exception("Неверный формат файла: ожидается 2 числа в строке",
+											   "Wrong file format: 2 items per line are expected");
 
 					xs.push_back(HMMPI::StoD(SA[0]));
 					ys.push_back(HMMPI::StoD(SA[1]));
@@ -139,11 +139,11 @@ void KW_functionXY::DataIO(int i)
 
 	data[i] = ReadData(fn);
 	if (fn != "")
-		K->AppText(HMMPI::stringFormatArr("(eng) [x, y]: {0:%d}\n",
-									  "Reading the file -> loaded [x, y] pairs: {0:%d}\n", (int)data[i].ICount()));
+		K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("Файл {0:%d} -> загружено пар [x, y]: {1:%d}\n", "File {0:%d} -> loaded [x, y] pairs: {1:%d}\n"),
+										  std::vector<int>{i+1, (int)data[i].ICount()}));
 	else
-		K->AppText(HMMPI::stringFormatArr("(eng){0:%d}\n",
-									  "File {0:%d} -> empty item\n", i+1));
+		K->AppText(HMMPI::stringFormatArr("Файл {0:%d} -> ничего не задано\n",
+									  	  "File {0:%d} -> empty item\n", i+1));
 }
 //---------------------------------------------------------------------------
 double KW_functionXY::FuncValBin(int func_ind, double x, int i1, int i2)
@@ -771,7 +771,7 @@ HMMPI::Vector2<KW_funrst::grad> KW_funrst::ReadGrads(std::string mod_root)
 					std::string well = HMMPI::Trim(items_all[i+1], " \t\r\n");
 					std::string rate = HMMPI::Trim(items_all[i+2], " \t\r\n");
 					std::string prop = HMMPI::Trim(items_all[i+3], " \t\r\n");
-					std::pair<std::string, std::string> v(well, rate);
+					std::pair<std::string, std::string> v{well, rate};
 
 					int N = std::find(vecs->vecs.begin(), vecs->vecs.end(), v) - vecs->vecs.begin();
 					grad_specs[items_all[i]] = std::pair<int, std::string>(N, prop);			// take all vectors
@@ -2294,7 +2294,7 @@ KW_report::KW_report()
 	erows = 1;
 }
 //------------------------------------------------------------------------------------------
-void KW_report::DataIO(int i)
+void KW_report::data_io()					// actual output to the file, performed in the end
 {
 	std::string fn = this->CWD + "/" + fnames[0];
 
@@ -2304,7 +2304,6 @@ void KW_report::DataIO(int i)
 	{
 		sw.open(fn);
 		sw << K->report;
-		sw << std::string(HMMPI::MessageRE("*** конец отчета ***\n", "*** end of report ***\n"));
 		sw.close();
 	}
 	catch (...)

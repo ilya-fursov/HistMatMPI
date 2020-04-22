@@ -147,6 +147,8 @@ public:
 // E.g. with p1/p2/mod.data and p1/p2/poro.inc, inside "mod.data" use either INCLUDE poro.inc, or INCLUDE ../../p1/p2/poro.inc
 // Also, think over if some trick is necessary in orig_files.
 //---------------------------------------------------------------------------
+// TODO maybe it's worth to always perform the check of *.end file for the errors
+//---------------------------------------------------------------------------
 class PMEclipse : public Sim_small_interface, public HMMPI::CorrelCreator, public HMMPI::StdCreator, public HMMPI::DataCreator
 {
 protected:

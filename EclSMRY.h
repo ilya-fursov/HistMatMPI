@@ -52,6 +52,8 @@ public:
 
 	static void parse_date_time(const std::string s, std::string delim, int &D, int &M, int &Y);	// can parse both DD.MM.YYYY, DD/MM/YYYY and hh:mm::ss
 																									// if the last item ("YYYY" or "ss") is empty, then Y = 0
+	std::vector<double> SubtractFromAll(const std::vector<Date> &vec) const;		// subtracts *this from all elements of 'vec'
+																					// the resulting elementwise difference in _days_ is returned
 };
 //--------------------------------------------------------------------------------------------------
 class SmryKwd			// base class for storing 'header(name, type) + data'
@@ -160,9 +162,12 @@ public:
 //--------------------------------------------------------------------------------------------------
 class tNavSMRY : public SimSMRY
 {
+public:
+	typedef std::pair<std::string, std::vector<std::string>> SecObj;	// for definition of secondary objects
+
 private:
-	class T_ecl_prop_transform					// this class is for handling the secondary (calculated) properties; 'offsets' is filled in "read_meta", other fields are filled in CTOR
-	{
+	class T_ecl_prop_transform					// this class is essentially for handling the secondary (calculated) properties;
+	{											// 'offsets', 'wght_offset' are filled in "read_meta", other fields are filled in CTOR
 	public:
 		std::string name;						// e.g. WWCT
 		int flag;								// -1: negate, 0: nothing, 1: apply func()
@@ -171,9 +176,14 @@ private:
 		std::vector<int> offsets;				// offsets w.r.t. currently considered value 'x' in "Data"
 		std::vector<std::string> args;			// (same size as 'offsets') - symbolic names of func's arguments; e.g. WOPR
 
+		// these two int's control how summation takes place for the secondary objects
+		int wght_flag;			// 0: all weights = 0 (e.g. for WBHP), 1: all weights = 1 (e.g. for WOPT), 2: all weights are taken from a property (e.g. for WOPR with WEFAC)
+		int wght_offset;		// full offset for the weighting property w.r.t. current property; filled in read_meta()
+		std::string wght_prop;	// name of the weighting property, e.g. WEFAC
+
 		void func(double *x) const {func_h(offsets.data(), x);};	// calculates *x using 'offsets'
 
-		// functions used as 'func'; NOTE: expand this list as appropriate
+		// functions used as 'func'; USER: expand this list as appropriate
 		static void f_wct(const int *offs, double *x) {double d = *(x + offs[0]) + *(x + offs[1]); if (d != 0) *x = *(x + offs[1])/d; else *x = 0;};	// args <-> WOPR, WWPR
 		static void f_gor(const int *offs, double *x) {double d = *(x + offs[0]); if (d != 0) *x = *(x + offs[1])/d; else *x = 0;};						// args <-> WOPR, WGPR
 		static void f_sum(const int *offs, double *x) {*x = *(x + offs[0]) + *(x + offs[1]);};
@@ -181,15 +191,38 @@ private:
 													   if (d != 0) *x = (*(x + offs[0]) + *(x + offs[1]))/d; else *x = 0;};		// args <-> WOPR, WWPR, WBP9, WBHP
 	};
 
+	class T_sec_obj								// class for handling the secondary (calculated) objects
+	{											// these secondary objects normally do summation (possibly with weighting) of the primary objects
+	public:										// summation should only be applied to the primary properties!
+		std::string name;
+		std::vector<int> offsets;	// offsets for the subordinate objects
+
+		void func(double *x, int flag, int wght_offset) const;	// HIGHLIGHT: calculation of *x based on the other data from array 'x'
+																// 'flag' and 'wght_offset' should be taken from T_ecl_prop_transform
+		// NB! primary and secondary objects are assumed to be arranged in consecutive chunks: [primary | secondary]
+		// in the two CTORs below 'ind' is the index of the secondary object in the [secondary] chunk, i.e. 0, 1, 2,...
+		T_sec_obj(int ind, int obj_N);			// takes name = 'FIELD' and assumes that all (obj_N) primary objects will be summed
+		T_sec_obj(int ind, std::string Name, const std::vector<std::string> &subord, const std::vector<std::string> &full);	// subordinate objects are found in the full list of primary objects to fill 'offsets'
+		std::string ToString() const;			// for debug output
+	};
+
 	std::string last_header;					// the header found by read_meta_block() before it exited
 	std::ifstream *file_meta;
 	std::map<std::string, std::string> ecl_tnav;				// contains pairs like <WBHP, WELL_CALC_BHP>; this map is filled in CTOR and should not be modified
 	std::vector<T_ecl_prop_transform> ecl_prop_transform_full;	// full table of available transforms; filled in CTOR and should not be modified
 	std::vector<int> ind_dates;					// indices of dates (timesteps) as defined in *.meta; increasing order
-	std::vector<int> ind_obj;					// indices of objects (wells) as defined in *.meta; increasing order
-	std::vector<int> ecl_prop_ind;				// indices of Eclipse properties as defined in *.meta; increasing order
-	std::vector<T_ecl_prop_transform> ecl_prop_transform;		// transforms corresponding to 'ecl_prop_ind' (eclipse names [WBHP etc] are included here)
+	std::vector<double> cumul_days;				// cumulative days since 'dates[0]', filled in read_meta()
+	std::vector<int> ind_obj;					// indices of primary objects (wells) as defined in *.meta; increasing order
+	std::vector<int> ecl_prop_ind;				// indices from *.meta [properties], corresponding to ecl_prop_transform[.] items; increasing order
+	std::vector<T_ecl_prop_transform> ecl_prop_transform;		// the transforms from 'ecl_prop_transform_full' which are present in [properties] (i.e. not -1)
+																// eclipse names (WBHP etc) are used here
+
+	std::vector<SecObj> sec_objects_raw;		// secondary objects will be formed from this; 'FIELD' is added on top
+	std::vector<T_sec_obj> sec_objects;			// size = sec_obj_N, filled in read_meta()
 	int prop_N;					// number of entries in [properties] (incl. -1); filled by read_meta(); used for consistency checks
+	int obj_N;					// number of primary objects, filled in read_meta()
+	int sec_obj_N;				// number of secondary objects (sums of primary objects), filled in CTOR
+	Date start;					// start date for WEFAC calculation
 
 	void ecl_prop_transform_check() const;		// consistency check
 	static int find_ind(const std::vector<T_ecl_prop_transform> &V, std::string name);			// returns index in V of element with "name"; -1 if not found
@@ -200,13 +233,12 @@ private:
 	void close_meta();							// closes 'file_meta'
 
 protected:
-	void read_meta(std::string modname);	// reads "modname_well.meta"; fills 'vecs', 'dates', 'ind_dates', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'prop_N'
+	void read_meta(std::string modname);	// reads "modname_well.meta"; fills 'vecs', 'dates', 'ind_dates', 'cumul_days', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'sec_objects', 'prop_N', 'obj_N'
 	void read_res(std::string modname);		// reads data from "modname_well.res"; makes consistency checks and fills 'Data'
 
 public:
-
-	tNavSMRY();
-	tNavSMRY(const tNavSMRY &p) : tNavSMRY() {*this = p;};
+	tNavSMRY(std::vector<SecObj> secobj, Date s);
+	tNavSMRY(const tNavSMRY &p) {*this = p;};
 	virtual ~tNavSMRY();
 	const tNavSMRY &operator=(const tNavSMRY &p);
 	virtual SimSMRY *Copy() const;						// _DELETE_ in the end!

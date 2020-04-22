@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <cstring>
 #include <chrono>
 #include <thread>
 
@@ -281,6 +282,271 @@ std::string getFile(std::string fullname)
 	size_t ind = fullname.find_last_of("/");
 	return fullname.substr(ind+1, std::string::npos);
 }
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+void CmdLauncher::clear_mem() const			// clears 'mem'
+{
+	for (auto &v : mem)
+		delete [] v;
+}
+//------------------------------------------------------------------------------------------
+void CmdLauncher::ParseCmd(std::string cmd, bool &IsMPI, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const
+{											// Parses 'cmd' to decide whether it is an MPI command (and setting IsMPI flag)
+	std::vector<std::string> toks;			// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
+	tokenize(cmd, toks, " \t\r\n", true);	// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
+											//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
+
+	if (toks.size() > 1 && (toks[0] == "mpirun" || toks[0] == "mpiexec"))	// MPI case
+	{
+		IsMPI = true;
+		N = 1;
+		int main_start = 1;				// index where the main cmd tokens start
+		if (toks.size() > 3 && (toks[1] == "-n" || toks[1] == "-np"))
+		{
+			N = StoL(toks[2]);
+			main_start = 3;
+		}
+
+		main_cmd = toks[main_start];
+
+		std::vector<std::string> new_toks(toks.begin() + main_start + 1, toks.end());	// fill the arguments
+		argv = std::vector<char*>(new_toks.size());
+		for (size_t i = 0; i < new_toks.size(); i++)
+		{
+			argv[i] = new char[new_toks[i].length()+1];
+			memcpy(argv[i], new_toks[i].c_str(), new_toks[i].length()+1);
+		}
+		argv.push_back(NULL);			// NULL-termination
+
+		sync_flag = get_sync_flag(main_cmd);
+	}
+	else								// non-MPI case
+	{
+		IsMPI = false;
+		N = 1;
+		main_cmd = cmd;
+		argv = std::vector<char*>();	// empty vector
+		sync_flag = 1;
+	}
+
+	if (mem.size() > 0)					// save for further deletion
+		clear_mem();
+	mem = argv;
+}
+//------------------------------------------------------------------------------------------
+std::vector<std::string> CmdLauncher::HostList() const		// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
+{
+	int reslen, size;
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+	char buff[MPI_MAX_PROCESSOR_NAME];
+	char *Buff0 = nullptr;
+	if (rank == 0)
+		Buff0 = new char[MPI_MAX_PROCESSOR_NAME*size];		// collected buffer
+
+	MPI_Get_processor_name(buff, &reslen);					// local result
+	MPI_Gather(buff, MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
+			   Buff0, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, 0, MPI_COMM_WORLD);
+
+	std::vector<std::string> res(size);
+	if (rank == 0)
+	{
+		for (int i = 0; i < size; i++)
+			res[i] = Buff0 + MPI_MAX_PROCESSOR_NAME*i;		// raw collection to 'res'
+		res = Unique(res);
+		delete [] Buff0;
+	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+std::string CmdLauncher::MakeHostFile() const				// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
+{
+	std::vector<std::string> hosts = HostList();			// result valid on rank-0
+	std::string res;										// significant on rank-0
+
+	if (rank == 0)
+	{
+		bool name_ok = false;
+		int c = 0;
+		char fname[BUFFSIZE];
+		while (!name_ok)									// first, generate appropriate file name
+		{
+			sprintf(fname, host_templ, c);
+			if (!FileExists(fname))
+				name_ok = true;
+			c++;
+		}
+
+		FILE *f = fopen(fname, "w");
+		for (size_t i = 0; i < hosts.size(); i++)			// write to the file
+			fprintf(f, "%s\n", hosts[i].c_str());
+		fclose(f);
+
+		res = fname;
+	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+int CmdLauncher::sync_tNav(std::string data_file) const noexcept
+{										// waits until an up-to-date tNavigator *.end file is available, returns the (mpi-sync) number of tNav errors
+	int res = 1;
+	if (rank == 0)
+	{
+		bool waiting = true;			// 'waiting for the file'
+		std::string end_file = get_end_file(data_file);
+		while (waiting)
+		{
+			if (FileExists(data_file) && FileExists(end_file) && FileModCompare(data_file, end_file) < 0)
+			{
+				std::this_thread::sleep_for(std::chrono::seconds(2));	// wait 2 seconds to avoid conflicts
+				FILE *file = fopen(end_file.c_str(), "r");
+				while (file != NULL && !feof(file))
+				{
+					if (fscanf(file, "Errors %d", &res) == 1)
+					{
+						waiting = false;
+						break;
+					}
+					else
+					{
+						char c;
+						fscanf(file, "%c", &c);
+					}
+				}
+				fclose(file);
+			}
+			else
+				std::this_thread::sleep_for(std::chrono::seconds(5));	// no "end file" found: wait 5 seconds
+		}
+	}
+
+	MPI_BarrierSleepy(MPI_COMM_WORLD);
+	MPI_Bcast(&res, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+std::string CmdLauncher::get_end_file(const std::string &data_file)		// get the end file name
+{
+	size_t pos1 = data_file.find_last_of("/");
+	size_t pos2 = data_file.find_last_of(".");
+	int pos1p = pos1 + 1;
+
+	if (pos1 == std::string::npos)
+		pos1p = 0;
+	if (pos2 == std::string::npos)
+		pos2 = data_file.length();
+
+	std::string res = data_file.substr(0, pos1p) + "RESULTS/" +
+					  data_file.substr(pos1p, pos2-pos1p) + ".end";
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+int CmdLauncher::get_sync_flag(std::string main_cmd) const		// returns the sync flag for 'main_cmd'
+{
+	int res = 0;
+	std::string work = ToUpper(main_cmd);
+	if (work.find("TNAV") == std::string::npos)		// whenever 'main_cmd' has 'tNav' (case-insensitive), FLAG = 2
+		res = 1;
+	else
+		res = 2;
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+CmdLauncher::CmdLauncher() : host_templ("HMMPI_hostfile_%d.txt")
+{															// CTOR to be called on MPI_COMM_WORLD
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+};
+//------------------------------------------------------------------------------------------
+CmdLauncher::~CmdLauncher()
+{
+	clear_mem();
+}
+//------------------------------------------------------------------------------------------
+void CmdLauncher::Run(std::string cmd) const	// Runs command "cmd" (significant at rank-0), followed by a Barrier; should be called on all ranks of MPI_COMM_WORLD.
+{												// For non-MPI command: uses system() on rank-0, and throws a sync exception if the exit status is non-zero
+	std::string main_cmd;						// For MPI command: uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
+	std::vector<char*> argv;					//					if tNavigator is invoked, the synchronization is based on *.end file
+	int sync_flag;
+	int np;
+	bool ismpi;
+
+	if (rank == 0)
+		ParseCmd(cmd, ismpi, np, main_cmd, argv, sync_flag);
+	MPI_Bcast(&ismpi, 1, MPI_BYTE, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&sync_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	if (!ismpi)			// non-MPI; sync here
+	{
+		int status;
+		if (rank == 0)
+			status = system(cmd.c_str());
+		MPI_BarrierSleepy(MPI_COMM_WORLD);
+		MPI_Bcast(&status, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		if (status)		// error status; sync
+		{
+			char msg[BUFFSIZE], msgrus[BUFFSIZE];
+			if (rank == 0)
+			{
+				sprintf(msg, "Exit status %d in command: %.400s", status, cmd.c_str());
+				sprintf(msgrus, "Exit status %d в команде: %.400s", status, cmd.c_str());
+			}
+			MPI_Bcast(msg, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+			MPI_Bcast(msgrus, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+			throw EObjFunc(msgrus, msg);
+		}
+	}
+	else				// MPI
+	{
+		MPI_Comm newcomm;
+		MPI_Info info;
+
+		std::string hfile = MakeHostFile();		// hfile - on rank-0
+		MPI_Info_create(&info);
+		if (rank == 0)
+			MPI_Info_set(info, "hostfile", hfile.c_str());
+
+		//			       				     		 root <---|
+		MPI_Comm_spawn(main_cmd.c_str(), argv.data(), np, info, 0, MPI_COMM_WORLD, &newcomm, MPI_ERRCODES_IGNORE);
+
+		// SYNCHRONIZATION WITH CHILDREN
+		if (sync_flag == 1)				// sync
+			MPI_BarrierSleepy(newcomm);				// default synchronization
+		else
+		{											// tNav synchronization
+			std::string data_file = "dummy";
+			int err_count;
+			if (argv.size() >= 2)
+				data_file = argv[argv.size()-2];	// data file is supposed to be the last non-NULL argument
+
+			err_count = sync_tNav(data_file);		// the BARRIER
+
+			if (err_count > 0)			// sync
+			{
+				char msg[BUFFSIZE], msgrus[BUFFSIZE];
+				if (rank == 0)
+				{
+					sprintf(msg, "tNavigator finished with %d error(s)", err_count);
+					sprintf(msgrus, "tNavigator завершился с %d ошибка(ми)", err_count);
+				}
+				MPI_Bcast(msg, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+				MPI_Bcast(msgrus, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+				throw EObjFunc(msgrus, msg);
+			}
+		}
+
+		MPI_Info_free(&info);
+		MPI_Comm_free(&newcomm);
+
+		if (rank == 0)
+			remove(hfile.c_str());
+	}
+}
+//------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
 bool MPI_size_consistent()
 {

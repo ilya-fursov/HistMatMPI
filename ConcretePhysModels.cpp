@@ -796,9 +796,9 @@ void PhysModelHM::calc_derivatives_dRdP2(HMMPI::Vector2<std::vector<double>> &dr
 	for (size_t v = 0; v < drdp.JCount(); v++)
 		if (vect->vect[v] == "WWCT")
 		{
-			HMMPI::SimSMRY::pair wwct(vect->WGname[v], (std::string)"WWCT");
-			HMMPI::SimSMRY::pair wopr(vect->WGname[v], (std::string)"WOPR");
-			HMMPI::SimSMRY::pair wlpr(vect->WGname[v], (std::string)"WLPR");
+			HMMPI::SimSMRY::pair wwct{vect->WGname[v], (std::string)"WWCT"};
+			HMMPI::SimSMRY::pair wopr{vect->WGname[v], (std::string)"WOPR"};
+			HMMPI::SimSMRY::pair wlpr{vect->WGname[v], (std::string)"WLPR"};
 			int i_wwct = std::find(vect->vecs.begin(), vect->vecs.end(), wwct) - vect->vecs.begin();
 			int i_wopr = std::find(vect->vecs.begin(), vect->vecs.end(), wopr) - vect->vecs.begin();
 			int i_wlpr = std::find(vect->vecs.begin(), vect->vecs.end(), wlpr) - vect->vecs.begin();
@@ -816,9 +816,9 @@ void PhysModelHM::calc_derivatives_dRdP2(HMMPI::Vector2<std::vector<double>> &dr
 		}
 		else if (vect->vect[v] == "WGOR")
 		{
-			HMMPI::SimSMRY::pair wgor(vect->WGname[v], "WGOR");
-			HMMPI::SimSMRY::pair wopr(vect->WGname[v], "WOPR");
-			HMMPI::SimSMRY::pair wgpr(vect->WGname[v], "WGPR");
+			HMMPI::SimSMRY::pair wgor{vect->WGname[v], "WGOR"};
+			HMMPI::SimSMRY::pair wopr{vect->WGname[v], "WOPR"};
+			HMMPI::SimSMRY::pair wgpr{vect->WGname[v], "WGPR"};
 			int i_wgor = std::find(vect->vecs.begin(), vect->vecs.end(), wgor) - vect->vecs.begin();
 			int i_wopr = std::find(vect->vecs.begin(), vect->vecs.end(), wopr) - vect->vecs.begin();
 			int i_wgpr = std::find(vect->vecs.begin(), vect->vecs.end(), wgpr) - vect->vecs.begin();
@@ -2426,6 +2426,8 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Si
 {
 	DECLKWD(mod, KW_model, "MODEL");
 	DECLKWD(datesW, KW_dates, "DATES");
+	DECLKWD(groups, KW_groups, "GROUPS");
+	DECLKWD(Sdate, KW_startdate, "STARTDATE");
 	DECLKWD(vect, KW_eclvectors, "ECLVECTORS");
 	DECLKWD(textsmry, KW_textsmry, "TEXTSMRY");
 	DECLKWD(parameters, KW_parameters, "PARAMETERS");
@@ -2435,6 +2437,8 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Si
 	kw->Add_pre("TEMPLATES");
 	kw->Add_pre("MODEL");
 	kw->Add_pre("DATES");
+	kw->Add_pre("GROUPS");
+	kw->Add_pre("STARTDATE");
 	kw->Add_pre("ECLVECTORS");
 	kw->Add_pre("SIMCMD");
 	kw->Finish_pre();
@@ -2447,7 +2451,7 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Si
 	if (mod->simulator == "ECL")
 		smry = new HMMPI::EclSMRY;
 	else if (mod->simulator == "TNAV")
-		smry = new HMMPI::tNavSMRY;
+		smry = new HMMPI::tNavSMRY(groups->sec_obj, Sdate->start);
 	else
 		throw HMMPI::Exception("Не распознан тип симулятора " + mod->simulator, "Unrecognized simulator type " + mod->simulator);
 
@@ -2537,7 +2541,7 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 	int warning_count = 0;
 	char err_msg[HMMPI::BUFFSIZE];
 	err_msg[0] = 0;
-	if (parallel_rank == 0)		// simulation is only done for comm-RANKS-0
+	if (parallel_rank == 0)		// processing is done on comm-RANKS-0, simulation - on all ranks
 	{
 		try						// this try-catch block is intended for MPI synchronisation of errors
 		{
@@ -2558,6 +2562,7 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 					tmap->SetDoubles(parameters->name, par_external);
 					std::string templ_msg = templ->WriteFiles(*tmap);			// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
 
+					HMMPI::MPI_BarrierSleepy(comm);
 					simcmd->RunCmd();
 
 					// 2. Get modelled data
@@ -2709,7 +2714,19 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 		{
 			sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
 		}
-	} // if (parallel_rank == 0)
+	}
+	else	  // parallel_rank != 0
+	{
+		try	  // try-catch block should be sync across all ranks
+		{
+			HMMPI::MPI_BarrierSleepy(comm);
+			simcmd->RunCmd();
+		}
+		catch (...)
+		{
+
+		}
+	}
 
 	if (comm != MPI_COMM_NULL)
 	{
@@ -2855,7 +2872,7 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 
 	char err_msg[HMMPI::BUFFSIZE];
 	err_msg[0] = 0;
-	if (parallel_rank == 0)		// simulation is only done for comm-RANKS-0
+	if (parallel_rank == 0)		// processing is done on comm-RANKS-0, simulation - on all ranks
 	{
 #ifdef TEST_CACHES
 		std::cout << "		[" << RNK << "] * RUN SIMULATION *\n";
@@ -2878,6 +2895,7 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 			obj_func_msg = templ->WriteFiles(*tmap);					// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
 			obj_func_msg += "\n";
 
+			HMMPI::MPI_BarrierSleepy(comm);
 			simcmd->RunCmd();
 
 			// 2. Get objective_function, modelled_data, historical_data, sigmas, gradient
@@ -2951,7 +2969,19 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 
 			sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
 		}
-	} // if (parallel_rank == 0)
+	}
+	else	// parallel_rank != 0
+	{
+		try		// try-catch block is sync across all ranks
+		{
+			HMMPI::MPI_BarrierSleepy(comm);
+			simcmd->RunCmd();
+		}
+		catch (...)
+		{
+
+		}
+	}
 
 	// sync everything from comm-rank-0
 	MPI_Bcast(&of_cache, 1, MPI_DOUBLE, 0, comm);
@@ -3140,7 +3170,7 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 
 	char err_msg[HMMPI::BUFFSIZE];
 	err_msg[0] = 0;
-	if (parallel_rank == 0)		// simulation is only done for comm-RANKS-0
+	if (parallel_rank == 0)		// processing is done on comm-RANKS-0, simulation - on all ranks
 	{
 		FILE *file = 0;
 		try						// this try-catch block is intended for MPI synchronisation of errors
@@ -3157,6 +3187,7 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 			obj_func_msg = templ->WriteFiles(*tmap);					// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
 			obj_func_msg += "\n";
 
+			HMMPI::MPI_BarrierSleepy(comm);
 			simcmd->RunCmd();
 
 			// 2. Get objective_function, modelled_data, historical_data, sigmas, gradient
@@ -3194,7 +3225,19 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 			fclose(file);
 			sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
 		}
-	} // if (parallel_rank == 0)
+	}
+	else	// parallel_rank != 0
+	{
+		try
+		{
+			HMMPI::MPI_BarrierSleepy(comm);
+			simcmd->RunCmd();
+		}
+		catch (...)
+		{
+
+		}
+	}
 
 	// sync everything from comm-rank-0
 	HMMPI::Bcast_vector(out_t, 0, comm);

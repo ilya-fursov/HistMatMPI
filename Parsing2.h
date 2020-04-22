@@ -79,6 +79,13 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
+class KW_runView_tNavSmry : public KW_run		// write the selected {DATES x ECLVECTORS} from the tNavigator results to the ASCII file
+{
+public:
+	KW_runView_tNavSmry();
+    virtual void Run();
+};
+//------------------------------------------------------------------------------------------
 class KW_runPlot : public KW_run
 {
 public:
@@ -249,6 +256,35 @@ public:
 	std::string order; 		// DIRECT, SORT
 
 	KW_viewsmry_config();
+};
+//------------------------------------------------------------------------------------------
+class KW_view_tNavsmry_config : public KW_params
+{
+public:
+	std::string model;  	// model dataset name (without .DATA)
+	std::string title;		// any description
+	std::string outfile; 	// output ascii file
+	int width;				// min column width
+
+	KW_view_tNavsmry_config();
+};
+//------------------------------------------------------------------------------------------
+class KW_view_tNavsmry_properties : public KW_multparams		// defines how properties are converted before reporting in RUNVIEW_TNAVSMRY
+{
+protected:
+	virtual void PrintParams() noexcept;
+	virtual void UpdateParams() noexcept;
+
+public:
+	typedef std::pair<double, std::string> Prop;	// <factor, title>
+
+	std::vector<std::string> eclprop;	// property in question, e.g. WOPR
+	std::vector<double> factor;			// e.g. density, or 1e-6
+	std::vector<std::string> title;		// for reporting, e.g. 'Oil rate, t/day'
+
+	std::map<std::string, Prop> Conv;	// filled in UpdateParams()
+	KW_view_tNavsmry_properties();
+	void make_headers(std::string &hdr1, std::string &hdr2, std::vector<double> &factors);	// generates headers for SMRY output to ASCII, and fills a vector of scaling factors
 };
 //------------------------------------------------------------------------------------------
 class KW_multiple_seq : public KW_params	// defines the sequence for RUNMULTIPLE
@@ -527,7 +563,7 @@ public:
 	std::vector<double> R;		  		// correlation radius (in time)
 	std::vector<std::string> func;		// correlation function
 
-	std::vector<HMMPI::Func1D*> corr;	// correlation function
+	std::vector<HMMPI::Func1D_corr*> corr;	// correlation function
 
 	KW_eclvectors();
 	~KW_eclvectors();
@@ -852,6 +888,34 @@ public:
 	std::vector<double> zeroBased();	  	// first date is subtracted from all dates, works for years from 1901 to 2099
 };
 //------------------------------------------------------------------------------------------
+class KW_startdate : public KW_params		// simulation starting date, used e.g. to calculate WEFACs for tNav
+{
+protected:
+	virtual void UpdateParams() noexcept;	// fills 'start'
+	virtual void PrintParams() noexcept;
+
+public:
+	HMMPI::Date	start;
+
+	std::string date0;
+
+	KW_startdate();
+};
+//------------------------------------------------------------------------------------------
+// list of groups of wells: "group1 w1 w2 w3...."
+class KW_groups : public KW_multparams
+{
+protected:
+	virtual void PrintParams() noexcept;
+	virtual void UpdateParams() noexcept;	// fills "sec_obj"
+
+public:
+	std::vector<std::string> group;
+	std::vector<HMMPI::tNavSMRY::SecObj> sec_obj;
+
+	KW_groups();
+};
+//------------------------------------------------------------------------------------------
 class KW_pConnect_config : public KW_params	// settings for pConnect PHYSMODEL
 {
 public:
@@ -941,7 +1005,7 @@ public:								// Indented parameters (below) are meaningful only in KW_proxy
 	std::vector<int> ind_grad_add_pts;
 	std::vector<int> ind_grad_comps;
 
-	HMMPI::Func1D *corr;
+	HMMPI::Func1D_corr *corr;
 
 	_proxy_params() : init_pts(0), select_pts(0), cfunc(""), nugget(0), R(0), trend(0), nu(0), opt(""), corr(0){};
 	virtual ~_proxy_params(){delete corr;};
@@ -1419,10 +1483,11 @@ public:
 class KW_report : public KW_fwrite
 {
 protected:
-	virtual void DataIO(int i);
+	virtual void DataIO(int i){};	// empty stub since 17.04.2020
 
 public:
 	KW_report();
+	void data_io();					// actual output to the file, performed in the end
 };
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
