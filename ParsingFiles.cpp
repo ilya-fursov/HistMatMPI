@@ -2296,21 +2296,24 @@ KW_report::KW_report()
 //------------------------------------------------------------------------------------------
 void KW_report::data_io()					// actual output to the file, performed in the end
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	if (K->MPI_rank == 0)
+	{
+		std::string fn = this->CWD + "/" + fnames[0];
 
-	std::ofstream sw;
-	sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
-	try
-	{
-		sw.open(fn);
-		sw << K->report;
-		sw.close();
-	}
-	catch (...)
-	{
-		if (sw.is_open())
+		std::ofstream sw;
+		sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
+		try
+		{
+			sw.open(fn);
+			sw << K->report;
 			sw.close();
-		throw;
+		}
+		catch (...)
+		{
+			if (sw.is_open())
+				sw.close();
+			throw;
+		}
 	}
 }
 //------------------------------------------------------------------------------------------

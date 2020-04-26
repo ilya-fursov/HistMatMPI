@@ -67,10 +67,18 @@ std::vector<std::string> DataLines::EliminateEmpty()	// (OK)
 	{
 		size_t ind = lines[i].find("--");
 		if (ind != std::string::npos)
-			lines[i] = lines[i].substr(0, ind);
+			lines[i] = lines[i].substr(0, ind);			// remove comments
 
 		std::string tr_ln = HMMPI::Trim(lines[i], trim);
-		if (tr_ln.size() > 0)  	// check the line is not empty
+
+		ind = tr_ln.find("-\\-");						// treat special '--'
+		while (ind != std::string::npos)
+		{
+			tr_ln.replace(ind, 3, "--");
+			ind = tr_ln.find("-\\-");
+		}
+
+		if (tr_ln.size() > 0)  							// check the line is not empty
             res.push_back(tr_ln);
 	}
 	return res;
