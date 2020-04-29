@@ -2170,7 +2170,7 @@ std::string KW_datafile::GetDataFileName(int i)
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
-KW_CoordZcorn::KW_CoordZcorn()
+KW_CoordZcorn::KW_CoordZcorn() : CG(MPI_COMM_WORLD)
 {
 	name = "COORDZCORN";
 	erows = 1;

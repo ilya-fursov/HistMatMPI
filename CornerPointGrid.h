@@ -42,31 +42,43 @@ public:
 };
 //------------------------------------------------------------------------------------------
 // class for working with corner point grids: I/O, grid cell location, other operations
+// MPI principles:
+// all data are sync on all ranks, except those marked by:
+// [DISTR] - data member is different on all ranks (e.g. distributed array)
+// [RANK-0] - data member is only significant on comm-ranks-0
+//
 class CornGrid
 {
 private:
 	typedef std::tuple<double, double, double> pointT;		// a helper type for cell search within a column
 
-public:	// TODO TEMP!!! remove!!!
+	std::vector<double> cell_coord_local;		// [DISTR] local part of 'cell_coord', distr w.r.t. "k", for reuse by fill_cell_height(), fill_cell_center()
+	std::vector<double> zcorn_local;			// [DISTR] local part of 'zcorn', distr w.r.t. "k"
+	std::vector<int> counts_Nz, displs_Nz;		// counts and displs for the distribution w.r.t "k", filled by LoadCOORD_ZCORN()
+	std::vector<int> counts_act, displs_act;	// counts and displs for the distribution of active cells, filled by LoadACTNUM()
 
-
-
+	MPI_Comm comm;
+	int rank;
 	bool grid_loaded;		// 'true' if the grid has been loaded
 	bool actnum_loaded;		// 'true' if ACTNUM has been loaded
 	size_t Nx, Ny, Nz;		// grid dimensions
+	size_t Nz_local;		// [DISTR] Nz on a particular rank, after distribution
 	mutable size_t pbp_call_count;		// counts point_between_pillars() calls since the last grid loading
 	mutable size_t psspace_call_count;	// counts point_in_same_semispace() calls since the last grid loading
 
 	std::vector<double> coord;		// read from COORD
-	std::vector<double> zcorn;		// read from ZCORN
+	std::vector<double> zcorn;		// read from ZCORN [RANK-0]
 	std::vector<int> actnum;		// read from ACTNUM
+	std::vector<int> act_cell_ind;	// global indices of active cells, i.e. a map: [0, actnum_count) -> [0, Nx*Ny*Nz)
 	std::vector<double> cell_height;	// Nx*Ny*Nz array with cell heights (taken as average height along 4 pillars)
+	std::vector<double> cell_center;	// 3*Nx*Ny*Nz array with cell centers (x,y,z); ORDER: coord - fastest, X, Y, Z - slowest
 	const double min_cell_height;		// cells with heights <= this value are considered empty
 	std::string actnum_name;		// name of the grid serving as ACTNUM
 	double actnum_min;				// when ACTNUM is loaded from the "double" array, values <= "actnum_min" are assigned ACTNUM=0
+	size_t actnum_count;
 
 	bool cell_coord_filled;
-	std::vector<double> cell_coord;		// filled by fill_cell_coord() (see for details), contains vertex coords for all cells;
+	std::vector<double> cell_coord;		// [RANK-0] filled by fill_cell_coord() (see for details), contains vertex coords for all cells;
 										// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
 
 	bool state_found;		// 'true' <=> dx0, dy0, theta0 have been found
@@ -74,10 +86,12 @@ public:	// TODO TEMP!!! remove!!!
 	double theta0;			// grid rotation angle
 	Mat Q0;					// grid rotation matrix
 
+public:
 	static void ReadGrids(const char *file, std::vector<size_t> len, std::vector<std::vector<double>> &data, std::vector<std::string> S1, std::string S2);
 																// reads a number of grids from "file"
 																// allocates and fills "data" of size S1.size(), with data[i].size() = len[i]
 																// S1[i], S2 - are the start and end markers of "grid[i]" which is loaded to "data[i]"
+protected:
 	static bool ReadTokenComm(FILE *F, char **str, bool &new_line, char *str0, const int str0_len);
 																// reads a token from the file (delimited by ' ', '\t', '\r', '\n'), dropping "--..." comments
 																// returns true on success, false on failure/EOF
@@ -92,39 +106,48 @@ public:	// TODO TEMP!!! remove!!!
 	std::string unify_pillar_z();	// sets z0_ij, z1_ij of the pillars to be const, corrects the corresponding x_ij, y_ij; returns a short message
 	std::string analyze();			// finds dx0, dy0, theta0, Q0; returns a short message
 	std::string fill_cell_height();	// fills "cell_height", returns a short message
+	void fill_cell_center();		// fills "cell_center"
 
-	void xyz_from_cell_ijk(int i, int j, int k, double &x, double &y, double &z) const;				// (i,j,k) -> (x,y,z)
+public:
+	void xyz_from_cell_ijk(int i, int j, int k, double &x, double &y, double &z) const;				// (i,j,k) -> (x,y,z) [RANK-0]
+
+protected:
+	void xyz_from_cell_ijk_local(int i, int j, int k, double &x, double &y, double &z) const;		// (i,j,k_local) -> (x,y,z)
 
 	bool point_between_pillars(double x, double y, int i, int j, double t) const;	// 'true' if point (x,y) is between pillars [i,j]-[i+1,j]-[i+1,j+1]-[i,j+1] at depth "t" (fraction)
 	bool find_cell_in_window(double x, double y, int i0, int i1, int j0, int j1, double t, int &ii, int &jj);	// iteratively searches the cell index window [i0, i1)*[j0, j1)
 									// for the first encounter of cell [ii, jj] containing the point (x, y); uses point_between_pillars() test; returns "true" on success
 
-	bool point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt) const;	// for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
+	bool point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt) const;	// [RANK-0] for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
 									// return "true" if (x,y,z) is in the same semispace relative to the plane span{v0,v1,v2} as "vt"
 
-	static bool point_below_lower_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// "true" if X0=(x,y,z) is strictly below the lower plane of cell (i,j,k)
-	static bool point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
-	int find_k_lower_bound(int i, int j, double x, double y, double z) const;		// for column (i,j) find the smallest "k" such that
+	static bool point_below_lower_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// [RANK-0] "true" if X0=(x,y,z) is strictly below the lower plane of cell (i,j,k)
+	static bool point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// [RANK-0] "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
+	int find_k_lower_bound(int i, int j, double x, double y, double z) const;		// [RANK-0] for column (i,j) find the smallest "k" such that
 									// (x,y,z) is above the lower plane of cell (i,j,k), returns Nz if not found; binary search is used here
 
 public:
-	CornGrid();
+	CornGrid(MPI_Comm c);
 	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive, std::string aname, double amin);
 								// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN), returning a small message;
 								// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
 								// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
 								// aname - ACTNUM name, amin - ACTNUM min
+								// all reading is done by comm-rank-0
 	std::string LoadACTNUM(std::string fname);		// loads ACTNUM, should be called after "grid_loaded", returns a small message
 													// treats real values > "actnum_min" as 'active'
+													// all reading is done by comm-rank-0
 	static void SavePropertyToFile(std::string fname, std::string prop_name, const std::vector<double> &prop);		// saves "prop" in ECLIPSE format
-	std::string fill_cell_coord();			// fills "cell_coord" from coord, zcorn, and grid dimensions; returns a short message
+	std::string fill_cell_coord();			// fills "cell_coord", "cell_coord_local" from coord, zcorn_local, and grid dimensions; returns a short message
 	std::vector<std::vector<NNC>> get_same_layer_NNC(std::string &out_msg);		// based on the mesh and ACTNUM, generates NNCs (where the logically connected cells are not connected in the mesh)
 															// only the cells with the same "k" are taken for such NNCs
 															// the PURPOSE is to form NNCs across the faults
+															// the result is significant on comm-rank-0
 													// TODO this function was not thoroughly tested
 
 	std::vector<double> MarkPinchBottoms() const;	// returns Nx*Ny*Nz array, with values = 0 or 1, where 1 is for the cells which don't have active adjacent cell below
-	void find_cell(const double x, const double y, const double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]
+													// the result is significant on comm-rank-0
+	void find_cell(const double x, const double y, const double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]; the result is significant on comm-rank-0
 	std::string report_find_cell_stats() const;		// info on the auxiliary function call counts within find_cell()
 	bool IsCellCoordFilled() const {return cell_coord_filled;};
 };

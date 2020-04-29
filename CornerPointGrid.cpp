@@ -14,6 +14,7 @@
 #include <cmath>
 #include <algorithm>
 #include <functional>
+#include <climits>
 
 namespace HMMPI
 {
@@ -305,12 +306,12 @@ inline bool CornGrid::scan_one(const char *str, double &d, bool &expect_scan_two
 //------------------------------------------------------------------------------------------
 bool CornGrid::faces_intersect(double a0, double b0, double c0, double d0, double a1, double b1, double c1, double d1)	// 'true' if two faces intersect;
 {											// the faces are defined by their z-values for two shared pillars (0, 1): face_1 is [a0, b0; a1, b1], face_2 is [c0, d0; c1, d1]
-	if ((a0 < c0 && c0 < b0)||(c0 < a0 && a0 < d0))		// intersection for pillar 0
+	if ((a0 <= c0 && c0 < b0)||(c0 <= a0 && a0 < d0))		// intersection for pillar 0
 		return true;
-	if ((a1 < c1 && c1 < b1)||(c1 < a1 && a1 < d1))		// intersection for pillar 1
+	if ((a1 <= c1 && c1 < b1)||(c1 <= a1 && a1 < d1))		// intersection for pillar 1
 		return true;
 
-	if ((b0 < c0 && d1 < a1)||(d0 < a0 && b1 < c1))		// higher/lower
+	if ((b0 <= c0 && d1 <= a1)||(d0 <= a0 && b1 <= c1))		// higher/lower
 		return true;
 
 	return false;
@@ -429,12 +430,15 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0, Q0; returns a short
 		dy0 = -dy0;
 
 
-	std::cout << "\n---------------------------\n";
-	if (take_cos)	// DEBUG
-		std::cout << "\n---------------------------\nanalyze: TAKE COS!!!\n";
-	else
-		std::cout << "analyze: take sine -!\n";	// DEBUG
-	std::cout << "dy0 via sqrt: " << sum/Ny << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
+	if (rank == 0)
+	{
+		std::cout << "\n---------------------------\n";
+		if (take_cos)	// DEBUG
+			std::cout << "\n---------------------------\nanalyze: TAKE COS!!!\n";
+		else
+			std::cout << "analyze: take sine -!\n";	// DEBUG
+		std::cout << "dy0 via sqrt: " << sum/Ny << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
+	}
 
 
 	state_found = true;
@@ -451,8 +455,11 @@ std::string CornGrid::fill_cell_height()	// fills "cell_height", returns a short
 	assert(cell_coord_filled);
 	cell_height = std::vector<double>(Nx*Ny*Nz);
 
-	size_t count_empty = 0;
-	for (size_t k = 0; k < Nz; k++)
+	const size_t cell_height_size_local = Nx*Ny*Nz_local;
+	std::vector<double> cell_height_local(cell_height_size_local);
+
+	size_t count_empty = 0;							// to be reduced
+	for (size_t k = 0; k < Nz_local; k++)
 		for (size_t j = 0; j < Ny; j++)
 			for (size_t i = 0; i < Nx; i++)			// consider cell (i, j, k)
 			{
@@ -460,21 +467,66 @@ std::string CornGrid::fill_cell_height()	// fills "cell_height", returns a short
 				double h = 0;
 				for (size_t p = 0; p < 4; p++)		// pillars
 				{
-					Mat Top(std::vector<double>(cell_coord.begin() + 24*ind + 3*p, cell_coord.begin() + 24*ind + 3*p + 3));			// vertex at the cell top
-					Mat Bot(std::vector<double>(cell_coord.begin() + 24*ind + 3*(p+4), cell_coord.begin() + 24*ind + 3*(p+4) + 3));	// vertex at the cell bottom
+					Mat Top(std::vector<double>(cell_coord_local.begin() + 24*ind + 3*p, cell_coord_local.begin() + 24*ind + 3*p + 3));			// vertex at the cell top
+					Mat Bot(std::vector<double>(cell_coord_local.begin() + 24*ind + 3*(p+4), cell_coord_local.begin() + 24*ind + 3*(p+4) + 3));	// vertex at the cell bottom
 					h += (Top-Bot).Norm2();			// length along this pillar
 				}
 				h /= 4;
-				cell_height[ind] = h;
+				cell_height_local[ind] = h;
 
 				if (h <= min_cell_height)
 					count_empty++;
 			}
 
+	// gather 'cell_height'
+	std::vector<int> counts = counts_Nz, displs = displs_Nz;	// two arrays specially for 'cell_height'
+	const size_t mult = Nx*Ny;
+	if (Nx*Ny*Nz >= (size_t)INT_MAX)
+		throw Exception("Array size exceeds INT_MAX in CornGrid::fill_cell_height");
+
+	for (auto &v : counts)
+		v *= mult;
+	for (auto &v : displs)
+		v *= mult;
+
+	MPI_Allgatherv(cell_height_local.data(), cell_height_size_local, MPI_DOUBLE, cell_height.data(), counts.data(), displs.data(), MPI_DOUBLE, comm);
+
+	MPI_Allreduce(MPI_IN_PLACE, &count_empty, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+
 	return stringFormatArr("Empty cells: {0:%zu} / {1:%zu}", std::vector<size_t>{count_empty, Nx*Ny*Nz});
 }
 //------------------------------------------------------------------------------------------
-void CornGrid::xyz_from_cell_ijk(int i, int j, int k, double &x, double &y, double &z) const		// (i,j,k) -> (x,y,z)
+void CornGrid::fill_cell_center()					// fills "cell_center"
+{
+	assert(cell_coord_filled);
+	cell_center = std::vector<double>(3*Nx*Ny*Nz);
+
+	const size_t cell_center_size_local = 3*Nx*Ny*Nz_local;
+	std::vector<double> cell_center_local(cell_center_size_local);
+
+	for (size_t k = 0; k < Nz_local; k++)
+		for (size_t j = 0; j < Ny; j++)
+			for (size_t i = 0; i < Nx; i++)			// consider cell (i, j, k)
+			{
+				size_t ind = 3*(Nx*Ny*k + Nx*j + i);
+				xyz_from_cell_ijk_local(i, j, k, cell_center_local[ind], cell_center_local[ind+1], cell_center_local[ind+2]);
+			}
+
+	// gather 'cell_height'
+	std::vector<int> counts = counts_Nz, displs = displs_Nz;	// two arrays specially for 'cell_center'
+	const size_t mult = 3*Nx*Ny;
+	if (3*Nx*Ny*Nz >= (size_t)INT_MAX)
+		throw Exception("Array size exceeds INT_MAX in CornGrid::fill_cell_center");
+
+	for (auto &v : counts)
+		v *= mult;
+	for (auto &v : displs)
+		v *= mult;
+
+	MPI_Allgatherv(cell_center_local.data(), cell_center_size_local, MPI_DOUBLE, cell_center.data(), counts.data(), displs.data(), MPI_DOUBLE, comm);
+}
+//------------------------------------------------------------------------------------------
+void CornGrid::xyz_from_cell_ijk(int i, int j, int k, double &x, double &y, double &z) const		// (i,j,k) -> (x,y,z) [RANK-0]
 {
 	assert(grid_loaded);
 	assert(cell_coord_filled);
@@ -499,6 +551,37 @@ void CornGrid::xyz_from_cell_ijk(int i, int j, int k, double &x, double &y, doub
 	double x1 = (cell_coord[m*24 + v3*3 + 0] + cell_coord[m*24 + v4*3 + 0])/2;
 	double y1 = (cell_coord[m*24 + v3*3 + 1] + cell_coord[m*24 + v4*3 + 1])/2;
 	double z1 = (cell_coord[m*24 + v3*3 + 2] + cell_coord[m*24 + v4*3 + 2])/2;
+
+	x = (x0+x1)/2;
+	y = (y0+y1)/2;
+	z = (z0+z1)/2;
+}
+//------------------------------------------------------------------------------------------
+void CornGrid::xyz_from_cell_ijk_local(int i, int j, int k, double &x, double &y, double &z) const		// (i,j,k_local) -> (x,y,z)
+{
+	assert(grid_loaded);
+	assert(cell_coord_filled);
+
+	size_t m = i + j*Nx + k*Nx*Ny;
+	int v1 = 0;
+	int v2 = 3;
+	int v3 = 4;
+	int v4 = 7;
+
+	if (i < 0 || i >= (int)Nx)
+		throw HMMPI::Exception("i out of range in CornGrid::xyz_from_cell_ijk_local");
+	if (j < 0 || j >= (int)Ny)
+		throw HMMPI::Exception("j out of range in CornGrid::xyz_from_cell_ijk_local");
+	if (k < 0 || k >= (int)Nz_local)
+		throw HMMPI::Exception("k out of range in CornGrid::xyz_from_cell_ijk_local");
+
+	double x0 = (cell_coord_local[m*24 + v1*3 + 0] + cell_coord_local[m*24 + v2*3 + 0])/2;
+	double y0 = (cell_coord_local[m*24 + v1*3 + 1] + cell_coord_local[m*24 + v2*3 + 1])/2;
+	double z0 = (cell_coord_local[m*24 + v1*3 + 2] + cell_coord_local[m*24 + v2*3 + 2])/2;
+
+	double x1 = (cell_coord_local[m*24 + v3*3 + 0] + cell_coord_local[m*24 + v4*3 + 0])/2;
+	double y1 = (cell_coord_local[m*24 + v3*3 + 1] + cell_coord_local[m*24 + v4*3 + 1])/2;
+	double z1 = (cell_coord_local[m*24 + v3*3 + 2] + cell_coord_local[m*24 + v4*3 + 2])/2;
 
 	x = (x0+x1)/2;
 	y = (y0+y1)/2;
@@ -562,7 +645,7 @@ bool CornGrid::find_cell_in_window(double x, double y, int i0, int i1, int j0, i
 	return false;
 }
 //------------------------------------------------------------------------------------------
-bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt) const	// for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
+bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt) const	// [RANK-0] for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
 {								// return "true" if (x,y,z) is in the same semispace relative to the plane span{v0,v1,v2} as "vt"
 	assert(grid_loaded);
 	assert(cell_coord_filled);
@@ -597,21 +680,21 @@ bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int 
 		return true;
 }
 //------------------------------------------------------------------------------------------
-bool CornGrid::point_below_lower_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid)	// "true" if X0=(x,y,z) is strictly below the lower plane of cell (i,j,k)
+bool CornGrid::point_below_lower_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid)	// [RANK-0] "true" if X0=(x,y,z) is strictly below the lower plane of cell (i,j,k)
 {
 	double x, y, z;
 	std::tie(x, y, z) = X0;
 	return !grid->point_in_same_semispace(x, y, z, i, j, k, 4, 5, 7, 0);
 }
 //------------------------------------------------------------------------------------------
-bool CornGrid::point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid)	// "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
+bool CornGrid::point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid)	// [RANK-0] "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
 {
 	double x, y, z;
 	std::tie(x, y, z) = X0;
 	return grid->point_in_same_semispace(x, y, z, i, j, k, 0, 1, 3, 4);
 }
 //------------------------------------------------------------------------------------------
-int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) const		// for column (i,j) find the smallest "k" such that
+int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) const		// [RANK-0] for column (i,j) find the smallest "k" such that
 {										// (x,y,z) is above the lower plane of cell (i,j,k), returns Nz if not found; binary search is used here
 	using namespace std::placeholders;
 
@@ -648,56 +731,82 @@ int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) con
 //	fclose(f);
 //}
 //------------------------------------------------------------------------------------------
-CornGrid::CornGrid() : grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), pbp_call_count(0), psspace_call_count(0),
-					   min_cell_height(1e-3), actnum_name("ACTNUM"), actnum_min(0), cell_coord_filled(false),
+CornGrid::CornGrid(MPI_Comm c) : comm(c), grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), Nz_local(0), pbp_call_count(0), psspace_call_count(0),
+					   min_cell_height(1e-3), actnum_name("ACTNUM"), actnum_min(0), actnum_count(0), cell_coord_filled(false),
 					   state_found(false), dx0(0), dy0(0), theta0(0)
 {
+	MPI_Comm_rank(c, &rank);
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive, std::string aname, double amin)
-{													// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN), returning a small message;
-	Nx = nx;										// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
-	Ny = ny;										// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
-	Nz = nz;										// aname - ACTNUM name, amin - ACTNUM min
+{											// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN), returning a small message;
+	std::string msg;						// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
+	if (rank == 0)							// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
+	{										// aname - ACTNUM name, amin - ACTNUM min
+		Nx = nx;							// all reading is done by comm-rank-0
+		Ny = ny;
+		Nz = nz;
 
-	actnum_name = aname;
-	actnum_min = amin;
+		actnum_name = aname;
+		actnum_min = amin;
 
-	const size_t coord_size = 6*(Nx+1)*(Ny+1);
-	const size_t zcorn_size = 8*Nx*Ny*Nz;
+		const size_t coord_size = 6*(Nx+1)*(Ny+1);
+		const size_t zcorn_size = 8*Nx*Ny*Nz;
 
-	std::vector<std::vector<double>> data;
+		std::vector<std::vector<double>> data;
 
-	// read the input file
-	ReadGrids(fname.c_str(), std::vector<size_t>{coord_size, zcorn_size}, data, std::vector<std::string>{"COORD", "ZCORN"}, "/");
+		// read the input file
+		ReadGrids(fname.c_str(), std::vector<size_t>{coord_size, zcorn_size}, data, std::vector<std::string>{"COORD", "ZCORN"}, "/");
 
-	assert(data.size() == 2);
-	coord = std::move(data[0]);
-	zcorn = std::move(data[1]);
+		assert(data.size() == 2);
+		coord = std::move(data[0]);
+		zcorn = std::move(data[1]);
 
-	assert(coord.size() == coord_size);
-	assert(zcorn.size() == zcorn_size);
+		assert(coord.size() == coord_size);
+		assert(zcorn.size() == zcorn_size);
 
-	// shift the origin / transform
-	for (size_t j = 0; j < Ny+1; j++)
-		for (size_t i = 0; i < Nx+1; i++)		// consider pillar p = (i, j)
-		{
-			size_t p = j*(Nx+1) + i;
-
-			coord[p*6] += dx;
-			coord[p*6+3] += dx;
-
-			if (y_positive)
+		// shift the origin / transform
+		for (size_t j = 0; j < Ny+1; j++)
+			for (size_t i = 0; i < Nx+1; i++)		// consider pillar p = (i, j)
 			{
-				coord[p*6+1] += dy;
-				coord[p*6+4] += dy;
+				size_t p = j*(Nx+1) + i;
+
+				coord[p*6] += dx;
+				coord[p*6+3] += dx;
+
+				if (y_positive)
+				{
+					coord[p*6+1] += dy;
+					coord[p*6+4] += dy;
+				}
+				else
+				{
+					coord[p*6+1] = dy - coord[p*6+1];
+					coord[p*6+4] = dy - coord[p*6+4];
+				}
 			}
-			else
-			{
-				coord[p*6+1] = dy - coord[p*6+1];
-				coord[p*6+4] = dy - coord[p*6+4];
-			}
-		}
+
+		grid_loaded = true;
+		std::string msg1 = stringFormatArr("Loaded {0:%zu} COORD values and {1:%zu} ZCORN values\n", std::vector<size_t>{coord_size, zcorn_size});
+		std::string msg2 = unify_pillar_z() + "\n";
+		std::string msg3 = analyze();
+		msg = msg1 + msg2 + msg3;
+	}
+	Bcast_string(msg, 0, comm);
+
+	// sync all the data loaded
+	MPI_Bcast(&Nx, 1, MPI_UNSIGNED_LONG, 0, comm);
+	MPI_Bcast(&Ny, 1, MPI_UNSIGNED_LONG, 0, comm);
+	MPI_Bcast(&Nz, 1, MPI_UNSIGNED_LONG, 0, comm);
+
+	Bcast_string(actnum_name, 0, comm);
+	MPI_Bcast(&actnum_min, 1, MPI_DOUBLE, 0, comm);
+	Bcast_vector(coord, 0, comm);
+
+	MPI_Bcast(&dx0, 1, MPI_DOUBLE, 0, comm);
+	MPI_Bcast(&dy0, 1, MPI_DOUBLE, 0, comm);
+	MPI_Bcast(&theta0, 1, MPI_DOUBLE, 0, comm);
+	Q0.Bcast(0, comm);
 
 	pbp_call_count = 0;
 	psspace_call_count = 0;
@@ -705,38 +814,81 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 	actnum_loaded = false;
 	cell_coord_filled = false;
 	state_found = false;
-	std::string msg1 = stringFormatArr("Loaded {0:%zu} COORD values and {1:%zu} ZCORN values\n", std::vector<size_t>{coord_size, zcorn_size});
-	std::string msg2 = unify_pillar_z() + "\n";
-	std::string msg3 = analyze();
 
-	return msg1 + msg2 + msg3;
+	// scatter 'zcorn' to 'zcorn_local'
+	if (8*Nx*Ny*Nz >= (size_t)INT_MAX)
+		throw Exception("Array size exceeds INT_MAX in CornGrid::LoadCOORD_ZCORN");
+
+	MPI_count_displ(comm, Nz, counts_Nz, displs_Nz);			// all inputs and outputs are sync on "comm"
+	assert(rank < (int)counts_Nz.size());
+	Nz_local = counts_Nz[rank];
+
+	std::vector<int> counts = counts_Nz, displs = displs_Nz;	// two arrays specially for zcorn
+	const size_t mult = 8*Nx*Ny;
+	for (auto &v : counts)
+		v *= mult;
+	for (auto &v : displs)
+		v *= mult;
+
+	assert(rank < (int)counts.size());
+	zcorn_local = std::vector<double>(counts[rank]);
+
+	MPI_Scatterv(zcorn.data(), counts.data(), displs.data(), MPI_DOUBLE, zcorn_local.data(), counts[rank], MPI_DOUBLE, 0, comm);
+
+	return msg;
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be called after "grid_loaded", returns a small message
 {														// treats real values > "actnum_min" as 'active'
-	assert(grid_loaded);
+	assert(grid_loaded);								// all reading is done by comm-rank-0
+	std::string msg;
 
-	const size_t grid_size = Nx*Ny*Nz;
-	std::vector<std::vector<double>> data;
+	if (rank == 0)
+	{
+		const size_t grid_size = Nx*Ny*Nz;
+		std::vector<std::vector<double>> data;
 
-	// read the input file
-	ReadGrids(fname.c_str(), std::vector<size_t>{grid_size}, data, std::vector<std::string>{actnum_name}, "/");
+		// read the input file
+		ReadGrids(fname.c_str(), std::vector<size_t>{grid_size}, data, std::vector<std::string>{actnum_name}, "/");
 
-	assert(data.size() == 1);
-	assert(data[0].size() == grid_size);
-	actnum = std::vector<int>(grid_size, 0);
+		assert(data.size() == 1);
+		assert(data[0].size() == grid_size);
+		actnum = std::vector<int>(grid_size, 0);
 
-	size_t count = 0;
-	for (size_t i = 0; i < grid_size; i++)
-		if (data[0][i] > actnum_min)
-		{
-			actnum[i] = 1;
-			count++;			// count the active cells
-		}
+		actnum_count = 0;
+		for (size_t i = 0; i < grid_size; i++)
+			if (data[0][i] > actnum_min)
+			{
+				actnum[i] = 1;
+				actnum_count++;			// count the active cells
+			}
 
+		// fill 'act_cell_ind'
+		act_cell_ind = std::vector<int>(actnum_count);
+		size_t c = 0;
+		for (size_t i = 0; i < grid_size; i++)
+			if (actnum[i])
+			{
+				assert(c < actnum_count);
+				act_cell_ind[c] = i;
+				c++;
+			}
+
+		msg = stringFormatArr("Active cells: {0:%zu} / {1:%zu}", std::vector<size_t>{actnum_count, grid_size});
+	}
 	actnum_loaded = true;
 
-	return stringFormatArr("Active cells: {0:%zu} / {1:%zu}", std::vector<size_t>{count, grid_size});
+	// sync all the data loaded
+	Bcast_string(msg, 0, comm);
+	Bcast_vector(actnum, 0, comm);
+	Bcast_vector(act_cell_ind, 0, comm);
+	MPI_Bcast(&actnum_count, 1, MPI_UNSIGNED_LONG, 0, comm);
+
+	MPI_count_displ(comm, actnum_count, counts_act, displs_act);
+	assert(rank < (int)counts_act.size());
+	assert(rank < (int)displs_act.size());
+
+	return msg;
 }
 //------------------------------------------------------------------------------------------
 void CornGrid::SavePropertyToFile(std::string fname, std::string prop_name, const std::vector<double> &prop)	// saves "prop" in ECLIPSE format
@@ -781,18 +933,24 @@ void CornGrid::SavePropertyToFile(std::string fname, std::string prop_name, cons
 	fclose(F);
 }
 //------------------------------------------------------------------------------------------
-std::string CornGrid::fill_cell_coord()				// fills "cell_coord" from coord, zcorn, and grid dimensions; returns a short message
+std::string CornGrid::fill_cell_coord()				// fills "cell_coord", "cell_coord_local" from coord, zcorn_local, and grid dimensions; returns a short message
 {
 	assert(grid_loaded);
 	const size_t coord_size = 6*(Nx+1)*(Ny+1);			// VTK_VOXEL:
 	const size_t zcorn_size = 8*Nx*Ny*Nz;				// 2 --- 3				   6 --- 7
 														// |	 |	+ another face |	 |
 	assert(coord.size() == coord_size);					// 0 --- 1				   4 --- 5
-	assert(zcorn.size() == zcorn_size);
-	cell_coord = std::vector<double>(zcorn_size*3);		// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
-														// Vertex order in a cell: as in VTK_VOXEL
+	if (rank == 0)
+	{
+		assert(zcorn.size() == zcorn_size);
+		cell_coord = std::vector<double>(zcorn_size*3);	// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
+	}													// Vertex order in a cell: as in VTK_VOXEL
 														// CELLS: i - fastest, k - slowest
-	for (size_t k = 0; k < Nz; k++)
+	const size_t zcorn_size_local = 8*Nx*Ny*Nz_local;
+	assert(zcorn_local.size() == zcorn_size_local);
+	cell_coord_local = std::vector<double>(zcorn_size_local*3);		// this array is filled in parallel and then is gathered to 'cell_coord'
+
+	for (size_t k = 0; k < Nz_local; k++)
 		for (size_t j = 0; j < Ny; j++)
 			for (size_t i = 0; i < Nx; i++)			// consider cell (i, j, k)
 			{
@@ -813,7 +971,7 @@ std::string CornGrid::fill_cell_coord()				// fills "cell_coord" from coord, zco
 				v[5] = 2*i+1 + 4*Nx*(j+Ny) + 8*Nx*Ny*k;
 				v[6] = 2*(i+Nx) + 4*Nx*(j+Ny) + 8*Nx*Ny*k;
 				v[7] = 2*(i+Nx)+1 + 4*Nx*(j+Ny) + 8*Nx*Ny*k;
-				assert(v[7] < zcorn_size);
+				assert(v[7] < zcorn_size_local);
 
 				double xpill[8];					// order: 4 pillars x_up, 4 pillars x_down
 				double ypill[8];
@@ -849,141 +1007,163 @@ std::string CornGrid::fill_cell_coord()				// fills "cell_coord" from coord, zco
 
 					if (use_z[n])
 					{
-						cell_coord[24*ind + 3*n] = x0 + (x1-x0)/(z1-z0)*(zcorn[v[n]] - z0);
-						cell_coord[24*ind + 3*n+1] = y0 + (y1-y0)/(z1-z0)*(zcorn[v[n]] - z0);
+						cell_coord_local[24*ind + 3*n] = x0 + (x1-x0)/(z1-z0)*(zcorn_local[v[n]] - z0);
+						cell_coord_local[24*ind + 3*n+1] = y0 + (y1-y0)/(z1-z0)*(zcorn_local[v[n]] - z0);
 
-						cell_coord[24*ind + 3*n + 12] = x0 + (x1-x0)/(z1-z0)*(zcorn[v[n+4]] - z0);
-						cell_coord[24*ind + 3*n + 13] = y0 + (y1-y0)/(z1-z0)*(zcorn[v[n+4]] - z0);
+						cell_coord_local[24*ind + 3*n + 12] = x0 + (x1-x0)/(z1-z0)*(zcorn_local[v[n+4]] - z0);
+						cell_coord_local[24*ind + 3*n + 13] = y0 + (y1-y0)/(z1-z0)*(zcorn_local[v[n+4]] - z0);
 					}
 					else
 					{
-						cell_coord[24*ind + 3*n] = x0;
-						cell_coord[24*ind + 3*n+1] = y0;
+						cell_coord_local[24*ind + 3*n] = x0;
+						cell_coord_local[24*ind + 3*n+1] = y0;
 
-						cell_coord[24*ind + 3*n + 12] = x0;
-						cell_coord[24*ind + 3*n + 13] = y0;
+						cell_coord_local[24*ind + 3*n + 12] = x0;
+						cell_coord_local[24*ind + 3*n + 13] = y0;
 					}
-					cell_coord[24*ind + 3*n+2] = zcorn[v[n]];
-					cell_coord[24*ind + 3*n+14] = zcorn[v[n+4]];
+					cell_coord_local[24*ind + 3*n+2] = zcorn_local[v[n]];
+					cell_coord_local[24*ind + 3*n+14] = zcorn_local[v[n+4]];
 				}
 			}
 
+	// gather 'cell_coord'
+	std::vector<int> counts = counts_Nz, displs = displs_Nz;	// two arrays specially for 'cell_coord'
+	const size_t mult = 24*Nx*Ny;
+	if (zcorn_size*3 >= (size_t)INT_MAX)
+		throw Exception("Array size exceeds INT_MAX in CornGrid::fill_cell_coord");
+
+	for (auto &v : counts)
+		v *= mult;
+	for (auto &v : displs)
+		v *= mult;
+	MPI_Gatherv(cell_coord_local.data(), cell_coord_local.size(), MPI_DOUBLE, cell_coord.data(), counts.data(), displs.data(), MPI_DOUBLE, 0, comm);
+
 	cell_coord_filled = true;
 
+	fill_cell_center();
 	return fill_cell_height();
 }
 //------------------------------------------------------------------------------------------
 std::vector<std::vector<NNC>> CornGrid::get_same_layer_NNC(std::string &out_msg)		// based on the mesh and ACTNUM, generates NNCs (where the logically connected cells are not connected in the mesh)
 {																	// only the cells with the same "k" are taken for such NNCs
 	assert(grid_loaded);											// the PURPOSE is to form NNCs across the faults
-
+																	// the result is significant on comm-rank-0
 	out_msg = "";
 	if (!cell_coord_filled)
 		out_msg += fill_cell_coord() + "\n";
-	assert(cell_coord.size() > 0);
 
 	std::vector<std::vector<NNC>> res;
-	size_t NxNy = Nx*Ny;
-	size_t count = 0;
-	char msg[HMMPI::BUFFSIZE*10];
+	if (rank == 0)
+	{
+		assert(cell_coord.size() > 0);
 
-	for (size_t i = 0; i < Nx; i++)
-		for (size_t j = 0; j < Ny; j++)		// consider the first cell (i,j) in the potential NNC
-			for (int k = 1; k <= 2; k++)
-			{
-				size_t i1 = i + k%2;		// consider the second cell (i1,j1) in the potential NNC
-				size_t j1 = j + k/2;
+		size_t NxNy = Nx*Ny;
+		size_t count = 0;
+		char msg[HMMPI::BUFFSIZE*10];
 
-				if (i1 >= Nx || j1 >= Ny)
-					continue;
-
-				for (size_t z = 0; z < Nz; z++)
+		for (size_t i = 0; i < Nx; i++)
+			for (size_t j = 0; j < Ny; j++)		// consider the first cell (i,j) in the potential NNC
+				for (int k = 1; k <= 2; k++)
 				{
-					size_t m = i + j*Nx + z*NxNy;		// first cell
-					size_t m1 = i1 + j1*Nx + z*NxNy;	// second cell
+					size_t i1 = i + k%2;		// consider the second cell (i1,j1) in the potential NNC
+					size_t j1 = j + k/2;
 
-					if (actnum_loaded && (actnum[m] == 0 || actnum[m1] == 0))
-						continue;			// inactive cells do not participate in NNC 	TODO check on model with/without ACTNUM
+					if (i1 >= Nx || j1 >= Ny)
+						continue;
 
-					int p11, p12;	// pillars of the first cell
-					int p21, p22;	// pillars of the second cell
-					if (i1 > i)
+					for (size_t z = 0; z < Nz; z++)
 					{
-						p11 = 1; p12 = 3;		// #3 2#
-						p21 = 0; p22 = 2;		// #1 0#
-					}
-					else						// ##
-					{							// 01
-						p11 = 2; p12 = 3;		//
-						p21 = 0; p22 = 1;		// 23
-					}							// ##
+						size_t m = i + j*Nx + z*NxNy;		// first cell
+						size_t m1 = i1 + j1*Nx + z*NxNy;	// second cell
 
-					double a0 = cell_coord[m*24 + p11*3 + 2];
-					double b0 = cell_coord[m*24 + (p11+4)*3 + 2];
-					double a1 = cell_coord[m*24 + p12*3 + 2];
-					double b1 = cell_coord[m*24 + (p12+4)*3 + 2];
+						if (actnum_loaded && (actnum[m] == 0 || actnum[m1] == 0))
+							continue;			// inactive cells do not participate in NNC 	TODO check on model with/without ACTNUM
 
-					double c0 = cell_coord[m1*24 + p21*3 + 2];
-					double d0 = cell_coord[m1*24 + (p21+4)*3 + 2];
-					double c1 = cell_coord[m1*24 + p22*3 + 2];
-					double d1 = cell_coord[m1*24 + (p22+4)*3 + 2];
-					if (!faces_intersect(a0, b0, c0, d0, a1, b1, c1, d1))
-					{
-						NNC::add_NNC_to_array(res, NNC(i, j, z, i1, j1, z));
-						count++;
+						int p11, p12;	// pillars of the first cell
+						int p21, p22;	// pillars of the second cell
+						if (i1 > i)
+						{
+							p11 = 1; p12 = 3;		// #3 2#
+							p21 = 0; p22 = 2;		// #1 0#
+						}
+						else						// ##
+						{							// 01
+							p11 = 2; p12 = 3;		//
+							p21 = 0; p22 = 1;		// 23
+						}							// ##
+
+						double a0 = cell_coord[m*24 + p11*3 + 2];
+						double b0 = cell_coord[m*24 + (p11+4)*3 + 2];
+						double a1 = cell_coord[m*24 + p12*3 + 2];
+						double b1 = cell_coord[m*24 + (p12+4)*3 + 2];
+
+						double c0 = cell_coord[m1*24 + p21*3 + 2];
+						double d0 = cell_coord[m1*24 + (p21+4)*3 + 2];
+						double c1 = cell_coord[m1*24 + p22*3 + 2];
+						double d1 = cell_coord[m1*24 + (p22+4)*3 + 2];
+						if (!faces_intersect(a0, b0, c0, d0, a1, b1, c1, d1))
+						{
+							NNC::add_NNC_to_array(res, NNC(i, j, z, i1, j1, z));
+							count++;
+						}
 					}
 				}
-			}
 
-	sprintf(msg, "Found %zu NNCs grouped into %zu chain(s)", count, res.size());
-	out_msg += msg;
-	if (actnum_loaded)
-		out_msg += " (ACTNUM was used)";
-	else
-		out_msg += " (ACTNUM was not found)";
+		sprintf(msg, "Found %zu NNCs grouped into %zu chain(s)", count, res.size());
+		out_msg += msg;
+		if (actnum_loaded)
+			out_msg += " (ACTNUM was used)";
+		else
+			out_msg += " (ACTNUM was not found)";
+	}
+	Bcast_string(out_msg, 0, comm);
 
 	return res;
 }
 //------------------------------------------------------------------------------------------
 std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array, with values = 0 or 1, where 1 is for the cells which don't have active adjacent cell below
-{
+{														// the result is significant on comm-rank-0
 	assert(grid_loaded);
 	assert(actnum_loaded);
 	assert(cell_coord_filled);
 	assert(cell_height.size() > 0);
 
-	std::vector<double> res(Nx*Ny*Nz, 0.0);
+	std::vector<double> res;
+	if (rank == 0)
+	{
+		res = std::vector<double>(Nx*Ny*Nz, 0.0);
 
-	for (size_t j = 0; j < Ny; j++)
-		for (size_t i = 0; i < Nx; i++)			// consider cell (i, j, k)
-			for (size_t k = 0; k < Nz; k++)
-			{
-				const size_t ind = Nx*Ny*k + Nx*j + i;
-
-				if (actnum[ind] == 0)			// inactive cells are not suitable candidates
-					continue;
-
-				size_t k1 = k + 1;				// find the next non-empty cell below
-				while (k1 < Nz && cell_height[Nx*Ny*k1 + Nx*j + i] <= min_cell_height)
-					k1++;
-
-				if (k1 >= Nz)					// non-empty cell not found
+		for (size_t j = 0; j < Ny; j++)
+			for (size_t i = 0; i < Nx; i++)			// consider cell (i, j, k)
+				for (size_t k = 0; k < Nz; k++)
 				{
-					k = k1;
-					continue;
+					const size_t ind = Nx*Ny*k + Nx*j + i;
+
+					if (actnum[ind] == 0)			// inactive cells are not suitable candidates
+						continue;
+
+					size_t k1 = k + 1;				// find the next non-empty cell below
+					while (k1 < Nz && cell_height[Nx*Ny*k1 + Nx*j + i] <= min_cell_height)
+						k1++;
+
+					if (k1 >= Nz)					// non-empty cell not found
+					{
+						k = k1;
+						continue;
+					}
+
+					// now, k1 is the next non-empty cell
+					if (actnum[Nx*Ny*k1 + Nx*j + i] == 0)		// NOTE: it's assumed there is no empty space between the cells!
+						res[ind] = 1;
+
+					k = k1 - 1;						// -1 because of the "for" increment
 				}
-
-				// now, k1 is the next non-empty cell
-				if (actnum[Nx*Ny*k1 + Nx*j + i] == 0)		// NOTE: it's assumed there is no empty space between the cells!
-					res[ind] = 1;
-
-				k = k1 - 1;						// -1 because of the "for" increment
-			}
+	}
 
 	return res;
 }
 //------------------------------------------------------------------------------------------
-void CornGrid::find_cell(const double x, const double y, const double z, int &i, int &j, int &k) 		// find cell [i,j,k] containing the point [x,y,z]
+void CornGrid::find_cell(const double x, const double y, const double z, int &i, int &j, int &k) 	// find cell [i,j,k] containing the point [x,y,z]; the result is significant on comm-rank-0
 {
 	const int delta_i = 5;		// if the CELL with analytical coords (i,j) does not contain the point, window
 	const int delta_j = 5;		// [i - delta_i, i + delta_i]*[j - delta_j, j + delta_j] is searched iteratively;
@@ -994,70 +1174,91 @@ void CornGrid::find_cell(const double x, const double y, const double z, int &i,
 	if (!state_found)
 		analyze();
 
-	double x0 = coord[0];			// the first pillar
-	double y0 = coord[1];
-	double z0 = coord[2];
-	double x1 = coord[3];
-	double y1 = coord[4];
-	double z1 = coord[5];
-
-	double t = 0;
-	if (z1 != z0)
-		t = (z - z0)/(z1 - z0);		// for vertical pillars (z1 == z0) --> t = 0
-
-	double xbar = x - (1-t)*x0 - t*x1;
-	double ybar = y - (1-t)*y0 - t*y1;
-
-	const Mat rhs(std::vector<double>{xbar, ybar});
-
-	Mat sol = Q0.Tr()*rhs;
-	i = int(sol(0,0)/dx0);			// find analytic (i,j)
-	j = int(sol(1,0)/dy0);
-
-	if (i < 0 || i >= (int)Nx || j < 0 || j >= (int)Ny)		// check that the found (i,j) is correct
+	bool iserror = false;
+	char errmsg[BUFFSIZE];
+	if (rank == 0)
 	{
-		char msg[BUFFSIZE];
-		sprintf(msg, "Point (%.0f, %.0f) is laterally outside the grid", x, y);
-		throw Exception(msg);
-	}
+		try
+		{
+			double x0 = coord[0];			// the first pillar
+			double y0 = coord[1];
+			double z0 = coord[2];
+			double x1 = coord[3];
+			double y1 = coord[4];
+			double z1 = coord[5];
 
-	if (!point_between_pillars(x, y, i, j, t))
-	{
-		int i0 = i - delta_i;
-		int i1 = i + delta_i + 1;
-		int j0 = j - delta_j;
-		int j1 = j + delta_j + 1;
+			double t = 0;
+			if (z1 != z0)
+				t = (z - z0)/(z1 - z0);		// for vertical pillars (z1 == z0) --> t = 0
 
-		if (i0 < 0) i0 = 0;
-		if ((size_t)i1 > Nx) i1 = Nx;
-		if (j0 < 0) j0 = 0;
-		if ((size_t)j1 > Ny) j1 = Ny;
+			double xbar = x - (1-t)*x0 - t*x1;
+			double ybar = y - (1-t)*y0 - t*y1;
 
-		if (!find_cell_in_window(x, y, i0, i1, j0, j1, t, i, j))	// windowed search
-			if(!find_cell_in_window(x, y, 0, Nx, 0, Ny, t, i, j))	// full grid search
+			const Mat rhs(std::vector<double>{xbar, ybar});
+
+			Mat sol = Q0.Tr()*rhs;
+			i = int(sol(0,0)/dx0);			// find analytic (i,j)
+			j = int(sol(1,0)/dy0);
+
+			if (i < 0 || i >= (int)Nx || j < 0 || j >= (int)Ny)		// check that the found (i,j) is correct
 			{
 				char msg[BUFFSIZE];
-				sprintf(msg, "Failure to find a grid cell containing the point (%.0f, %.0f)", x, y);
+				sprintf(msg, "Point (%.0f, %.0f) is laterally outside the grid", x, y);
 				throw Exception(msg);
 			}
+
+			if (!point_between_pillars(x, y, i, j, t))
+			{
+				int i0 = i - delta_i;
+				int i1 = i + delta_i + 1;
+				int j0 = j - delta_j;
+				int j1 = j + delta_j + 1;
+
+				if (i0 < 0) i0 = 0;
+				if ((size_t)i1 > Nx) i1 = Nx;
+				if (j0 < 0) j0 = 0;
+				if ((size_t)j1 > Ny) j1 = Ny;
+
+				if (!find_cell_in_window(x, y, i0, i1, j0, j1, t, i, j))	// windowed search
+					if(!find_cell_in_window(x, y, 0, Nx, 0, Ny, t, i, j))	// full grid search
+					{
+						char msg[BUFFSIZE];
+						sprintf(msg, "Failure to find a grid cell containing the point (%.0f, %.0f)", x, y);
+						throw Exception(msg);
+					}
+			}
+
+			// now (i,j) is the correct cell, need to find "k"
+			k = find_k_lower_bound(i, j, x, y, z);							// [RANK-0]
+			if (k == (int)Nz)
+			{
+				char msg[BUFFSIZE];
+				sprintf(msg, "Point (%.0f, %.0f, %.2f) is in column [%d, %d], but is located below the grid", x, y, z, i+1, j+1);
+				throw Exception(msg);
+			}
+			if (!point_below_upper_plane(pointT(x, y, z), i, j, k, this))	// [RANK-0]
+			{
+				char msg[BUFFSIZE];
+				sprintf(msg, "Point (%.0f, %.0f, %.2f) is in column [%d, %d], but cannot be located within the grid cells", x, y, z, i+1, j+1);
+				throw Exception(msg);
+			}
+
+			// all tests passed, (i,j,k) is correct
+		}
+		catch (const std::exception &e)
+		{
+			iserror = true;
+			sprintf(errmsg, "%.490s", e.what());
+		}
 	}
 
-	// now (i,j) is the correct cell, need to find "k"
-	k = find_k_lower_bound(i, j, x, y, z);
-	if (k == (int)Nz)
-	{
-		char msg[BUFFSIZE];
-		sprintf(msg, "Point (%.0f, %.0f, %.2f) is in column [%d, %d], but is located below the grid", x, y, z, i+1, j+1);
-		throw Exception(msg);
-	}
-	if (!point_below_upper_plane(pointT(x, y, z), i, j, k, this))
-	{
-		char msg[BUFFSIZE];
-		sprintf(msg, "Point (%.0f, %.0f, %.2f) is in column [%d, %d], but cannot be located within the grid cells", x, y, z, i+1, j+1);
-		throw Exception(msg);
-	}
+	MPI_Bcast(&pbp_call_count, 1, MPI_UNSIGNED_LONG, 0, comm);
+	MPI_Bcast(&psspace_call_count, 1, MPI_UNSIGNED_LONG, 0, comm);
 
-	// all tests passed, (i,j,k) is correct
+	MPI_Bcast(&iserror, 1, MPI_BYTE, 0, comm);
+	MPI_Bcast(errmsg, BUFFSIZE, MPI_CHAR, 0, comm);
+	if (iserror)
+		throw Exception(errmsg);		// sync
 }
 //------------------------------------------------------------------------------------------
 std::string CornGrid::report_find_cell_stats() const		// info on the auxiliary function call counts within find_cell()

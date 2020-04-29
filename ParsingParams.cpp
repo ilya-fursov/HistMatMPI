@@ -1388,22 +1388,25 @@ void KW_runNNCfromgrid::Run()
 
 	const std::string fout_name = "Output_NNC_from_grid.txt";
 	std::string msg;
-	std::vector<std::vector<HMMPI::NNC>> res = cz->CG.get_same_layer_NNC(msg);
+	std::vector<std::vector<HMMPI::NNC>> res = cz->CG.get_same_layer_NNC(msg);		// the result is significant on comm-rank-0
 	K->AppText(msg + "\n");
 
-	FILE *f = fopen(fout_name.c_str(), "w");
-	for (size_t i = 0; i < res.size(); i++)
+	if (K->MPI_rank == 0)
 	{
-		for (size_t j = 0; j < res[i].size(); j++)
+		FILE *f = fopen(fout_name.c_str(), "w");
+		for (size_t i = 0; i < res.size(); i++)
 		{
-			fprintf(f, "%6d\t%6d\t%6d\t%9d\t%6d\t%6d\tNNC%zu\n",
-					res[i][j].N0.i + 1, res[i][j].N0.j + 1, res[i][j].N0.k + 1,
-					res[i][j].N1.i + 1, res[i][j].N1.j + 1, res[i][j].N1.k + 1, i);
+			for (size_t j = 0; j < res[i].size(); j++)
+			{
+				fprintf(f, "%6d\t%6d\t%6d\t%9d\t%6d\t%6d\tNNC%zu\n",
+						res[i][j].N0.i + 1, res[i][j].N0.j + 1, res[i][j].N0.k + 1,
+						res[i][j].N1.i + 1, res[i][j].N1.j + 1, res[i][j].N1.k + 1, i);
+			}
+			fprintf(f, "\n");
 		}
-		fprintf(f, "\n");
+		fclose(f);
 	}
 
-	fclose(f);
 	K->AppText("NNCs are saved to '" + fout_name + "'\n");
 }
 //------------------------------------------------------------------------------------------
@@ -1422,11 +1425,12 @@ void KW_runPinchMarkFromGrid::Run()
 	Finish_pre();
 
 	const std::string fout_name = "Output_PINCH_MARK_from_grid.txt";
-	assert(!cz->CG.cell_coord_filled);
+	assert(!cz->CG.IsCellCoordFilled());
 	K->AppText(cz->CG.fill_cell_coord() + "\n");
 
-	std::vector<double> marks = cz->CG.MarkPinchBottoms();
-	cz->CG.SavePropertyToFile(fout_name, "ARRPINCHMARK", marks);
+	std::vector<double> marks = cz->CG.MarkPinchBottoms();		// the result is significant on comm-rank-0
+	if (K->MPI_rank == 0)
+		cz->CG.SavePropertyToFile(fout_name, "ARRPINCHMARK", marks);
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -1446,11 +1450,16 @@ void KW_runGridIJK_to_XYZ::Run()
 	if (!cz->CG.IsCellCoordFilled())
 		K->AppText(cz->CG.fill_cell_coord() + "\n");
 
-	for (size_t i = 0; i < pts->x.size(); i++)
+	if (K->MPI_rank == 0)
 	{
-		double x, y, z;
-		cz->CG.xyz_from_cell_ijk(pts->x[i]-1, pts->y[i]-1, pts->z[i]-1, x, y, z);
-		printf("%-3d\t%-3d\t%-3d\t->\t%-7.0f\t%-7.0f\t%-7.2f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y, z);
+		for (size_t i = 0; i < pts->x.size(); i++)
+		{
+			double x, y, z;
+			cz->CG.xyz_from_cell_ijk(pts->x[i]-1, pts->y[i]-1, pts->z[i]-1, x, y, z);
+			char msg[HMMPI::BUFFSIZE];
+			sprintf(msg, "%-3d\t%-3d\t%-3d\t->\t%-7.0f\t%-7.0f\t%-7.2f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y, z);
+			K->AppText(msg);
+		}
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -1477,11 +1486,13 @@ void KW_runXYZ_to_GridIJK::Run()
 		try
 		{
 			cz->CG.find_cell(pts->x[n], pts->y[n], pts->z[n], i, j, k);
-			printf("%-7.0f\t%-7.0f\t%-7.2f\t->\t%-3d\t%-3d\t%-3d\n", pts->x[n], pts->y[n], pts->z[n], i+1, j+1, k+1);
+			char msg[HMMPI::BUFFSIZE];
+			sprintf(msg, "%-7.0f\t%-7.0f\t%-7.2f\t->\t%-3d\t%-3d\t%-3d\n", pts->x[n], pts->y[n], pts->z[n], i+1, j+1, k+1);
+			K->AppText(msg);
 		}
 		catch (const HMMPI::Exception &e)
 		{
-			printf("[error] %s\n", e.what());
+			SilentError(e.what());
 		}
 	}
 	K->AppText(cz->CG.report_find_cell_stats() + "\n");
