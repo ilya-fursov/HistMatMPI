@@ -67,7 +67,7 @@ private:
 	mutable size_t psspace_call_count;	// counts point_in_same_semispace() calls since the last grid loading
 
 	std::vector<double> coord;		// read from COORD
-	std::vector<double> zcorn;		// read from ZCORN [RANK-0]
+	std::vector<double> zcorn;		// read from ZCORN [RANK-0] -- although, this global array is not used anywhere
 	std::vector<int> actnum;		// read from ACTNUM
 	std::vector<int> act_cell_ind;	// global indices of active cells, i.e. a map: [0, actnum_count) -> [0, Nx*Ny*Nz)
 	std::vector<double> cell_height;	// Nx*Ny*Nz array with cell heights (taken as average height along 4 pillars)
@@ -125,7 +125,11 @@ protected:
 	static bool point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// [RANK-0] "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
 	int find_k_lower_bound(int i, int j, double x, double y, double z) const;		// [RANK-0] for column (i,j) find the smallest "k" such that
 									// (x,y,z) is above the lower plane of cell (i,j,k), returns Nz if not found; binary search is used here
-
+	void calc_strat_dist(int i1, int j1, int k1, int i2, int j2, int k2, double &dx, double &dy, double &dz) const;		// calculates 3D radius-vector (dx, dy, dz)
+									// between cells (i1, j1, k1) and (i2, j2, k2), flattening the stratigraphy
+									// uses 'cell_center', and can be called on any RANK
+	double calc_scaled_dist(int i1, int j1, int k1, int i2, int j2, int k2, double Rmaj, double rmin, double rz, double cosx, double sinx) const;	// calculates the scaled distance for use in 1D covariance function
+									// uses calc_strat_dist(), the 3D variogram radii Rmaj, rmin, rz, and cos/sin of angle chi
 public:
 	CornGrid(MPI_Comm c);
 	std::string LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive, std::string aname, double amin);

@@ -707,6 +707,43 @@ int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) con
 	return res - k_range.begin();
 }
 //------------------------------------------------------------------------------------------
+void CornGrid::calc_strat_dist(int i1, int j1, int k1, int i2, int j2, int k2, double &dx, double &dy, double &dz) const		// calculates 3D radius-vector (dx, dy, dz)
+{								// between cells (i1, j1, k1) and (i2, j2, k2), flattening the stratigraphy
+								// uses 'cell_center', and can be called on any RANK
+	assert(i1 >=0 and i1 < (int)Nx);
+	assert(j1 >=0 and j1 < (int)Ny);
+	assert(k1 >=0 and k1 < (int)Nz);
+
+	assert(i2 >=0 and i2 < (int)Nx);
+	assert(j2 >=0 and j2 < (int)Ny);
+	assert(k2 >=0 and k2 < (int)Nz);
+
+	const size_t ind1 = Nx*Ny*k1 + Nx*j1 + i1;			//		p1	------------ p2_cross
+	const size_t ind2 = Nx*Ny*k2 + Nx*j2 + i2;			//		|				 |
+														//		|				 |
+	const size_t ind1_cross = Nx*Ny*k2 + Nx*j1 + i1;	//		|				 |
+	const size_t ind2_cross = Nx*Ny*k1 + Nx*j2 + i2;	//		p1_cross ------- p2
+
+	dx = cell_center[3*ind2] - cell_center[3*ind1];
+	dy = cell_center[3*ind2+1] - cell_center[3*ind1+1];
+
+	const double dz1 = cell_center[3*ind1_cross+2] - cell_center[3*ind1+2];
+	const double dz2 = cell_center[3*ind2+2] - cell_center[3*ind2_cross+2];
+	dz = (dz1 + dz2)/2;
+}
+//------------------------------------------------------------------------------------------
+double CornGrid::calc_scaled_dist(int i1, int j1, int k1, int i2, int j2, int k2, double Rmaj, double rmin, double rz, double cosx, double sinx) const	// calculates the scaled distance for use in 1D covariance function
+{																// uses calc_strat_dist(), the 3D variogram radii Rmaj, rmin, rz, and cos/sin of angle chi
+	double dx, dy, dz;
+	calc_strat_dist(i1, j1, k1, i2, j2, k2, dx, dy, dz);
+
+	double dr1 = (cosx*dx + sinx*dy)/Rmaj;
+	double dr2 = (-sinx*dx + cosx*dy)/rmin;
+	double dr3 = dz/rz;
+
+	return sqrt(dr1*dr1 + dr2*dr2 + dr3*dr3);
+}
+//------------------------------------------------------------------------------------------
 //void CornGrid::temp_out_pillars() const	// TODO temp!
 //{
 //	FILE *f = fopen("pillars_out.txt", "w");

@@ -405,8 +405,8 @@ void KW_rundebug::Run()
 //	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 //	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
-//	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-//	IMPORTKWD(pts, KW_3points, "3POINTS");
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	IMPORTKWD(pts, KW_3points, "3POINTS");
 //	Add_pre("GRIDDIMENS");
 
 	Finish_pre();
@@ -419,7 +419,10 @@ void KW_rundebug::Run()
 	//FILE *f = fopen("output_vecs.bin", "wb");
 
 
-//	std::cout << cz->CG.fill_cell_coord() << "\n";
+//	K->AppText(cz->CG.fill_cell_coord() + "\n");
+//	double dx, dy, dz;
+//	cz->CG.calc_strat_dist(pts->x[0], pts->y[0], pts->z[0], pts->x[1], pts->y[1], pts->z[1], dx, dy, dz);
+//	std::cout << dx << " " << dy << " " << dz << "\n";
 
 //	std::vector<double> act(cz->CG.actnum.size());
 //	for (size_t i = 0; i < act.size(); i++)

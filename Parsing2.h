@@ -323,7 +323,7 @@ public:
 	std::vector<std::string> cmd;
 
 	KW_shell();
-	virtual void FinalAction() noexcept;	// runs the shell commands on MPI_COMM_WORLD-RANK-0
+	virtual void FinalAction() noexcept;	// runs the shell commands on MPI_COMM_WORLD-RANK-0 or via MPI_Comm_spawn
 };
 //------------------------------------------------------------------------------------------
 class KW_undef : public KW_params
@@ -354,6 +354,29 @@ class KW_variogram_Cs : public KW_variogram
 {
 public:
 	KW_variogram_Cs();
+};
+//------------------------------------------------------------------------------------------
+class KW_variogram_3D : public KW_params
+{
+public:			// assumed: sill = 1, krig_type = ORD
+	double R;      	// major horiz. radius
+	double r;      	// minor horiz. radius
+	double rz;		// vertical radius
+	double chi;		// horiz. angle (East = 0, positive unclockwise)
+	double nugget;
+	std::string type;   // EXP, SPHER, GAUSS, MATERN
+	double nu;		// for Matern
+
+	KW_variogram_3D();
+};
+//------------------------------------------------------------------------------------------
+class KW_krigprops : public KW_multparams
+{
+public:
+	std::vector<std::string> fname;
+	std::vector<std::string> propname;
+
+	KW_krigprops();
 };
 //------------------------------------------------------------------------------------------
 class KW_ofweights : public KW_params	// weights for objective function in KW_runForward (and others)

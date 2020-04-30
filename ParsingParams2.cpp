@@ -302,6 +302,35 @@ KW_variogram_Cs::KW_variogram_Cs()
 	r = 0.01;
 }
 //------------------------------------------------------------------------------------------
+KW_variogram_3D::KW_variogram_3D()
+{
+	name = "VARIOGRAM_3D";
+
+	DEFPAR(R, 1000);      	// major horiz. radius
+	DEFPAR(r, 1000);      	// minor horiz. radius
+	DEFPAR(rz, 20);			// vertical radius
+	DEFPAR(chi, 0.0);		// horiz. angle (East = 0, positive unclockwise)
+	DEFPAR(nugget, 0.0);
+	DEFPAR(type, "MATERN");
+	DEFPAR(nu, 2.0);		// for Matern
+
+	FinalizeParams();
+	EXPECTED[5] = std::vector<std::string>{"EXP", "SPHER", "GAUSS", "MATERN"};
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_krigprops::KW_krigprops()
+{
+	name = "KRIGPROPS";
+	ecols = 2;
+	dec_verb = -1;
+
+	DEFPARMULT(fname);
+	DEFPARMULT(propname);
+
+	FinalizeParams();
+}
+//------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
 KW_ofweights::KW_ofweights()
 {

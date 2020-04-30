@@ -639,6 +639,18 @@ void KW_multparams::PrintParams() noexcept
 	if (K->verbosity - dec_verb >= 1)		// report all parameter values
 	{
 		std::string MSG = HMMPI::MessageRE("Текущие значения:\n", "Current values:\n");
+
+		int fmt_w1 = 1;						// formatting stuff
+		if (par_table.ICount() >= 10)
+			fmt_w1 = 2;
+		if (par_table.ICount() >= 100)
+			fmt_w1 = 3;
+
+		std::vector<int> maxlen(par_table.JCount(), 0);		// formatting stuff: for columns of type "string", keeps the max string length of each column
+		for (size_t j = 0; j < par_table.JCount(); j++)		// 					 for other column types, keeps 0
+			if (TYPE[j] == 2)				// "string"
+				maxlen[j] = max_str_len(*(std::vector<std::string>*)DATA[j]);
+
 		for (size_t i = 0; i < par_table.ICount(); i++)
 		{
 			for (size_t j = 0; j < par_table.JCount(); j++)
@@ -647,15 +659,15 @@ void KW_multparams::PrintParams() noexcept
 
 				char buff[HMMPI::BUFFSIZE];
 				if (TYPE[j] == 0)
-					sprintf(buff, "%s%d = %d", NAMES[j].c_str(), (int)i, (*(std::vector<int>*)DATA[j])[i]);
+					sprintf(buff, "%s%-*d = %d", NAMES[j].c_str(), fmt_w1, (int)i, (*(std::vector<int>*)DATA[j])[i]);
 				else if (TYPE[j] == 1)
-					sprintf(buff, "%s%d = %g", NAMES[j].c_str(), (int)i, (*(std::vector<double>*)DATA[j])[i]);
+					sprintf(buff, "%s%-*d = %g", NAMES[j].c_str(), fmt_w1, (int)i, (*(std::vector<double>*)DATA[j])[i]);
 				else if (TYPE[j] == 2)
-					sprintf(buff, "%s%d = %s", NAMES[j].c_str(), (int)i, (*(std::vector<std::string>*)DATA[j])[i].c_str());
+					sprintf(buff, "%s%-*d = %-*s", NAMES[j].c_str(), fmt_w1, (int)i, maxlen[j], (*(std::vector<std::string>*)DATA[j])[i].c_str());
 
 				MSG += buff;
 				if (j < par_table.JCount()-1)
-					MSG += ", ";
+					MSG += "\t";
 				else
 					MSG += "\n";
 			}
@@ -751,6 +763,16 @@ void KW_multparams::ProcessParamTable()  noexcept		// (OK)
 	{
 		SilentError(make_err_msg());
 	}
+}
+//------------------------------------------------------------------------------------------
+int KW_multparams::max_str_len(const std::vector<std::string> &vec_str)		// max_i of length(vec_str[i]), used for nicer formatting
+{
+	int res = 0;
+	for (const auto &s : vec_str)
+		if ((int)s.length() >= res)
+			res = s.length();
+
+	return res;
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

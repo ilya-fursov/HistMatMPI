@@ -81,6 +81,8 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_noecho);
 		kw1.AddKW_item(new KW_variogram);
 		kw1.AddKW_item(new KW_variogram_Cs);
+		kw1.AddKW_item(new KW_variogram_3D);
+		kw1.AddKW_item(new KW_krigprops);
 		kw1.AddKW_item(new KW_report);
 		kw1.AddKW_item(new KW_ofweights);
 		kw1.AddKW_item(new KW_functionXY);

@@ -213,6 +213,8 @@ protected:
 public:
 	KW_multparams(){erows = -1; ecols = 0;};
 	virtual void ProcessParamTable() noexcept;		// process 'par_table'; will ALLOCATE new data vectors; normally does not need redefinition in derived classes
+
+	static int max_str_len(const std::vector<std::string> &vec_str);	// max_i of length(vec_str[i]), used for nicer formatting
 };
 //------------------------------------------------------------------------------------------
 // base class for a column of 'double'
