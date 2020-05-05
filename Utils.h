@@ -38,6 +38,34 @@
 // const declaration, needed if "K" is const
 //#define DECLKWDCONST(KWvar, KWtype, KWname) const KWtype *KWvar = dynamic_cast<const KWtype*>(K->GetKW_item(KWname))	TODO const version of GetKW_item() was not checked
 
+// A pair of macro brackets: they execute the code located between them on comm-rank-0
+// The std::exceptions on comm-rank-0 are caught, and synchronously thrown on all ranks
+// Example use:
+// RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+// ... code ...
+// RANK0_SYNCERR_END(MPI_COMM_WORLD);
+#define RANK0_SYNCERR_BEGIN(comm) 	{ 													\
+										char errmsg[500];								\
+										errmsg[0] = 0;									\
+										int rank;										\
+										MPI_Comm_rank(comm, &rank);						\
+										if (rank == 0)									\
+										{												\
+											try											\
+											{											\
+												// the body
+#define RANK0_SYNCERR_END(comm)				} 											\
+											catch (const std::exception &e)				\
+											{											\
+												sprintf(errmsg, "%.495s", e.what());	\
+											}											\
+										}												\
+										MPI_Bcast(errmsg, 500, MPI_CHAR, 0, comm);		\
+										if (errmsg[0] != 0)								\
+											throw HMMPI::Exception(errmsg);				\
+									}
+
+
 extern "C" int FileModTime(const char *file, time_t *time);		// C function, sets "time" to "file" modification time (seconds); returns "0" if all ok
 
 namespace HMMPI
@@ -142,9 +170,10 @@ public:
 									// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
 									// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
 									//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
-	std::vector<std::string> HostList() const;		// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
-	std::string MakeHostFile() const;				// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
-
+	std::vector<std::string> HostList(int np) const;	// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
+																// 'np' (ref. on rank-0) is the number of MPI processes to be launched
+	std::string MakeHostFile(int np) const;				// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
+																// 'np' (ref. on rank-0) is the number of MPI processes to be launched
 	int sync_tNav(std::string data_file) const noexcept;	// waits until an up-to-date tNavigator *.err file is available, returns the (mpi-sync) number of tNav errors
 	static std::string get_end_file(const std::string &data_file);	// get the end file name
 	int get_sync_flag(std::string main_cmd) const;			// returns the sync flag for 'main_cmd'

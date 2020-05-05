@@ -181,7 +181,7 @@ public:
 	Mat operator-(Mat m) const;				// *this - m
 	void operator+=(const Mat &m);			// *this += m
 	void operator-=(const Mat &m);			// *this -= m
-	Mat operator*(const Mat &m) const;		// *this * m
+	Mat operator*(const Mat &m) const;		// *this * m, using Manual | BLAS depending on 'op_switch'
 	std::vector<double> operator*(const std::vector<double> &v) const;		// *this * v, using Manual | BLAS depending on 'op_switch'
 	Mat Autocorr() const;					// calculates vector of the same size as input, its values at [k] = sample autocorrelations at lag k (*this should be a vector)
 	int Ess(double &res) const;				// calculates effective sample size (res) using initial monotone sequence estimator (*this should be a vector); returns lag at which the estimator stopped
@@ -375,14 +375,14 @@ public:
 	virtual double lim_d2f(double y) const;
 	virtual double lim_d3f(double y) const;
 	virtual Func1D_corr* Copy() const;		// *** delete *** the returned pointer in the end
-	void SetNu(double n);					// sets bess::nu
+	void SetNu(double n);					// sets lnbess::nu
 	double GetNu() const;
 };
 //------------------------------------------------------------------------------------------
 class Func1D_corr_factory
 {
 public:
-	static Func1D_corr *New(std::string type);		// produces 1D correlation function according to type: GAUSS, SPHER, EXPVARGAUSS, MATERN
+	static Func1D_corr *New(std::string type);		// produces 1D correlation function according to type: GAUSS, SPHER, EXP, VARGAUSS, MATERN
 													// in the end, *** delete *** the returned pointer
 };
 //------------------------------------------------------------------------------------------

@@ -170,6 +170,21 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
+class KW_runKriging : public KW_run				// kriging for 3D property interpolation
+{
+private:
+	const double pi;
+
+protected:
+	HMMPI::Vector2<int> get_points() const;		// [call on all ranks] get (i,j,k) of the points defined in MAT, returns Np*3 matrix (sync)
+	HMMPI::Mat get_krig_mat(const HMMPI::Vector2<int> &pts, const HMMPI::Func1D_corr *corr) const;	// [call on RANK-0] get the kriging matrix
+	HMMPI::Mat get_krig_Ys() const;				// [call on RANK-0] get the kriging RHS (values in the design points)
+
+public:
+	KW_runKriging();
+    virtual void Run();
+};
+//------------------------------------------------------------------------------------------
 class KW_runIntegPoro : public KW_run			// numerical integration based on kriging mean and variance
 {												// settings: KW_integporo_config
 public:

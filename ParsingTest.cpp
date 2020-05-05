@@ -405,8 +405,10 @@ void KW_rundebug::Run()
 //	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 //	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
-	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-	IMPORTKWD(pts, KW_3points, "3POINTS");
+//	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+//	IMPORTKWD(pts, KW_3points, "3POINTS");
+	IMPORTKWD(mat, KW_mat, "MAT");
+	IMPORTKWD(matvec, KW_matvec, "MATVEC");
 //	Add_pre("GRIDDIMENS");
 
 	Finish_pre();
@@ -602,5 +604,38 @@ void KW_rundebug::Run()
 	std::cout << cmd.get_sync_flag("NTAV11") << "\n";
 
 
+	HMMPI::Mat A, B;
+	A = mat->M;
+	B = matvec->M;
+
+	for (int i = 0; i < 5; i++)
+	{
+		A = A || A;
+		B = B && B;
+	}
+
+	const std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now();
+
+	HMMPI::Mat C = A*B;
+	std::cout << "\n---------------\n";
+	std::cout << "C: " << C.ICount() << " * " << C.JCount() << "\n";
+
+
+	A.SetOpSwitch(1);
+	HMMPI::Mat C1 = A*B;
+	std::cout << "\n---------------\n";
+	std::cout << "C: " << C1.ICount() << " * " << C1.JCount() << "\n";
+
+	HMMPI::Mat dC = C-C1;
+	std::cout << "diff norm2: " << dC.Norm2() << "\n";
+	int i0, j0;
+	std::cout << "C min: " << C.Min(i0, j0) << "\n";
+	std::cout << "C max: " << C.Max(i0, j0) << "\n";
+	std::cout << "C avg: " << C.Sum()/(C.ICount()*C.JCount()) << "\n";
+
+	std::cout << "dC max: " << dC.Max(i0, j0) << "\n";
+
+	const std::chrono::high_resolution_clock::time_point time2 = std::chrono::high_resolution_clock::now();
+	K->AppText(HMMPI::stringFormatArr("Время: {0:%.3f} сек.\n", "Time elapsed: {0:%.3f} sec.\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
 }
 //------------------------------------------------------------------------------------------

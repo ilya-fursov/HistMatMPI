@@ -152,6 +152,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_runPinchMarkFromGrid);
 		kw1.AddKW_item(new KW_runGridIJK_to_XYZ);
 		kw1.AddKW_item(new KW_runXYZ_to_GridIJK);
+		kw1.AddKW_item(new KW_runKriging);
 		kw1.AddKW_item(new KW_runIntegPoro);
 
 		kw1.AddKW_item(new KW_LinSolver);
@@ -238,7 +239,7 @@ int main(int argc, char *argv[])
 	MPI_Comm_get_parent(&parent_comm);
 	if (parent_comm != MPI_COMM_NULL)				// child process
 	{												// should have a sync point here to signal the parent that it has finished
-		HMMPI::MPI_BarrierSleepy(parent_comm);
+		HMMPI::MPI_BarrierSleepy(parent_comm);					// TODO it is good to Bcast the TotalErrors to the parent process!!!
 		MPI_Comm_free(&parent_comm);
 	}
 

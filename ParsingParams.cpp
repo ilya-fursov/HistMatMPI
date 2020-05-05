@@ -1499,6 +1499,136 @@ void KW_runXYZ_to_GridIJK::Run()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+HMMPI::Vector2<int> KW_runKriging::get_points() const		// [call on all ranks] get (i,j,k) of the points defined in MAT, returns Np*3 matrix (sync)
+{
+	DECLKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	DECLKWD(mat, KW_mat, "MAT");
+
+	if (mat->M.ICount() < 1)
+		throw HMMPI::Exception("Ожидается 1 или более строк в MAT", "MAT should have 1 row or more");
+	if (mat->M.JCount() < 4)
+		throw HMMPI::Exception("Ожидается 4 или более столбцов в MAT", "MAT should have 4 columns or more");
+
+	assert(cz->CG.IsCellCoordFilled());
+	HMMPI::Vector2<int> res(mat->M.ICount(), 3);
+	for (size_t r = 0; r < res.ICount(); r++)
+	{
+		int i, j, k;
+		cz->CG.find_cell(mat->M(r,0), mat->M(r,1), mat->M(r,2), i, j, k);
+
+		MPI_Bcast(&i, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		MPI_Bcast(&j, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		MPI_Bcast(&k, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+		res(r,0) = i;
+		res(r,1) = j;
+		res(r,2) = k;
+	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+HMMPI::Mat KW_runKriging::get_krig_mat(const HMMPI::Vector2<int> &pts, const HMMPI::Func1D_corr *corr) const	// [call on RANK-0] get the kriging matrix
+{
+	DECLKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	DECLKWD(var, KW_variogram_3D, "VARIOGRAM_3D");
+	assert(cz->CG.IsCellCoordFilled());
+
+	const int Np = pts.ICount();
+	HMMPI::Mat C(Np+1, Np+1, 0.0);			// matrix for ordinary kriging
+
+	const double chirad = var->chi/180*pi;
+	const double cosx = cos(chirad);
+	const double sinx = sin(chirad);
+	for (int i = 0; i < Np; i++)
+	{
+		C(i, i) = 1.0;			// diagonal
+		for (int j = i+1; j < Np; j++)				// TODO test when two design points are the same
+		{
+			double dist = cz->CG.calc_scaled_dist(pts(i,0), pts(i,1), pts(i,2),
+									   	   	      pts(j,0), pts(j,1), pts(j,2), var->R, var->r, var->rz, cosx, sinx);
+			C(i, j) = corr->f(dist);
+			C(j, i) = C(i, j);	// symmetric fill
+		}
+
+		C(Np, i) = 1.0;			// trend part
+		C(i, Np) = 1.0;
+	}
+
+	return C;
+}
+//------------------------------------------------------------------------------------------
+HMMPI::Mat KW_runKriging::get_krig_Ys() const				// [call on RANK-0] get the kriging RHS (values in the design points)
+{
+	DECLKWD(mat, KW_mat, "MAT");							// columns: x, y, z, v1, v2, .... - design points for kriging
+
+	assert(mat->M.ICount() >= 1);
+	assert(mat->M.JCount() >= 4);
+
+	HMMPI::Mat res(mat->M.ICount() + 1, mat->M.JCount() - 3, 0.0);		// TODO test 1 design point
+	for (size_t i = 0; i < mat->M.ICount(); i++)
+		for (size_t j = 0; j < res.JCount(); j++)
+			res(i, j) = mat->M(i, j+3);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+KW_runKriging::KW_runKriging() : pi(acos(-1.0))
+{
+	name = "RUNKRIGING";
+}
+//------------------------------------------------------------------------------------------
+void KW_runKriging::Run()
+{
+	Start_pre();
+	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
+	IMPORTKWD(mat, KW_mat, "MAT");
+	IMPORTKWD(var, KW_variogram_3D, "VARIOGRAM_3D");
+	IMPORTKWD(props, KW_krigprops, "KRIGPROPS");
+	Finish_pre();
+
+	if (mat->M.JCount() != props->fname.size() + 3)
+		throw HMMPI::Exception("MAT должна содержать столбцов на 3 больше, чем строк в KRIGPROPS",
+							   "MAT should have 3 more columns than lines in KRIGPROPS");
+
+	if (!cz->CG.IsCellCoordFilled())
+		K->AppText(cz->CG.fill_cell_coord() + "\n");
+
+	HMMPI::Func1D_corr *corr = HMMPI::Func1D_corr_factory::New(var->type);		// correlation function
+	corr->SetNugget(var->nugget);
+	if (dynamic_cast<HMMPI::CorrMatern*>(corr) != nullptr)
+		dynamic_cast<HMMPI::CorrMatern*>(corr)->SetNu(var->nu);
+
+	HMMPI::Mat invK_Ys;
+	HMMPI::Vector2<int> pts = get_points();
+
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+	HMMPI::Mat K = get_krig_mat(pts, corr);				// ordinary kriging matrix
+	HMMPI::Mat Ys = get_krig_Ys();
+
+	HMMPI::SolverDGELSS dgelss;
+	invK_Ys = dgelss.Solve(K, Ys);
+	RANK0_SYNCERR_END(MPI_COMM_WORLD);
+
+	invK_Ys.Bcast(0, MPI_COMM_WORLD);
+
+	// now each rank does its distributed task
+	const double chirad = var->chi/180*pi;
+	std::vector<double> res = cz->CG.ord_krig_final_mult(pts, var->R, var->r, var->rz, chirad, corr, invK_Ys);
+
+	// write results to files
+	if (K->MPI_rank == 0)
+	{
+		const size_t NG = props->fname.size();
+		//assert(NG)	//TODO
+	}
+
+
+
+	delete corr;
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_runIntegPoro::KW_runIntegPoro()
 {
 	name = "RUNINTEGPORO";

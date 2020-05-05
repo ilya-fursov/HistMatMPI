@@ -641,9 +641,9 @@ void KW_multparams::PrintParams() noexcept
 		std::string MSG = HMMPI::MessageRE("Текущие значения:\n", "Current values:\n");
 
 		int fmt_w1 = 1;						// formatting stuff
-		if (par_table.ICount() >= 10)
+		if (par_table.ICount() > 10)
 			fmt_w1 = 2;
-		if (par_table.ICount() >= 100)
+		if (par_table.ICount() > 100)
 			fmt_w1 = 3;
 
 		std::vector<int> maxlen(par_table.JCount(), 0);		// formatting stuff: for columns of type "string", keeps the max string length of each column
@@ -659,9 +659,9 @@ void KW_multparams::PrintParams() noexcept
 
 				char buff[HMMPI::BUFFSIZE];
 				if (TYPE[j] == 0)
-					sprintf(buff, "%s%-*d = %d", NAMES[j].c_str(), fmt_w1, (int)i, (*(std::vector<int>*)DATA[j])[i]);
+					sprintf(buff, "%s%-*d = %-7d", NAMES[j].c_str(), fmt_w1, (int)i, (*(std::vector<int>*)DATA[j])[i]);
 				else if (TYPE[j] == 1)
-					sprintf(buff, "%s%-*d = %g", NAMES[j].c_str(), fmt_w1, (int)i, (*(std::vector<double>*)DATA[j])[i]);
+					sprintf(buff, "%s%-*d = %-7g", NAMES[j].c_str(), fmt_w1, (int)i, (*(std::vector<double>*)DATA[j])[i]);
 				else if (TYPE[j] == 2)
 					sprintf(buff, "%s%-*d = %-*s", NAMES[j].c_str(), fmt_w1, (int)i, maxlen[j], (*(std::vector<std::string>*)DATA[j])[i].c_str());
 

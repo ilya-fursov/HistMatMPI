@@ -440,7 +440,6 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0, Q0; returns a short
 		std::cout << "dy0 via sqrt: " << sum/Ny << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
 	}
 
-
 	state_found = true;
 	double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));
 	char msg[HMMPI::BUFFSIZE*10];
@@ -827,6 +826,7 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 		std::string msg1 = stringFormatArr("Loaded {0:%zu} COORD values and {1:%zu} ZCORN values\n", std::vector<size_t>{coord_size, zcorn_size});
 		std::string msg2 = unify_pillar_z() + "\n";
 		std::string msg3 = analyze();
+
 		msg = msg1 + msg2 + msg3;
 	}
 	Bcast_string(msg, 0, comm);
@@ -850,7 +850,7 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 	grid_loaded = true;
 	actnum_loaded = false;
 	cell_coord_filled = false;
-	state_found = false;
+	MPI_Bcast(&state_found, 1, MPI_BYTE, 0, comm);
 
 	// scatter 'zcorn' to 'zcorn_local'
 	if (8*Nx*Ny*Nz >= (size_t)INT_MAX)
@@ -918,12 +918,17 @@ std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be 
 	// sync all the data loaded
 	Bcast_string(msg, 0, comm);
 	Bcast_vector(actnum, 0, comm);
-	Bcast_vector(act_cell_ind, 0, comm);
 	MPI_Bcast(&actnum_count, 1, MPI_UNSIGNED_LONG, 0, comm);
+
+	if (actnum_count >= (size_t)INT_MAX)
+		throw Exception("Array size exceeds INT_MAX in CornGrid::LoadACTNUM");
 
 	MPI_count_displ(comm, actnum_count, counts_act, displs_act);
 	assert(rank < (int)counts_act.size());
 	assert(rank < (int)displs_act.size());
+
+	act_cell_ind_local = std::vector<int>(counts_act[rank]);
+	MPI_Scatterv(act_cell_ind.data(), counts_act.data(), displs_act.data(), MPI_INT, act_cell_ind_local.data(), act_cell_ind_local.size(), MPI_INT, 0, comm);
 
 	return msg;
 }
@@ -1200,8 +1205,61 @@ std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array
 	return res;
 }
 //------------------------------------------------------------------------------------------
-void CornGrid::find_cell(const double x, const double y, const double z, int &i, int &j, int &k) 	// find cell [i,j,k] containing the point [x,y,z]; the result is significant on comm-rank-0
-{
+std::vector<double> CornGrid::ord_krig_final_mult(const Vector2<int> &pts, double R, double r, double rz, double chirad, const HMMPI::Func1D_corr *corr, const Mat &invK_Ys) const
+{															// performs (in parallel) the final multiplication needed by ordinary kriging:
+	const size_t count_loc = act_cell_ind_local.size();		// [c(x,x1)...c(x,xn),1]*invK_Ys; should be called on all ranks;
+	const size_t NG = invK_Ys.JCount();						// the result (actnum_count*NG matrix in row-major order) is significant on rank-0
+	const size_t Np = pts.ICount();							// all inputs should be sync on all ranks; "invK_Ys" is (Np+1)*NG matrix
+	assert(invK_Ys.ICount() == Np+1);
+	assert(cell_coord_filled);
+
+	const double cosx = cos(chirad);
+	const double sinx = sin(chirad);
+
+	Mat c_loc(count_loc, Np+1, 0);					// correlation part
+
+	// first, make the correlation part
+	for (size_t c = 0; c < count_loc; c++)			// go through all local active points
+	{
+		const size_t n = act_cell_ind_local[c];
+		const size_t i = n % Nx;					// get the (i,j,k) of the cell
+		const size_t j = ((n-i)/Nx) % Ny;
+		const size_t k = (n-i-Nx*j)/(Nx*Ny);
+		assert(i < Nx);
+		assert(j < Ny);
+		assert(k < Nz);
+
+		c_loc(c, Np) = 1;							// trend part
+		for (size_t p = 0; p < Np; p++)				// correlation part
+		{
+			double dist = calc_scaled_dist(i, j, k, pts(p,0), pts(p,1), pts(p,2), R, r, rz, cosx, sinx);
+			c_loc(c, p) = corr->f(dist, true);
+		}
+	}
+
+	// second, multiply and gather on rank-0
+	Mat res_loc	= c_loc*invK_Ys;					// count_loc*NG;
+	assert(res_loc.Length() == count_loc*NG);
+
+	std::vector<double> res;
+	if (rank == 0)
+		res = std::vector<double>(actnum_count*NG);
+
+	std::vector<int> counts = counts_act, displs = displs_act;		// two arrays specially for 'res'
+	if (actnum_count*NG >= (size_t)INT_MAX)
+		throw Exception("Array size exceeds INT_MAX in CornGrid::ord_krig_final_mult");
+
+	for (auto &v : counts)
+		v *= NG;
+	for (auto &v : displs)
+		v *= NG;
+	MPI_Gatherv(res_loc.Serialize(), res_loc.Length(), MPI_DOUBLE, res.data(), counts.data(), displs.data(), MPI_DOUBLE, 0, comm);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+void CornGrid::find_cell(const double x, const double y, const double z, int &i, int &j, int &k) 	// find cell [i,j,k] containing the point [x,y,z];
+{								// call on all ranks; the result is significant on comm-rank-0
 	const int delta_i = 5;		// if the CELL with analytical coords (i,j) does not contain the point, window
 	const int delta_j = 5;		// [i - delta_i, i + delta_i]*[j - delta_j, j + delta_j] is searched iteratively;
 								// if the windowed search fails, the whole grid is searched iteratively

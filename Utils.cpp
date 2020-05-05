@@ -334,8 +334,8 @@ void CmdLauncher::ParseCmd(std::string cmd, bool &IsMPI, int &N, std::string &ma
 	mem = argv;
 }
 //------------------------------------------------------------------------------------------
-std::vector<std::string> CmdLauncher::HostList() const		// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
-{
+std::vector<std::string> CmdLauncher::HostList(int np) const	// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
+{																// 'np' (ref. on rank-0) is the number of MPI processes to be launched
 	int reslen, size;
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 
@@ -354,15 +354,19 @@ std::vector<std::string> CmdLauncher::HostList() const		// creates a list of hos
 		for (int i = 0; i < size; i++)
 			res[i] = Buff0 + MPI_MAX_PROCESSOR_NAME*i;		// raw collection to 'res'
 		res = Unique(res);
+
+		if (res.size() > (size_t)np)
+			res = std::vector<std::string>(res.begin(), res.begin() + np);	// if 'np' is small, restrict the list of hosts
+
 		delete [] Buff0;
 	}
 
 	return res;
 }
 //------------------------------------------------------------------------------------------
-std::string CmdLauncher::MakeHostFile() const				// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
-{
-	std::vector<std::string> hosts = HostList();			// result valid on rank-0
+std::string CmdLauncher::MakeHostFile(int np) const		// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
+{														// 'np' (ref. on rank-0) is the number of MPI processes to be launched
+	std::vector<std::string> hosts = HostList(np);			// result valid on rank-0
 	std::string res;										// significant on rank-0
 
 	if (rank == 0)
@@ -505,7 +509,7 @@ void CmdLauncher::Run(std::string cmd) const	// Runs command "cmd" (significant 
 		MPI_Comm newcomm;
 		MPI_Info info;
 
-		std::string hfile = MakeHostFile();		// hfile - on rank-0
+		std::string hfile = MakeHostFile(np);		// hfile - on rank-0, np - on rank-0
 		MPI_Info_create(&info);
 		if (rank == 0)
 			MPI_Info_set(info, "hostfile", hfile.c_str());
@@ -535,13 +539,17 @@ void CmdLauncher::Run(std::string cmd) const	// Runs command "cmd" (significant 
 				}
 				MPI_Bcast(msg, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
 				MPI_Bcast(msgrus, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+				MPI_Info_free(&info);
+				MPI_Comm_free(&newcomm);
+				if (rank == 0)
+					remove(hfile.c_str());
+
 				throw EObjFunc(msgrus, msg);
 			}
 		}
 
 		MPI_Info_free(&info);
 		MPI_Comm_free(&newcomm);
-
 		if (rank == 0)
 			remove(hfile.c_str());
 	}

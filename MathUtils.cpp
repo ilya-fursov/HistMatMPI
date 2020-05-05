@@ -1132,7 +1132,7 @@ Mat operator%(Mat m, const std::vector<double> &v)	// Mat * diag
 	return m;
 }
 //------------------------------------------------------------------------------------------
-Mat Mat::operator*(const Mat &m) const		// *this * Mat
+Mat Mat::operator*(const Mat &m) const		// *this * m, using Manual | BLAS depending on 'op_switch'
 {
 	if (jcount != m.icount)
 		throw Exception("Inconsistent dimensions in Mat::operator*(Mat)");
@@ -1146,15 +1146,29 @@ Mat Mat::operator*(const Mat &m) const		// *this * Mat
 	const double *pm = m.data.data();
 	double *pres = res.data.data();
 
-	for (size_t i = 0; i < sz_I; i++)
-		for (size_t j = 0; j < sz_J; j++)
-		{
-			double sum = 0;
-			for (size_t v = 0; v < sz; v++)
-				sum += p[sz*i + v]*pm[sz_J*v + j];	// row-major storage!
+	if (op_switch == 1)
+	{
+		for (size_t i = 0; i < sz_I; i++)
+			for (size_t j = 0; j < sz_J; j++)
+			{
+				double sum = 0;
+				for (size_t v = 0; v < sz; v++)
+					sum += p[sz*i + v]*pm[sz_J*v + j];	// row-major storage!
 
-			pres[sz_J*i + j] = sum;
-		}
+				pres[sz_J*i + j] = sum;
+			}
+	}
+	else if (op_switch == 2)
+	{
+		std::cout << "DEBUG --- BLAS!**\n";		// TODO DEBUG!
+
+		const int lda = jcount;
+		const int ldb = sz_J;
+		const int ldc = sz_J;
+		cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, icount, sz_J, jcount, 1.0, p, lda, pm, ldb, 0.0, pres, ldc);
+	}
+	else
+		throw Exception("Bad op_switch in Mat::operator*(Mat)");
 
 	return res;
 }
