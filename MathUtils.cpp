@@ -1160,8 +1160,6 @@ Mat Mat::operator*(const Mat &m) const		// *this * m, using Manual | BLAS depend
 	}
 	else if (op_switch == 2)
 	{
-		std::cout << "DEBUG --- BLAS!**\n";		// TODO DEBUG!
-
 		const int lda = jcount;
 		const int ldb = sz_J;
 		const int ldc = sz_J;

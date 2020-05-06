@@ -1258,6 +1258,19 @@ std::vector<double> CornGrid::ord_krig_final_mult(const Vector2<int> &pts, doubl
 	return res;
 }
 //------------------------------------------------------------------------------------------
+std::vector<double> CornGrid::krig_result_prop(const std::vector<double> &full_krig, int ng) const
+{														// [RANK-0] fills a full property (Nx*Ny*Nz), by extracting grid 'ng'
+	size_t NG = full_krig.size()/actnum_count;			// from the "full_krig" output by 'ord_krig_final_mult()'
+	assert(full_krig.size()%actnum_count == 0);
+	assert((size_t)ng < NG);
+
+	std::vector<double> res(Nx*Ny*Nz, 0.0);
+	for (size_t i = 0; i < actnum_count; i++)			// go through all active cells
+		res[act_cell_ind[i]] = full_krig[i*NG + ng];
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
 void CornGrid::find_cell(const double x, const double y, const double z, int &i, int &j, int &k) 	// find cell [i,j,k] containing the point [x,y,z];
 {								// call on all ranks; the result is significant on comm-rank-0
 	const int delta_i = 5;		// if the CELL with analytical coords (i,j) does not contain the point, window

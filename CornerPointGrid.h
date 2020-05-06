@@ -158,6 +158,8 @@ public:
 													// [c(x,x1)...c(x,xn),1]*invK_Ys; should be called on all ranks;
 													// the result (actnum_count*NG matrix in row-major order) is significant on rank-0
 													// all inputs should be sync on all ranks; "invK_Ys" is (Np+1)*NG matrix
+	std::vector<double> krig_result_prop(const std::vector<double> &full_krig, int ng) const;		// [RANK-0] fills a full property (Nx*Ny*Nz), by extracting grid 'ng'
+																									// from the "full_krig" output by 'ord_krig_final_mult()'
 	void find_cell(const double x, const double y, const double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]; the result is significant on comm-rank-0
 	std::string report_find_cell_stats() const;		// info on the auxiliary function call counts within find_cell()
 	bool IsCellCoordFilled() const {return cell_coord_filled;};

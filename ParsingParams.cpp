@@ -1603,6 +1603,7 @@ void KW_runKriging::Run()
 	HMMPI::Vector2<int> pts = get_points();
 
 	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+	std::cout << "DEBUG check ************* RANK0_SYNCERR, rank = " << K->MPI_rank << ", size = " << K->MPI_size << "\n";	// DEBUG TODO
 	HMMPI::Mat K = get_krig_mat(pts, corr);				// ordinary kriging matrix
 	HMMPI::Mat Ys = get_krig_Ys();
 
@@ -1620,10 +1621,12 @@ void KW_runKriging::Run()
 	if (K->MPI_rank == 0)
 	{
 		const size_t NG = props->fname.size();
-		//assert(NG)	//TODO
+		for (size_t n = 0; n < NG; n++)
+		{
+			std::vector<double> grid = cz->CG.krig_result_prop(res, n);
+			HMMPI::CornGrid::SavePropertyToFile(props->fname[n], props->propname[n], grid);
+		}
 	}
-
-
 
 	delete corr;
 }
