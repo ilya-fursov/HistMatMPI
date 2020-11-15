@@ -142,6 +142,26 @@ void ParseEclSmallHdr(const std::string &s, std::string &a, int &b, std::string 
 std::string getCWD(std::string fullname);			// get 'path' from 'path+file'
 std::string getFile(std::string fullname);			// get 'file' from 'path+file'
 //------------------------------------------------------------------------------------------
+// Class for accumulating the strings (lines) and then generating a formatted output for print.
+// Handles the sub-string (item) width for different rows, and omits the rows from the middle of necessary
+class StringListing
+{
+private:
+	inline void fill_max_length(size_t i, std::vector<size_t> &maxlen) const;	// helper function
+	std::string print(size_t i, const std::vector<size_t> &maxlen) const;		// helper function
+
+protected:
+	std::string delim;						// delimiter
+	std::vector<std::vector<std::string>> data;
+	size_t n;								// number of items per line
+
+public:
+	StringListing(std::string d);			// 'd' - delimiter between items in a line
+	void AddLine(const std::vector<std::string> &line);		// append the 'line'
+	std::string Print(int begin_max, int end_max) const;	// formatted output; 'begin_max', 'end_max' - max. number of lines to print in the beginning/end
+															// "-1" means output all lines
+};
+//------------------------------------------------------------------------------------------
 // CmdLauncher - class for executing commands via system() or MPI_Comm_spawn()
 // Currently only deals with MPI_COMM_WORLD, since only one hostfile is currently supported
 //

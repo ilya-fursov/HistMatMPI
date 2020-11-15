@@ -302,6 +302,12 @@ KW_variogram_Cs::KW_variogram_Cs()
 	r = 0.01;
 }
 //------------------------------------------------------------------------------------------
+void KW_variogram_3D::UpdateParams() noexcept
+{
+	if (nu <= 2.0)
+		SilentError(HMMPI::MessageRE("nu должно быть > 2.0", "nu should be > 2.0"));
+}
+//------------------------------------------------------------------------------------------
 KW_variogram_3D::KW_variogram_3D()
 {
 	name = "VARIOGRAM_3D";
@@ -312,12 +318,19 @@ KW_variogram_3D::KW_variogram_3D()
 	DEFPAR(chi, 0.0);		// horiz. angle (East = 0, positive unclockwise)
 	DEFPAR(nugget, 0.0);
 	DEFPAR(type, "MATERN");
-	DEFPAR(nu, 2.0);		// for Matern
+	DEFPAR(nu, 2.5);		// for Matern
 
 	FinalizeParams();
 	EXPECTED[5] = std::vector<std::string>{"EXP", "SPHER", "GAUSS", "MATERN"};
 }
 //------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+void KW_krigprops::UpdateParams() noexcept
+{
+	std::string dup;
+	if (HMMPI::FindDuplicate(fname, dup))
+		SilentError((std::string)HMMPI::MessageRE("Найдено повторяющееся имя файла: ", "Found a duplicate file name: ") + dup);
+}
 //------------------------------------------------------------------------------------------
 KW_krigprops::KW_krigprops()
 {
@@ -2419,42 +2432,59 @@ void KW_limits::Push_point(double Init, double Min, double Max, std::string AN, 
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
-int KW_parameters::apply_well_sc(int p, std::string s, std::vector<std::vector<double>> &work_vec, const std::vector<std::string> &wnames)	// applies "s" (e.g. "W2,W3/r2") to 2D array work_vec[N_wells x fulldim], with "wnames" - the uppercase well names, "p" - row/parameter number
-{																																			// returns the number of encountered errors "well not found"
+KW_parameters::coach_sc::coach_sc(std::string s, std::string par)		// ctor from a string like "<W2,W3/r2>"; 'par' is parameter name for reporting
+{
 	const std::string delim = "/";
+	const std::string msgrus = std::string("Для параметра " + par + " ожидается элемент строки формата '<.../DBL>' в well_sc; найден: ") + s;
+	const std::string msgeng = std::string("For parameter " + par + " a string element of format '<.../DBL>' is expected in well_sc; found: ") + s;
 
 	s = HMMPI::Trim(s, " \t\r\n");
 	s = HMMPI::ToUpper(s);
-	size_t pos = s.find(delim);
 
-	assert(wnames.size() == work_vec.size());
-	assert(work_vec.size() > 0);
-	assert(0 <= p && p < (int)work_vec[0].size());
+	// remove the brackets < >
+	if (s.length() < 3 || s[0] != '<' || *--s.end() != '>')
+		throw HMMPI::Exception(msgrus, msgeng);
+	s = s.substr(1, s.length()-2);
+
+	// parse ../..
+	const size_t pos = s.find(delim);
 	if (s.length() < 3 || pos == std::string::npos)
-		throw HMMPI::Exception("Ожидается элемент строки формата '../..' в PARAMETERS.well_sc; найден: " + s,
-							   "String element of format '../..' is expected in PARAMETERS.well_sc; found: " + s);
+		throw HMMPI::Exception(msgrus, msgeng);
 
-	std::string sw = s.substr(0, pos);
-	std::string snum = s.substr(pos+1, s.length()-pos-1);
-	const double num = HMMPI::StoD(snum);
+	const std::string sw = s.substr(0, pos);
+	const std::string snum = s.substr(pos+1, s.length()-pos-1);
+	bool complete;
+	num = HMMPI::StoD(snum, complete);
+	if (!complete)
+		throw HMMPI::Exception(HMMPI::MessageRE(msgrus + "; невозможно преобразовать строку '" + snum + "' в double",
+												msgeng + "; cannot convert string '" + snum + "' to double"));
 
-	std::vector<std::string> sw_parts;				// sw_parts will contain the well names
-	HMMPI::tokenize(sw, sw_parts, ",", true);
+	HMMPI::tokenize(sw, seats, ",", true);			// 'seats' will contain the well names
+}
+//------------------------------------------------------------------------------------------
+int KW_parameters::coach_sc::apply_well_sc(int p, std::vector<std::vector<double>> &work_vec, const std::vector<std::string> &wnames, KW_parameters *K)
+{															// applies itself (i.e. "W2,W3/r2") to 2D array work_vec[N_wells x fulldim], with "wnames" - the uppercase well names,
+	assert(wnames.size() == work_vec.size());				// "p" - parameter number in [0, fulldim) for which factor 'r2' is applied across wells 'W2,W3'
+	assert(work_vec.size() > 0);							// "K" is used for SilentErrors; returns the number of encountered errors "well not found"
+	assert(0 <= p && p < (int)work_vec[0].size());
+	assert((size_t)p < K->name.size());
+
+	const std::string parname = K->name[p];
 
 	int res_err_num = 0;
-	for (size_t i = 0; i < sw_parts.size(); i++)
+	for (size_t i = 0; i < seats.size(); i++)
 	{
-		if (sw_parts[i] == "ALL")
+		if (seats[i] == "ALL")
 			for (size_t j = 0; j < work_vec.size(); j++)
 				work_vec[j][p] = num;
 		else
 		{
-			const auto it = std::find(wnames.begin(), wnames.end(), sw_parts[i]);
+			const auto it = std::find(wnames.begin(), wnames.end(), seats[i]);
 			if (it == wnames.end())
 			{
 				res_err_num++;
-				SilentError(HMMPI::stringFormatArr((std::string)"Скважина '" + sw_parts[i] + "' из строки {0:%d} PARAMETERS.well_sc не найдена в общем списке скважин (ECLVECTORS)",
-									   	   	   	   (std::string)"Well '" + sw_parts[i] + "' from line {0:%d} of PARAMETERS.well_sc was not found in the wells list (ECLVECTORS)", p+1));
+				K->SilentError(HMMPI::MessageRE((std::string)"Для параметра " + parname + " скважина '" + seats[i] + "' из <well_sc> не найдена в общем списке скважин (ECLVECTORS)",
+									   	   	   	(std::string)"For parameter " + parname + " well '" + seats[i] + "' from the <well_sc> was not found in the main wells list (ECLVECTORS)"));
 			}
 			else
 				work_vec[it - wnames.begin()][p] = num;
@@ -2570,8 +2600,29 @@ void KW_parameters::UpdateParams() noexcept
 	BoundConstr::min = ExternalToInternal(min);
 	BoundConstr::max = ExternalToInternal(max);
 
+	// fill 'train_sc'
+	train_sc = std::vector<std::vector<coach_sc>>(name.size());
+	for (size_t i = 0; i < name.size(); i++)
+	{
+		std::vector<std::string> parts;				// 'well_sc' split into coaches
+		HMMPI::tokenizeExact(well_sc[i], parts, "-", true);
+
+		train_sc[i] = std::vector<coach_sc>(parts.size());
+		for (size_t c = 0; c < parts.size(); c++)
+			try
+			{
+				train_sc[i][c] = coach_sc(parts[c], name[i]);
+			}
+			catch(const std::exception &e)
+			{
+				SilentError(e.what());
+			}
+	}
+
 	K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("Активных параметров: {0:%zu}/{1:%zu}\n",
 													   "Active parameters: {0:%zu}/{1:%zu}\n"), std::vector<size_t>{act_ind.size(), tot_ind.size()}));
+	K->AppText(HMMPI::MessageRE("NB! 'well_sc' проверяется на корректность имен скважин только при создании прокси-модели!\n",
+								"NB! 'well_sc' is checked for well name errors only when proxy model is created!\n"));
 	DECLKWD(prior, KW_prior, "PRIOR");
 	if (prior->GetState() == "")
 		prior->SetState(HMMPI::MessageRE("PRIOR должно быть перезагружено после чтения PARAMETERS\n", "PRIOR should be reloaded after reading PARAMETERS\n"));
@@ -2768,14 +2819,10 @@ void KW_parameters::fill_well_sc_table(std::vector<std::string> wnames)		// fill
 		throw HMMPI::Exception("Duplicate well name '" + dup + "' in KW_parameters::fill_well_sc_table");
 
 	int err_num = 0;								// counts how many wells were not found
-	for (size_t i = 0; i < act.size(); i++)			// fill the full table
-	{
-		std::vector<std::string> parts;				// parts will contain "../.."
-		HMMPI::tokenizeExact(HMMPI::Trim(well_sc[i], "<>"), parts, ">-<", true);
+	for (size_t i = 0; i < train_sc.size(); i++)	// fill the full table
+		for (size_t j = 0; j < train_sc[i].size(); j++)
+			err_num += train_sc[i][j].apply_well_sc(i, work_vec, wnames, this);
 
-		for (size_t j = 0; j < parts.size(); j++)
-			err_num += apply_well_sc(i, parts[j], work_vec, wnames);
-	}
 	if (err_num > 0)
 		throw HMMPI::Exception(HMMPI::stringFormatArr("Не найдено скважин в общем списке (ECLVECTORS): {0:%d}", "Not found wells in the list (ECLVECTORS): {0:%d}", err_num));
 
@@ -2790,15 +2837,15 @@ void KW_parameters::fill_well_sc_table(std::vector<std::string> wnames)		// fill
 	}
 }
 //------------------------------------------------------------------------------------------
-std::vector<int> KW_parameters::sc_colors_textsmry()			// returns 'pscale colors' for the TEXTSMRY points with nonzero sigmas; uses DATES, ECLVECTORS, TEXTSMRY, calls fill_well_sc_table()
-{
+std::vector<int> KW_parameters::sc_colors_textsmry()			// returns colors (for 'pscale') for the TEXTSMRY points with nonzero sigmas;
+{																// uses DATES, ECLVECTORS, TEXTSMRY, calls fill_well_sc_table()
 	Start_pre();
 	IMPORTKWD(dates, KW_dates, "DATES");
 	IMPORTKWD(vectors, KW_eclvectors, "ECLVECTORS");
 	IMPORTKWD(textsmry, KW_textsmry, "TEXTSMRY");
 	Finish_pre();
 
-	std::vector<std::string> uniq_wells = vectors->WGname;
+	std::vector<std::string> uniq_wells = vectors->WGname;		// all wells, without repeats
 	for (auto &w : uniq_wells)
 		w = HMMPI::ToUpper(w);
 	uniq_wells = HMMPI::Unique(uniq_wells);
@@ -2809,7 +2856,7 @@ std::vector<int> KW_parameters::sc_colors_textsmry()			// returns 'pscale colors
 	const size_t N_dates = dates->dates.size();
 	assert(sigmas.size() == vectors->WGname.size() * N_dates);
 
-	int smrylen = 0;											// length of the resulting vector
+	int smrylen = 0;											// length of the resulting vector: only non-zero sigmas
 	for (double x : sigmas)
 		if (x != 0)
 			smrylen++;

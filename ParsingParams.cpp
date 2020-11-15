@@ -1543,7 +1543,7 @@ HMMPI::Mat KW_runKriging::get_krig_mat(const HMMPI::Vector2<int> &pts, const HMM
 	for (int i = 0; i < Np; i++)
 	{
 		C(i, i) = 1.0;			// diagonal
-		for (int j = i+1; j < Np; j++)				// TODO test when two design points are the same
+		for (int j = i+1; j < Np; j++)
 		{
 			double dist = cz->CG.calc_scaled_dist(pts(i,0), pts(i,1), pts(i,2),
 									   	   	      pts(j,0), pts(j,1), pts(j,2), var->R, var->r, var->rz, cosx, sinx);
@@ -1565,7 +1565,7 @@ HMMPI::Mat KW_runKriging::get_krig_Ys() const				// [call on RANK-0] get the kri
 	assert(mat->M.ICount() >= 1);
 	assert(mat->M.JCount() >= 4);
 
-	HMMPI::Mat res(mat->M.ICount() + 1, mat->M.JCount() - 3, 0.0);		// TODO test 1 design point
+	HMMPI::Mat res(mat->M.ICount() + 1, mat->M.JCount() - 3, 0.0);
 	for (size_t i = 0; i < mat->M.ICount(); i++)
 		for (size_t j = 0; j < res.JCount(); j++)
 			res(i, j) = mat->M(i, j+3);
@@ -1585,6 +1585,7 @@ void KW_runKriging::Run()
 	IMPORTKWD(mat, KW_mat, "MAT");
 	IMPORTKWD(var, KW_variogram_3D, "VARIOGRAM_3D");
 	IMPORTKWD(props, KW_krigprops, "KRIGPROPS");
+	Add_pre("ACTNUM");					// CornGrid::LoadACTNUM() is obligatory
 	Finish_pre();
 
 	if (mat->M.JCount() != props->fname.size() + 3)
@@ -1593,6 +1594,8 @@ void KW_runKriging::Run()
 
 	if (!cz->CG.IsCellCoordFilled())
 		K->AppText(cz->CG.fill_cell_coord() + "\n");
+
+	assert(cz->CG.IsActnumLoaded());
 
 	HMMPI::Func1D_corr *corr = HMMPI::Func1D_corr_factory::New(var->type);		// correlation function
 	corr->SetNugget(var->nugget);
@@ -1603,7 +1606,6 @@ void KW_runKriging::Run()
 	HMMPI::Vector2<int> pts = get_points();
 
 	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
-	std::cout << "DEBUG check ************* RANK0_SYNCERR, rank = " << K->MPI_rank << ", size = " << K->MPI_size << "\n";	// DEBUG TODO
 	HMMPI::Mat K = get_krig_mat(pts, corr);				// ordinary kriging matrix
 	HMMPI::Mat Ys = get_krig_Ys();
 
@@ -1617,15 +1619,37 @@ void KW_runKriging::Run()
 	const double chirad = var->chi/180*pi;
 	std::vector<double> res = cz->CG.ord_krig_final_mult(pts, var->R, var->r, var->rz, chirad, corr, invK_Ys);
 
-	// write results to files
-	if (K->MPI_rank == 0)
+	// scatter the result for parallel writing to files
+	const size_t NG = props->fname.size();
+	const size_t actnum_count = cz->CG.GetActnumCount();
+	std::vector<int> counts, displs;						// two arrays for distributing NG grids
+	HMMPI::MPI_count_displ(MPI_COMM_WORLD, NG, counts, displs);
+	if (actnum_count*NG >= (size_t)INT_MAX)
+		throw HMMPI::Exception("Array size exceeds INT_MAX in KW_runKriging::Run");
+
+	for (auto &v : counts)
+		v *= actnum_count;
+	for (auto &v : displs)
+		v *= actnum_count;
+
+	assert(K->MPI_rank < (int)counts.size());
+	assert(K->MPI_rank < (int)displs.size());
+	std::vector<double> res_loc(counts[K->MPI_rank]);		// only stores the local grids for writing to files
+	MPI_Scatterv(res.data(), counts.data(), displs.data(), MPI_DOUBLE, res_loc.data(), res_loc.size(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+	// write results to files (parallel)
+	for (auto &v : counts)		// return "counts" and "displs" back to 'NG'
+		v /= actnum_count;
+	for (auto &v : displs)
+		v /= actnum_count;
+
+	for (int n = 0; n < counts[K->MPI_rank]; n++)			// distributed "for"
 	{
-		const size_t NG = props->fname.size();
-		for (size_t n = 0; n < NG; n++)
-		{
-			std::vector<double> grid = cz->CG.krig_result_prop(res, n);
-			HMMPI::CornGrid::SavePropertyToFile(props->fname[n], props->propname[n], grid);
-		}
+		int ind = displs[K->MPI_rank] + n;					// global index of the property
+		assert(ind < (int)props->fname.size());
+
+		std::vector<double> grid = cz->CG.krig_result_prop(res_loc, n);			// res_loc is NG_loc*actnum_count
+		HMMPI::CornGrid::SavePropertyToFile(props->fname[ind], props->propname[ind], grid);
 	}
 
 	delete corr;

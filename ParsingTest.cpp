@@ -407,8 +407,8 @@ void KW_rundebug::Run()
 
 //	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
 //	IMPORTKWD(pts, KW_3points, "3POINTS");
-	IMPORTKWD(mat, KW_mat, "MAT");
-	IMPORTKWD(matvec, KW_matvec, "MATVEC");
+//	IMPORTKWD(mat, KW_mat, "MAT");
+//	IMPORTKWD(matvec, KW_matvec, "MATVEC");
 //	Add_pre("GRIDDIMENS");
 
 	Finish_pre();
@@ -482,160 +482,35 @@ void KW_rundebug::Run()
 	for (double x0 = -4+1e-9; x0 <= 5; x0 += 0.5)
 		std::cout << x0 << "\t" << HMMPI::integr_Gauss(g2, n, x0, 1.2, 0.001, F) << "\t" << HMMPI::integr_Gauss(g2, n, x0, 1.2, 0.001) << "\n";
 
-//	FILE *f0 = fopen("R_output_ECLSMRY_.txt", "w");
-//	eclsmry->get_Data().SaveToAscii(f0);
-//	fclose(f0);
 
 
-//	std::cout << "Hostfile check\n";
-//	HMMPI::CmdLauncher cmd;
-//	std::string L = cmd.MakeHostFile();
-//	std::cout << L << "\n";
-//
-//	std::cout << "Parsing test\n";
-//	bool mpi;
-//	n = 0;
-//	std::string main_cmd;
-//	std::vector<char*> argv;
-//
-//	cmd.ParseCmd("./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	cmd.ParseCmd("mpirun -n 4 ./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	cmd.ParseCmd("mpiexec 	 ./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	std::cout << "------------------------------\n";
-//	cmd.ParseCmd("Mpirun -n 4 ./swof.exe 		0_Pc.txt LET $Lw3 $Ew3 $Tw3 $Lo3 $Eo3 $To3 >> Geol2019_SX/SWOF.txt", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	cmd.ParseCmd("mpiexec -n 4 ./swof.exe ", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	std::cout << "---------A---------------------\n";
-//	cmd.ParseCmd("mpiexec -n 4 ", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	cmd.ParseCmd("mpiexec ./swof.exe ", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	std::cout << "-------------------B-----------\n";
-//	cmd.ParseCmd("mpiexec  ", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	cmd.ParseCmd("./swof.exe  ", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	cmd.ParseCmd("   ", mpi, n, main_cmd, argv);
-//	std::cout << (mpi ? "MPI\n" : "non-MPI\n");
-//	std::cout << "NP = " << n << "\n";
-//	std::cout << main_cmd << "\n";
-//	printf("argv[%zu]: ", argv.size());
-//	for (auto v : argv)
-//		printf(" %s", v);
-//	std::cout << "\n\n";
-//
-//	std::cout << "-----=================------\n";
-
-	HMMPI::CmdLauncher cmd;
-	std::cout << "\nget_sync_flag\n";
-	std::cout << cmd.get_sync_flag("model") << "\n";
-	std::cout << cmd.get_sync_flag("/progs/tNavigator_launcher") << "\n";
-	std::cout << cmd.get_sync_flag("tnav11") << "\n";
-	std::cout << cmd.get_sync_flag("TNAV11") << "\n";
-	std::cout << cmd.get_sync_flag("tna11") << "\n";
-	std::cout << cmd.get_sync_flag("ntav11") << "\n";
-	std::cout << cmd.get_sync_flag("NTAV11") << "\n";
+	std::cout << "******** test StringListing ***********\n";
+	HMMPI::StringListing stl("\t");
+	stl.AddLine(std::vector<std::string>{"1", "Hello1", "A"});
+	stl.AddLine(std::vector<std::string>{"2", "Hello12", "B"});
+	stl.AddLine(std::vector<std::string>{"3", "Hello123", "C"});
+	stl.AddLine(std::vector<std::string>{"4", "Hello1234", "D"});
+	stl.AddLine(std::vector<std::string>{"5", "Hello12345", "E"});
+	stl.AddLine(std::vector<std::string>{"6", "Hello123456", "F"});
+	stl.AddLine(std::vector<std::string>{"7", "Hello1234567", "G"});
+	stl.AddLine(std::vector<std::string>{"8", "Hello12345678", "H"});
+	stl.AddLine(std::vector<std::string>{"9", "Hello123456789", "I"});
+	stl.AddLine(std::vector<std::string>{"10", "Hello12345678910", "J"});
+	stl.AddLine(std::vector<std::string>{"11", "Hello1234567891011", "K"});
+	stl.AddLine(std::vector<std::string>{"12", "Hello123456789101112", "L"});
+	stl.AddLine(std::vector<std::string>{"13", "Hello12345678910111213", "M"});
+	stl.AddLine(std::vector<std::string>{"14", "Hello222120191817161514", "N"});
+	stl.AddLine(std::vector<std::string>{"15", "Hello2221201918171615", "O"});
+	stl.AddLine(std::vector<std::string>{"16", "Hello22212019181716", "P"});
+	stl.AddLine(std::vector<std::string>{"17", "Hello222120191817", "Q"});
+	stl.AddLine(std::vector<std::string>{"18", "Hello2221201918", "R"});
+	stl.AddLine(std::vector<std::string>{"19", "Hello22212019", "S"});
+	stl.AddLine(std::vector<std::string>{"20", "Hello222120", "T"});
+	stl.AddLine(std::vector<std::string>{"21", "Hello2221", "U"});
+	stl.AddLine(std::vector<std::string>{"22", "Hello22", "V"});
 
 
-	HMMPI::Mat A, B;
-	A = mat->M;
-	B = matvec->M;
+	K->AppText(stl.Print(15, 17));
 
-	for (int i = 0; i < 5; i++)
-	{
-		A = A || A;
-		B = B && B;
-	}
-
-	const std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now();
-
-	HMMPI::Mat C = A*B;
-	std::cout << "\n---------------\n";
-	std::cout << "C: " << C.ICount() << " * " << C.JCount() << "\n";
-
-
-	A.SetOpSwitch(1);
-	HMMPI::Mat C1 = A*B;
-	std::cout << "\n---------------\n";
-	std::cout << "C: " << C1.ICount() << " * " << C1.JCount() << "\n";
-
-	HMMPI::Mat dC = C-C1;
-	std::cout << "diff norm2: " << dC.Norm2() << "\n";
-	int i0, j0;
-	std::cout << "C min: " << C.Min(i0, j0) << "\n";
-	std::cout << "C max: " << C.Max(i0, j0) << "\n";
-	std::cout << "C avg: " << C.Sum()/(C.ICount()*C.JCount()) << "\n";
-
-	std::cout << "dC max: " << dC.Max(i0, j0) << "\n";
-
-	const std::chrono::high_resolution_clock::time_point time2 = std::chrono::high_resolution_clock::now();
-	K->AppText(HMMPI::stringFormatArr("Время: {0:%.3f} сек.\n", "Time elapsed: {0:%.3f} sec.\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
 }
 //------------------------------------------------------------------------------------------

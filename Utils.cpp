@@ -283,6 +283,91 @@ std::string getFile(std::string fullname)
 	return fullname.substr(ind+1, std::string::npos);
 }
 //------------------------------------------------------------------------------------------
+// StringListing
+//------------------------------------------------------------------------------------------
+inline void StringListing::fill_max_length(size_t i, std::vector<size_t> &maxlen) const	// helper function
+{
+	assert(i < data.size());
+	for (size_t j = 0; j < n; j++)
+		if (data[i][j].length() > maxlen[j])
+			maxlen[j] = data[i][j].length();
+}
+//------------------------------------------------------------------------------------------
+std::string StringListing::print(size_t i, const std::vector<size_t> &maxlen) const	// helper function
+{
+	assert(i < data.size());
+
+	std::string res;
+	char msg[BUFFSIZE];
+	for (size_t j = 0; j < n; j++)
+	{
+		sprintf(msg, "%-*.*s", (int)maxlen[j], BUFFSIZE-5, data[i][j].c_str());
+		if (j > 0)
+			res += delim;
+		res += msg;
+	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+StringListing::StringListing(std::string d) : delim(d), n(0)
+{
+}
+//------------------------------------------------------------------------------------------
+void StringListing::AddLine(const std::vector<std::string> &line)		// append the 'line'
+{
+	if (data.size() == 0)
+		n = line.size();
+	else
+	{
+		if (line.size() != n)
+		{
+			char msg[BUFFSIZE];
+			sprintf(msg, "Attempt to add a line of size %zu to StringListing with lines of size %zu", line.size(), n);
+			throw Exception(msg);
+		}
+	}
+
+	data.push_back(line);
+}
+//------------------------------------------------------------------------------------------
+std::string StringListing::Print(int begin_max, int end_max) const
+{							// formatted output, 'begin_max', 'end_max' - max. number of lines to print in the beginning/end
+							// "-1" means output all lines
+	// 'one_piece' = 'true' if one chunk is printed (no lines are skipped)
+	bool one_piece = (begin_max + end_max >= (int)data.size()) || (begin_max < 0) || (end_max < 0);
+
+	// find the max. length
+	std::vector<size_t> maxlen(n, 0);				// max. string length for each column
+	if (one_piece)
+		for (size_t i = 0; i < data.size(); i++)
+			fill_max_length(i, maxlen);
+	else
+	{
+		for (size_t i = 0; i < (size_t)begin_max; i++)
+			fill_max_length(i, maxlen);
+		for (size_t i = data.size() - end_max; i < data.size(); i++)
+			fill_max_length(i, maxlen);
+	}
+
+	// print
+	std::string res;
+	if (one_piece)
+		for (size_t i = 0; i < data.size(); i++)
+			res += print(i, maxlen) + "\n";
+	else
+	{
+		for (size_t i = 0; i < (size_t)begin_max; i++)
+			res += print(i, maxlen) + "\n";
+		res += "...\n";
+		for (size_t i = data.size() - end_max; i < data.size(); i++)
+			res += print(i, maxlen) + "\n";
+	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+// CmdLauncher
 //------------------------------------------------------------------------------------------
 void CmdLauncher::clear_mem() const			// clears 'mem'
 {
@@ -519,7 +604,9 @@ void CmdLauncher::Run(std::string cmd) const	// Runs command "cmd" (significant 
 
 		// SYNCHRONIZATION WITH CHILDREN
 		if (sync_flag == 1)				// sync
+		{
 			MPI_BarrierSleepy(newcomm);				// default synchronization
+		}
 		else
 		{											// tNav synchronization
 			std::string data_file = "dummy";
@@ -584,9 +671,9 @@ void MPI_BarrierSleepy(MPI_Comm comm)		// A (less responsive) barrier which does
 	}
 }
 //------------------------------------------------------------------------------------------
-void MPI_count_displ(MPI_Comm comm, int M, std::vector<int> &counts, std::vector<int> &displs)		// fills 'counts' and 'displs' needed for MPI_Gatherv/MPI_Scatterv for distributing the vector of size M on "comm"
-{																									// all inputs and outputs are sync on "comm"
-	if (comm == MPI_COMM_NULL)
+void MPI_count_displ(MPI_Comm comm, int M, std::vector<int> &counts, std::vector<int> &displs)
+{								// fills 'counts' and 'displs' needed for MPI_Gatherv/MPI_Scatterv for distributing the vector of size M on "comm"
+	if (comm == MPI_COMM_NULL)	// all inputs and outputs are sync on "comm"
 		return;
 
 	int n, r, szr;

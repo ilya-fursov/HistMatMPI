@@ -69,7 +69,7 @@ private:
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN [RANK-0] -- although, this global array is not used anywhere
 	std::vector<int> actnum;		// read from ACTNUM
-	std::vector<int> act_cell_ind;	// [RANK-0] full indices of active cells, i.e. a map: [0, actnum_count) -> [0, Nx*Ny*Nz)
+	std::vector<int> act_cell_ind;	// full indices of active cells, i.e. a map: [0, actnum_count) -> [0, Nx*Ny*Nz)
 	std::vector<int> act_cell_ind_local;	// [DISTR] distributed version of 'act_cell_ind'
 	std::vector<double> cell_height;	// Nx*Ny*Nz array with cell heights (taken as average height along 4 pillars)
 	std::vector<double> cell_center;	// 3*Nx*Ny*Nz array with cell centers (x,y,z); ORDER: coord - fastest, X, Y, Z - slowest
@@ -156,13 +156,15 @@ public:
 	std::vector<double> ord_krig_final_mult(const Vector2<int> &pts, double R, double r, double rz, double chirad, const HMMPI::Func1D_corr *corr, const Mat &invK_Ys) const;
 													// performs (in parallel) the final multiplication needed by ordinary kriging:
 													// [c(x,x1)...c(x,xn),1]*invK_Ys; should be called on all ranks;
-													// the result (actnum_count*NG matrix in row-major order) is significant on rank-0
+													// the result (NG*actnum_count matrix in row-major order) is significant on rank-0
 													// all inputs should be sync on all ranks; "invK_Ys" is (Np+1)*NG matrix
-	std::vector<double> krig_result_prop(const std::vector<double> &full_krig, int ng) const;		// [RANK-0] fills a full property (Nx*Ny*Nz), by extracting grid 'ng'
-																									// from the "full_krig" output by 'ord_krig_final_mult()'
-	void find_cell(const double x, const double y, const double z, int &i, int &j, int &k);		// find cell [i,j,k] containing the point [x,y,z]; the result is significant on comm-rank-0
+	std::vector<double> krig_result_prop(const std::vector<double> &krig_res_loc, int n_loc) const;	// [DISTR] fills a full property (Nx*Ny*Nz), by extracting grid with local index 'n_loc'
+																									// from "krig_res_loc" - (NG_loc*actnum_count) local part of output of 'ord_krig_final_mult()'
+	void find_cell(const double x, const double y, const double z, int &i, int &j, int &k);	// find cell [i,j,k] containing the point [x,y,z]; the result is significant on comm-rank-0
 	std::string report_find_cell_stats() const;		// info on the auxiliary function call counts within find_cell()
 	bool IsCellCoordFilled() const {return cell_coord_filled;};
+	bool IsActnumLoaded() const {return actnum_loaded;};
+	size_t GetActnumCount() const {return actnum_count;};
 };
 //------------------------------------------------------------------------------------------
 

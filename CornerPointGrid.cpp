@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <functional>
 #include <climits>
+#include <chrono>
 
 namespace HMMPI
 {
@@ -777,7 +778,7 @@ CornGrid::CornGrid(MPI_Comm c) : comm(c), grid_loaded(false), actnum_loaded(fals
 std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz, double dx, double dy, bool y_positive, std::string aname, double amin)
 {											// loads "coord", "zcorn" for the grid (nx, ny, nz) from ASCII format (COORD, ZCORN), returning a small message;
 	std::string msg;						// [dx, dy] is the coordinates origin, it is added to COORD; "y_positive" indicates positive/negative direction of the Y axis
-	if (rank == 0)							// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
+	RANK0_SYNCERR_BEGIN(comm);				// [dx, dy] is [X2, Y2] from the 'MAPAXES', similarly "y_positive" = sign(Y1 - Y2)
 	{										// aname - ACTNUM name, amin - ACTNUM min
 		Nx = nx;							// all reading is done by comm-rank-0
 		Ny = ny;
@@ -829,6 +830,7 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 
 		msg = msg1 + msg2 + msg3;
 	}
+	RANK0_SYNCERR_END(comm);
 	Bcast_string(msg, 0, comm);
 
 	// sync all the data loaded
@@ -880,7 +882,7 @@ std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be 
 	assert(grid_loaded);								// all reading is done by comm-rank-0
 	std::string msg;
 
-	if (rank == 0)
+	RANK0_SYNCERR_BEGIN(comm);
 	{
 		const size_t grid_size = Nx*Ny*Nz;
 		std::vector<std::vector<double>> data;
@@ -913,6 +915,7 @@ std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be 
 
 		msg = stringFormatArr("Active cells: {0:%zu} / {1:%zu}", std::vector<size_t>{actnum_count, grid_size});
 	}
+	RANK0_SYNCERR_END(comm);
 	actnum_loaded = true;
 
 	// sync all the data loaded
@@ -929,6 +932,7 @@ std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be 
 
 	act_cell_ind_local = std::vector<int>(counts_act[rank]);
 	MPI_Scatterv(act_cell_ind.data(), counts_act.data(), displs_act.data(), MPI_INT, act_cell_ind_local.data(), act_cell_ind_local.size(), MPI_INT, 0, comm);
+	HMMPI::Bcast_vector(act_cell_ind, 0, comm);
 
 	return msg;
 }
@@ -937,8 +941,8 @@ void CornGrid::SavePropertyToFile(std::string fname, std::string prop_name, cons
 {
 	assert(prop.size() > 0);
 	const int max_items = 12;
-	const char *fmt1 = "     %-9.6g";
-	const char *fmt = "%4d*%-9.6g";
+	const char *fmt1 = "      %-11.6g";
+	const char *fmt = " %4d*%-11.6g";
 
 	FILE *F = fopen(fname.c_str(), "w");
 	if (F == 0)
@@ -1208,7 +1212,7 @@ std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array
 std::vector<double> CornGrid::ord_krig_final_mult(const Vector2<int> &pts, double R, double r, double rz, double chirad, const HMMPI::Func1D_corr *corr, const Mat &invK_Ys) const
 {															// performs (in parallel) the final multiplication needed by ordinary kriging:
 	const size_t count_loc = act_cell_ind_local.size();		// [c(x,x1)...c(x,xn),1]*invK_Ys; should be called on all ranks;
-	const size_t NG = invK_Ys.JCount();						// the result (actnum_count*NG matrix in row-major order) is significant on rank-0
+	const size_t NG = invK_Ys.JCount();						// the result (NG*actnum_count matrix in row-major order) is significant on rank-0
 	const size_t Np = pts.ICount();							// all inputs should be sync on all ranks; "invK_Ys" is (Np+1)*NG matrix
 	assert(invK_Ys.ICount() == Np+1);
 	assert(cell_coord_filled);
@@ -1233,7 +1237,7 @@ std::vector<double> CornGrid::ord_krig_final_mult(const Vector2<int> &pts, doubl
 		for (size_t p = 0; p < Np; p++)				// correlation part
 		{
 			double dist = calc_scaled_dist(i, j, k, pts(p,0), pts(p,1), pts(p,2), R, r, rz, cosx, sinx);
-			c_loc(c, p) = corr->f(dist, true);
+			c_loc(c, p) = corr->f(dist);
 		}
 	}
 
@@ -1241,9 +1245,9 @@ std::vector<double> CornGrid::ord_krig_final_mult(const Vector2<int> &pts, doubl
 	Mat res_loc	= c_loc*invK_Ys;					// count_loc*NG;
 	assert(res_loc.Length() == count_loc*NG);
 
-	std::vector<double> res;
-	if (rank == 0)
-		res = std::vector<double>(actnum_count*NG);
+	std::vector<double> res, resTr;					// res stores actnum_count*NG row-major matrix
+	if (rank == 0)									// resTr stores NG*actnum_count row-major matrix
+		resTr = res = std::vector<double>(NG*actnum_count);
 
 	std::vector<int> counts = counts_act, displs = displs_act;		// two arrays specially for 'res'
 	if (actnum_count*NG >= (size_t)INT_MAX)
@@ -1255,18 +1259,23 @@ std::vector<double> CornGrid::ord_krig_final_mult(const Vector2<int> &pts, doubl
 		v *= NG;
 	MPI_Gatherv(res_loc.Serialize(), res_loc.Length(), MPI_DOUBLE, res.data(), counts.data(), displs.data(), MPI_DOUBLE, 0, comm);
 
-	return res;
+	if (rank == 0)
+		for (size_t n = 0; n < NG; n++)
+			for (size_t i = 0; i < actnum_count; i++)
+				resTr[n*actnum_count + i] = res[i*NG + n];
+
+	return resTr;
 }
 //------------------------------------------------------------------------------------------
-std::vector<double> CornGrid::krig_result_prop(const std::vector<double> &full_krig, int ng) const
-{														// [RANK-0] fills a full property (Nx*Ny*Nz), by extracting grid 'ng'
-	size_t NG = full_krig.size()/actnum_count;			// from the "full_krig" output by 'ord_krig_final_mult()'
-	assert(full_krig.size()%actnum_count == 0);
-	assert((size_t)ng < NG);
+std::vector<double> CornGrid::krig_result_prop(const std::vector<double> &krig_res_loc, int n_loc) const
+{														// [DISTR] fills a full property (Nx*Ny*Nz), by extracting grid with local index 'n_loc'
+	size_t NG_loc = krig_res_loc.size()/actnum_count;	// from "krig_res_loc" - (NG_loc*actnum_count) local part of output of 'ord_krig_final_mult()'
+	assert(krig_res_loc.size()%actnum_count == 0);
+	assert((size_t)n_loc < NG_loc);
 
 	std::vector<double> res(Nx*Ny*Nz, 0.0);
 	for (size_t i = 0; i < actnum_count; i++)			// go through all active cells
-		res[act_cell_ind[i]] = full_krig[i*NG + ng];
+		res[act_cell_ind[i]] = krig_res_loc[n_loc*actnum_count + i];
 
 	return res;
 }

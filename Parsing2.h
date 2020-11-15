@@ -373,6 +373,9 @@ public:
 //------------------------------------------------------------------------------------------
 class KW_variogram_3D : public KW_params
 {
+protected:
+	virtual void UpdateParams() noexcept;
+
 public:			// assumed: sill = 1, krig_type = ORD
 	double R;      	// major horiz. radius
 	double r;      	// minor horiz. radius
@@ -387,6 +390,9 @@ public:			// assumed: sill = 1, krig_type = ORD
 //------------------------------------------------------------------------------------------
 class KW_krigprops : public KW_multparams
 {
+protected:
+	virtual void UpdateParams() noexcept;
+
 public:
 	std::vector<std::string> fname;
 	std::vector<std::string> propname;
@@ -828,10 +834,21 @@ public:
 class KW_parameters : public KW_multparams, public ParamsInterface, public HMMPI::ParamsTransform
 {
 private:
-	const double ln10;						// ln(10)
+	class coach_sc			// aux. class to store 'well_sc' data
+	{
+	protected:
+		std::vector<std::string> seats;		// seats[i] are the well names, or "all"
+		double num;							// rescaling number
 
-	int apply_well_sc(int p, std::string s, std::vector<std::vector<double>> &work_vec, const std::vector<std::string> &wnames);		// applies "s" (e.g. "W2,W3/r2") to 2D array work_vec[N_wells x fulldim], with "wnames" - the uppercase well names, "p" - row/parameter number
-																																		// returns the number of encountered errors "well not found"
+	public:
+		coach_sc() : num(0){};
+		coach_sc(std::string s, std::string par);		// ctor from a string like "<W2,W3/r2>"; 'par' is parameter name for reporting
+		int apply_well_sc(int p, std::vector<std::vector<double>> &work_vec, const std::vector<std::string> &wnames, KW_parameters *K);	// applies itself (i.e. "W2,W3/r2") to 2D array work_vec[N_wells x fulldim], with "wnames" - the uppercase well names,
+	};																													// "p" - parameter number in [0, fulldim) for which factor 'r2' is applied across wells 'W2,W3'
+																														// "K" is used for SilentErrors; returns the number of encountered errors "well not found"
+	const double ln10;									// ln(10)
+	std::vector<std::vector<coach_sc>> train_sc;		// [fulldim, ...], stores 'well_sc' in a parsed form; filled by UpdateParams()
+
 protected:
 	std::vector<double> norm;				// normalizing constant
 	std::vector<double> logmin;				// min for func=LIN, and log10(min) for func=EXP
@@ -847,6 +864,7 @@ protected:
 	virtual void fill_norm_logmin() noexcept;
 	virtual void UpdateParams() noexcept;	// count active params, check names, check min <= val <= max, check min < max, check min > 0 for func=EXP, fill 'norm' and 'logmin', report
 											// also, initialize 'par_map'; fill init, BoundConstr::min, BoundConstr::max (internal representation)
+											// fill 'train_sc'
 public:
 	std::vector<std::string> name;			// 0 parameter name (tag)
 	std::vector<double> val;				// 1 initial value (external) -> internal is 'init'
@@ -858,8 +876,9 @@ public:
 	std::vector<std::string> well_sc;		// 7 command to rescale the parameter's effect on wells, e.g. <All/r0>-<W1/r1>-<W2,W3/r2>
 
 													// some stuff extracted from "well_sc"; 'color' is a unique tag for 'pscale'
-	std::vector<std::vector<double>> uniq_sc;		// [N_colors x fulldim] table with unique 'pscale' vectors inferred from "well_sc", filled by fill_well_sc_table()
-	std::vector<int> sc_colors;						// maps [0, N_wells) -> [0, N_colors), filled by fill_well_sc_table()
+													// 'pscale' is a fulldim scaling vector applied to a parameters vector.
+	std::vector<std::vector<double>> uniq_sc;		// uniq_sc: [N_colors x fulldim] table with unique 'pscale' vectors inferred from "well_sc", filled by fill_well_sc_table()
+	std::vector<int> sc_colors;						// sc_colors: colors of all wells, i.e. it maps [0, N_wells) -> [0, N_colors), filled by fill_well_sc_table()
 
 	KW_parameters();
 	~KW_parameters();						// frees 'par_map'
@@ -877,7 +896,7 @@ public:
 
 	// work with "well_sc"
 	void fill_well_sc_table(std::vector<std::string> wnames);	// fills "uniq_sc", "sc_colors"; 'wnames' are the well names (case insensitive, no duplicates)
-	std::vector<int> sc_colors_textsmry();						// returns 'pscale colors' for the TEXTSMRY points with nonzero sigmas; uses DATES, ECLVECTORS, TEXTSMRY, calls fill_well_sc_table()
+	std::vector<int> sc_colors_textsmry();						// returns colors (for 'pscale') for the TEXTSMRY points with nonzero sigmas; uses DATES, ECLVECTORS, TEXTSMRY, calls fill_well_sc_table()
 };
 //------------------------------------------------------------------------------------------
 // same as KW_parameters, but internally the values range in [-1, 1]
