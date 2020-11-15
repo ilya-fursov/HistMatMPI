@@ -510,7 +510,7 @@ void KW_rundebug::Run()
 	stl.AddLine(std::vector<std::string>{"22", "Hello22", "V"});
 
 
-	K->AppText(stl.Print(15, 17));
+	K->AppText(stl.Print(14, 17));
 
 }
 //------------------------------------------------------------------------------------------
