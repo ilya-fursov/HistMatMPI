@@ -1,0 +1,18 @@
+	// * USER * define a list of lambda-functions (double->double) which are to be integrated
+	std::vector<std::function<double(double)>> Funcs;
+	Funcs.push_back([](double x) -> double {return 1;});		// NTG	#0
+	Funcs.push_back([](double x) -> double {return exp(1.76531*log(x) + 8.10649);});			// PERMX	#1
+	
+	Funcs.push_back([](double x) -> double {return x;});		// PORO*NTG		#2
+	
+	Funcs.push_back([](double x) -> double {return x*(HMMPI::Min(0.0123*pow(x, -1.0085), 0.98));});		// SWL*PORO		#3
+	Funcs.push_back([](double x) -> double {return x*(1 - HMMPI::Min(0.0123*pow(x, -1.0085), 0.98) - log((x - 0.0372)/0.0017)/7);});	// SOWCR*PORO	#4
+	Funcs.push_back([](double x) -> double {return 7.446369753*(pow(x/exp(1.663*log(x) + 7.17), 0.5));});		// PCW	#5
+	
+	// NTG : 1
+	// PERMX = exp(1.76531*log(PORO) + 8.10649)	-- Variable
+	// SWL = min(0.0123*PORO^(-1.0085), 0.98)
+	// SOWCR = 1 - min(0.0123*PORO^(-1.0085), 0.98) - log((PORO - 0.0372)/0.0017)/7		-- black trend
+	// PCW=7.446369753*((PORO/exp(1.663*log(PORO) + 7.17))^0.5)		-- NOTE PERM_gas is used here
+	
+	// * USER *

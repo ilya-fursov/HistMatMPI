@@ -292,8 +292,8 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 	DECLKWD(templ, KW_templates, "TEMPLATES");
 	Finish_pre();
 
-	if (model->type != "SIM")
-		throw HMMPI::Exception("Ожидается модель типа SIM", "Model of type SIM is expected");
+	const std::string modtype_cache = model->type;
+	model->type = "SIM";
 
 	PhysModel *PM = model->MakeModel(this, this->CWD, true);		// make the posterior
 	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + "POSTERIOR(" + model->type + ")\n" + PM->proc_msg());
@@ -308,13 +308,23 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 #endif
 
 	long long int seed = seq->seed;
-	std::vector<std::vector<double>> params(seq->N);				// will store internal representation, full-dim points
+	std::vector<std::vector<double>> params;						// will store internal representation, full-dim points
 	if (seq->type == "SOBOL")
 		params = parameters->SobolSequence(seq->N, seed);
 	else if (seq->type == "RANDGAUSS")
 		params = parameters->NormalSequence(seq->N, (unsigned int)seed, seq->R);
 	else
 		throw HMMPI::Exception("Wrong seq->type in KW_runMultiple::Run");
+
+	// save the parameters sequence: header
+	FILE *fd = fopen(seq->logfile.c_str(), "w");
+	if (fd != NULL)
+	{
+		fputs(HMMPI::ToString(parameters->name, "%-17.17s").c_str(), fd);
+		fclose(fd);
+	}
+	else
+		throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
 
 	time_t t0, t1;
 	time(&t0);
@@ -331,6 +341,16 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 		K->AppText(msg1);
 		K->AppText(msg2);
 
+		// save the parameters sequence
+		FILE *fd = fopen(seq->logfile.c_str(), "a");
+		if (fd != NULL)
+		{
+			fputs(HMMPI::ToString(parameters->InternalToExternal(params[i]), "%-17.12g").c_str(), fd);
+			fclose(fd);
+		}
+		else
+			throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
+
 		time(&t1);
 		double dT = difftime(t1, t0)/double(3600);
 		MPI_Bcast(&dT, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);		// dT sync
@@ -342,19 +362,10 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 	}
 
 	if (i < seq->N)
-		K->AppText(HMMPI::stringFormatArr("\nЗа отведенное время было просчитано {0:%d} модел(ей)\n",
-										  "\nDuring the specified time {0:%d} model(s) were run\n", i));
-	// save the parameters sequence
-	FILE *fd = fopen(seq->logfile.c_str(), "w");
-	if (fd != NULL)
-	{
-		fputs(HMMPI::ToString(parameters->name, "%-17.17s").c_str(), fd);
-		for (int j = 0; j < i; j++)
-			fputs(HMMPI::ToString(parameters->InternalToExternal(params[j]), "%-17.12g").c_str(), fd);
-		fclose(fd);
-	}
-	else
-		throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
+		K->AppText(HMMPI::stringFormatArr("\n>> За отведенное время было просчитано {0:%d} модел(ей)\n",
+										  "\n>> During the specified time {0:%d} model(s) were run\n", i));
+
+	model->type = modtype_cache;		// restore model type
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -382,6 +393,9 @@ void KW_runOptProxy::Run()
 	Finish_pre();
 
 	const double model_R_cache = model->R;
+	const std::string modtype_cache = model->type;
+	model->type = "PROXY";
+
 	const std::string params_log_file = this->CWD + "/ParamsLog.txt";	// resulting solution vector is saved here
 	const std::string progress_file = this->CWD + "/ObjFunc_progress.txt";
 	if (K->MPI_rank == 0)
@@ -402,9 +416,6 @@ void KW_runOptProxy::Run()
 	templ->set_keep("NONE");
 #endif
 
-	if (model->type != "PROXY")
-		throw HMMPI::Exception("Ожидается модель типа PROXY", "Model of type PROXY is expected");
-
 	double simk = 0;					// simulator o.f. at starting point of each iteration
 	double Rk = 0;						// sphere/cube radius for restricted step; Rk == 0 means no restricted step
 	bool request_Rk_decr = false;		// 'true' if the previous iteration requested Rk to decrease; two such consecutive requests trigger the actual decrease
@@ -419,21 +430,32 @@ void KW_runOptProxy::Run()
 	while (!finished)
 	{
 		K->AppText(HMMPI::stringFormatArr("\n-- Итерация {0:%d} --\n", "\n-- Iteration {0:%d} --\n", iter+1));
+		bool write_params_log = false;			// flag to activate output of ParamsLog.txt
+
 		if (Rk != 0)
 			model->R = model_R_cache * HMMPI::Min(Rk*10, 1);			// scale the correlation radius directly in the keyword		***** TODO HERE hardcoded factor "10", it could be set as a parameter from the control file
 
-		PhysModel *PMproxy = model->MakeModel(this, this->CWD, true);	// make the posterior
+		PhysModel *PMproxy;
+		if (iter == 0)							// startup calculations
+		{
+			K->AppText(">> ");
+			const double model_nug_cache = model->nugget;
+			model->nugget = 0;											// zero nugget to get the exact proxy behavior
+			PMproxy = model->MakeModel(this, this->CWD, true);			// make the posterior <- proxy, with zero nugget
+
+			of_simbest = PMproxy->ObjFunc(simbest);						// define the starting SIMBEST value using proxy
+			MPI_Bcast(&of_simbest, 1, MPI_DOUBLE, 0, PMproxy->GetComm());
+			simk = of_simbest;											// define the starting "simk"; NOTE: this definition using proxy is approximate; it is only exact if the initial point is in ECLSMRY
+
+			K->AppText(HMMPI::stringFormatArr("Начальная ц.ф. = {0}\n", "Initial o.f. = {0}\n", of_simbest));
+			model->nugget = model_nug_cache;							// restore the nugget
+		}
+
+		PMproxy = model->MakeModel(this, this->CWD, true);				// make the posterior
 		Sim_small_interface *PMecl = dynamic_cast<Sim_small_interface*>(model->MakeModel(this, this->CWD, true, "SIM"));	// make the posterior
 		K->AppText(PMproxy->proc_msg());
 		assert(PMecl != nullptr && PMecl->is_sim());
 		PMecl->set_ignore_small_errors(true);
-
-		if (iter == 0)
-		{
-			of_simbest = PMproxy->ObjFunc(simbest);						// define the starting SIMBEST value using proxy
-			MPI_Bcast(&of_simbest, 1, MPI_DOUBLE, 0, PMproxy->GetComm());
-			simk = of_simbest;											// define the starting "simk"; NOTE: this definition using proxy is approximate; it is only exact if nugget=0 && initial point is in ECLSMRY
-		}
 
 		OptCtxLM optctx(config->LMmaxit, config->epsG, config->epsF, config->epsX);
 		OptCtxLM optctx_spher(config->LMmaxit_spher, config->epsG, config->epsF, config->epsX);
@@ -491,6 +513,7 @@ void KW_runOptProxy::Run()
 		{
 			of_simbest = of;
 			simbest = p;
+			write_params_log = true;
 		}
 
 		double dX = (HMMPI::Mat(p) - HMMPI::Mat(LM_start)).Norm2();		// actual step taken
@@ -498,6 +521,8 @@ void KW_runOptProxy::Run()
 		if (Rk > 0)			// restricted step case
 		{
 			Tk = (simk - of)/(qk - qk1);						// Tk is used to control the radius Rk
+			if (simk == of)
+				Tk = 0;											// for dX == 0
 
 			if (Tk < config->tau1)										// 0.25
 			{
@@ -516,7 +541,7 @@ void KW_runOptProxy::Run()
 			if (Rk < config->rmin)
 				Rk = config->rmin;
 
-			if (Rk == 0)	// this happens when delta_k == 0, i.e. proxy optimization is stuck
+			if (Rk == 0)						// this happens when delta_k == 0, i.e. proxy optimization is stuck
 				finished = 1;
 		}
 
@@ -553,20 +578,20 @@ void KW_runOptProxy::Run()
 							of_simbest, smry->get_Data().Xmin, smry->get_Data().Xavg);
 				fclose(f);
 			}
+
+			if (write_params_log)
+				PMecl->WriteLimits(simbest, params_log_file);
 		}
 
 		MPI_Bcast(&finished, 1, MPI_INT, 0, MPI_COMM_WORLD);
-		if (finished && K->MPI_rank == 0)
-		{
-			PMecl->WriteLimits(simbest, params_log_file);
-			K->AppText(HMMPI::stringFormatArr("\nНаилучшая целевая функция для SIM (posterior) = {0:%.8g}\n",
-											  "\nBest found SIM objective function (posterior) = {0:%.8g}\n", of_simbest));
-		}
-
 		delete Opt;
 	}
 
+	K->AppText(HMMPI::stringFormatArr("\n>> Наилучшая целевая функция для SIM (posterior) = {0:%.8g}\n",
+									  "\n>> Best found SIM objective function (posterior) = {0:%.8g}\n", of_simbest));
+
 	model->R = model_R_cache;		// restore the original radius
+	model->type = modtype_cache;	// restore the model type TODO check!
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
