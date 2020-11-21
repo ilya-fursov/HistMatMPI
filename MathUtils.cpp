@@ -2045,14 +2045,27 @@ double CorrMatern::f(double x, bool smooth_at_nugget) const
 	if (x == 0 && !smooth_at_nugget)
 		mult = 1;
 
-	if (x < tol0)
+	if (lnbess.nu <= 0)
+		throw Exception("'nu' should be > 0 in CorrMatern::f");
+
+	if (x == 0)
+		return mult;
+	else if (x < tol0)
 	{
 		double nu2 = lnbess.nu*lnbess.nu;
 		double x2 = x*x;
 		double x4 = x2*x2;
-		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);
-		double multnu3 = multnu2*(3 - lnbess.nu);
-		return mult*(1 + 3*lnbess.nu/(1 - lnbess.nu)*x2 + 4.5*nu2/multnu2*x4 + 4.5*nu2*lnbess.nu/multnu3*x2*x4);
+		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);		// for nu > 2
+		double multnu3 = multnu2*(3 - lnbess.nu);				// for nu > 3
+		double res = 1;
+		if (lnbess.nu > 1)
+			res += 3*lnbess.nu/(1 - lnbess.nu)*x2;
+		if (lnbess.nu > 2)
+			res += 4.5*nu2/multnu2*x4;
+		if (lnbess.nu > 3)
+			res += 4.5*nu2*lnbess.nu/multnu3*x2*x4;
+
+		return mult*res;
 	}
 	else
 	{
@@ -2070,22 +2083,27 @@ double CorrMatern::df(double x) const
 	if (lnbess.nu <= 1)
 		throw Exception("'nu' should be > 1 in CorrMatern::df");
 
-	if (x < tol1)
+	if (x == 0)
+		return 0;
+	else if (x < tol1)
 	{
 		double nu2 = lnbess.nu*lnbess.nu;
 		double x3 = x*x*x;
-		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);
-		double multnu3 = multnu2*(3 - lnbess.nu);
-		return mult*(6*lnbess.nu/(1 - lnbess.nu)*x + 18*nu2/multnu2*x3 + 27*nu2*lnbess.nu/multnu3*(x3*x*x));
+		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);	// for nu > 2
+		double multnu3 = multnu2*(3 - lnbess.nu);			// for nu > 3
+		double res = 6*lnbess.nu/(1 - lnbess.nu)*x;
+		if (lnbess.nu > 2)
+			res += 18*nu2/multnu2*x3;
+		if (lnbess.nu > 3)
+			res += 27*nu2*lnbess.nu/multnu3*(x3*x*x);
+
+		return mult*res;
 	}
 	else
 	{
 		double sq = sqrt(12 * lnbess.nu);
 		double y = sq*x;
 		double lg = (1 - lnbess.nu)*log(2.0) + lnbess.nu*log(y) - lgamma(lnbess.nu);		// use logarithms to avoid overflow
-
-//		return (1-nugget)*exp(lg + lnbess.f(y))*sq * (lnbess.nu/y + lnbess.df(y));	// old version
-
 		return mult*exp(lg + LnBesselMod2k::lnKn(lnbess.nu-1, y))*(-sq);
 	}
 }
@@ -2096,23 +2114,24 @@ double CorrMatern::d2f(double x) const
 	if (lnbess.nu <= 2)
 		throw Exception("'nu' should be > 2 in CorrMatern::d2f");
 
-	if (x < tol2)
+	if (x == 0)
+		return mult*6*lnbess.nu/(1 - lnbess.nu);
+	else if (x < tol2)
 	{
 		double nu2 = lnbess.nu*lnbess.nu;
 		double x2 = x*x;
-		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);
-		double multnu3 = multnu2*(3 - lnbess.nu);
-		return mult*(6*lnbess.nu/(1 - lnbess.nu) + 54*nu2/multnu2*x2 + 135*nu2*lnbess.nu/multnu3*(x2*x2));
+		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);	// for nu > 2
+		double multnu3 = multnu2*(3 - lnbess.nu);			// for nu > 3
+		double res = 6*lnbess.nu/(1 - lnbess.nu) + 54*nu2/multnu2*x2;
+		if (lnbess.nu > 3)
+			res += 135*nu2*lnbess.nu/multnu3*(x2*x2);
+
+		return mult*res;
 	}
 	else
 	{
 		double sq = sqrt(12 * lnbess.nu);
 		double y = sq*x;
-
-//		double lg = (1 - lnbess.nu)*log(2.0) + lnbess.nu*log(y) - lgamma(lnbess.nu);		// use logarithms to avoid overflow
-//		double dlnKn = lnbess.df(y);
-//		return (1-nugget)*exp(lg + lnbess.f(y))*sq*sq * ((lnbess.nu*lnbess.nu-lnbess.nu)/(y*y) + 2*lnbess.nu/y*dlnKn + lnbess.d2f(y) + dlnKn*dlnKn);	// old version
-
 		double lg = (1 - lnbess.nu)*log(2.0) + (lnbess.nu - 1)*log(y) - lgamma(lnbess.nu);		// use logarithms to avoid overflow
 		return mult*exp(lg + LnBesselMod2k::lnKn(lnbess.nu-2, y))*(y - LnBesselMod2k::scaledKn(lnbess.nu-1, y)/LnBesselMod2k::scaledKn(lnbess.nu-2, y))*(sq*sq);
 	}
@@ -2124,35 +2143,19 @@ double CorrMatern::d3f(double x) const
 	if (lnbess.nu <= 3)
 		throw Exception("'nu' should be > 3 in CorrMatern::d3f");
 
-	if (x < tol3)
+	if (x == 0)
+		return 0;
+	else if (x < tol3)
 	{
 		double nu2 = lnbess.nu*lnbess.nu;
-		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);
-		double multnu3 = multnu2*(3 - lnbess.nu);
+		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);	// for nu > 2
+		double multnu3 = multnu2*(3 - lnbess.nu);			// for nu > 3
 		return mult*(108*nu2/multnu2*x + 540*nu2*lnbess.nu/multnu3*(x*x*x));
 	}
 	else
 	{
 		double sq = sqrt(12 * lnbess.nu);
 		double y = sq*x;
-
-//		double lg = (1 - lnbess.nu)*log(2.0) + lnbess.nu*log(y) - lgamma(lnbess.nu);		// use logarithms to avoid overflow
-//		double dlnKn = lnbess.df(y);
-//		double ddlnKn = lnbess.d2f(y);
-//		double nu2 = lnbess.nu*lnbess.nu;
-//		double y2 = y*y;
-//		double dlnKn2 = dlnKn*dlnKn;
-
-	//	return (1-nugget)*exp(lg + lnbess.f(y))*sq*sq*sq * ((lnbess.nu*nu2 - 3*nu2 + 2*lnbess.nu)/(y*y2) +		// very old version
-	//														3*(nu2 - lnbess.nu)/y2*dlnKn +
-	//														3*lnbess.nu/y*(ddlnKn + dlnKn2) +
-	//														lnbess.d3f(y) + 3*dlnKn*ddlnKn + dlnKn*dlnKn2);
-
-//		return (1-nugget)*exp(lg + lnbess.f(y))*sq*sq*sq * (3*(lnbess.nu/y + dlnKn)*(ddlnKn + dlnKn2 + (nu2-lnbess.nu)/y2)	// old version
-//															- 2*lnbess.nu*(nu2 - 1)/(y*y2)
-//															+ lnbess.d3f(y)
-//															- 2*dlnKn*dlnKn2);
-
 		double lg = (1 - lnbess.nu)*log(2.0) + (lnbess.nu - 1)*log(y) - lgamma(lnbess.nu);		// use logarithms to avoid overflow
 		return mult*exp(lg + LnBesselMod2k::lnKn(lnbess.nu-3, y))*(3*LnBesselMod2k::scaledKn(lnbess.nu-2, y)/LnBesselMod2k::scaledKn(lnbess.nu-3, y) - y)*(sq*sq*sq);
 	}
@@ -2163,13 +2166,21 @@ double CorrMatern::lim_df(double y) const
 	if (lnbess.nu <= 1)
 		throw Exception("'nu' should be > 1 in CorrMatern::lim_df");
 
-	if (y < limtol1)				// Taylor
+	if (y == 0)
+		return (1-nugget)*6*lnbess.nu/(1 - lnbess.nu);
+	else if (y < limtol1)									// Taylor
 	{
 		double nu2 = lnbess.nu*lnbess.nu;
 		double y2 = y*y;
-		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);
-		double multnu3 = multnu2*(3 - lnbess.nu);
-		return (1-nugget)*(6*lnbess.nu/(1 - lnbess.nu) + 18*nu2/multnu2*y2 + 27*nu2*lnbess.nu/multnu3*(y2*y2));
+		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);	// for nu > 2
+		double multnu3 = multnu2*(3 - lnbess.nu);			// for nu > 3
+		double res = 6*lnbess.nu/(1 - lnbess.nu);
+		if (lnbess.nu > 2)
+			res += 18*nu2/multnu2*y2;
+		if (lnbess.nu > 3)
+			res += 27*nu2*lnbess.nu/multnu3*(y2*y2);
+
+		return (1-nugget)*res;
 	}
 	else
 	{
@@ -2185,12 +2196,19 @@ double CorrMatern::lim_d2f(double y) const
 	if (lnbess.nu <= 2)
 		throw Exception("'nu' should be > 2 in CorrMatern::lim_d2f");
 
-	if (y < limtol2)				// Taylor
+	double nu2 = lnbess.nu*lnbess.nu;
+	double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);		// for nu > 2
+
+	if (y == 0)
+		return (1-nugget)*36*nu2/multnu2;
+	else if (y < limtol2)									// Taylor
 	{
-		double nu2 = lnbess.nu*lnbess.nu;
-		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);
-		double multnu3 = multnu2*(3 - lnbess.nu);
-		return (1-nugget)*(36*nu2/multnu2 + 108*nu2*lnbess.nu/multnu3*(y*y));
+		double multnu3 = multnu2*(3 - lnbess.nu);			// for nu > 3
+		double res = 36*nu2/multnu2;
+		if (lnbess.nu > 3)
+			res += 108*nu2*lnbess.nu/multnu3*(y*y);
+
+		return (1-nugget)*res;
 	}
 	else
 	{
@@ -2206,16 +2224,20 @@ double CorrMatern::lim_d3f(double y) const
 	if (lnbess.nu <= 3)
 		throw Exception("'nu' should be > 3 in CorrMatern::lim_d3f");
 
-	if (y < limtol3)				// Taylor
+	double nu3 = lnbess.nu*lnbess.nu*lnbess.nu;
+	double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);	// for nu > 2
+	double multnu3 = multnu2*(3 - lnbess.nu);			// for nu > 3
+
+	if (y == 0)
+		return (1-nugget)*(-216)*nu3/multnu3;
+	else if (y < limtol3)								// Taylor
 	{
-		double nu3 = lnbess.nu*lnbess.nu*lnbess.nu;
-		double multnu2 = (1 - lnbess.nu)*(2 - lnbess.nu);
-		double multnu3 = multnu2*(3 - lnbess.nu);
-		double multnu4 = multnu3*(4 - lnbess.nu);
+		double multnu4 = multnu3*(4 - lnbess.nu);		// for nu > 4
+		double res = -216*nu3/multnu3;
 		if (lnbess.nu > 4)
-			return (1-nugget)*(-216*nu3/multnu3 - 648*nu3*lnbess.nu/multnu4*(y*y));				// for a smoother Matern correlation - take longer Taylor series
-		else
-			return (1-nugget)*(-216*nu3/multnu3);
+			res -= 648*nu3*lnbess.nu/multnu4*(y*y);
+
+		return (1-nugget)*res;
 	}
 	else
 	{
