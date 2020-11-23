@@ -843,6 +843,22 @@ std::string Parser_1::ApplyCTT(std::string s)
 	return s;
 }
 //------------------------------------------------------------------------------------------
+Parser_1::Parser_1() : report(""), msg(""), echo(true), silent(false), TotalErrors(0), TotalWarnings(0)		// (OK)
+{
+	Shift = 0;
+	time1 = std::chrono::high_resolution_clock::now();
+}
+//------------------------------------------------------------------------------------------
+int Parser_1::StrListN()		// number of lines for HMMPI::StringListing depending on 'verbosity'
+{
+	if (verbosity >= 1)
+		return -1;				// all lines
+	else if (verbosity >= 0)
+		return 7;
+	else
+		return 2;
+}
+//------------------------------------------------------------------------------------------
 void Parser_1::AddKW_item(KW_item *kwi)		// (OK)
 {
 	if (KWList.find(kwi->name) != KWList.end())
@@ -872,44 +888,6 @@ void Parser_1::DeleteCTTs()
 	{
 		delete i;
 		i = 0;
-	}
-}
-//------------------------------------------------------------------------------------------
-Parser_1::Parser_1() : report(""), msg(""), echo(true), silent(false), TotalErrors(0), TotalWarnings(0)		// (OK)
-{
-	Shift = 0;
-	time1 = std::chrono::high_resolution_clock::now();
-}
-//------------------------------------------------------------------------------------------
-void Parser_1::AppText(std::string s)	// (OK)
-{
-	if (!silent && echo && MPI_rank == 0)
-	{
-		s = HMMPI::Replace(s, "/./", "/", NULL);	// print paths in a more clear way
-		if (Shift == 0 || s == "\n")
-		{
-			std::cout << ApplyCTT(s);
-			report += s;
-		}
-		else
-		{
-			char buff[HMMPI::BUFFSIZE];
-			sprintf(buff, "[%d] ->\t", Shift);		//	6.10.2013, C++98
-
-			std::string app = buff;
-			std::string saux;
-			if (s == "\n")
-				saux = s;
-			else if (*--s.end() == '\n')
-				//saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app), "\n" + app + "\n", "\n\n") + "\n";		orig
-				saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app)  + "\n", "\n" + app + "\n", "\n\n");		// TODO could be further improved, nnnn -> nnnna
-				//saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app), "\n" + app + "\n", "\n\n");
-			else
-				saux = HMMPI::Replace(HMMPI::Replace(s, "\n", "\n" + app), "\n" + app + "\n", "\n\n");
-
-			std::cout << ApplyCTT(app + saux);
-			report += app + saux;
-		}
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -952,6 +930,38 @@ const KW_item *Parser_1::GetKW_item(std::string s) const	// (OK)
 KW_item *Parser_1::GetKW_item(std::string s)
 {
 	return const_cast<KW_item*>(dynamic_cast<const Parser_1*>(this)->GetKW_item(s));
+}
+//------------------------------------------------------------------------------------------
+void Parser_1::AppText(std::string s)	// (OK)
+{
+	if (!silent && echo && MPI_rank == 0)
+	{
+		s = HMMPI::Replace(s, "/./", "/", NULL);	// print paths in a more clear way
+		if (Shift == 0 || s == "\n")
+		{
+			std::cout << ApplyCTT(s);
+			report += s;
+		}
+		else
+		{
+			char buff[HMMPI::BUFFSIZE];
+			sprintf(buff, "[%d] ->\t", Shift);		//	6.10.2013, C++98
+
+			std::string app = buff;
+			std::string saux;
+			if (s == "\n")
+				saux = s;
+			else if (*--s.end() == '\n')
+				//saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app), "\n" + app + "\n", "\n\n") + "\n";		orig
+				saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app)  + "\n", "\n" + app + "\n", "\n\n");		// TODO could be further improved, nnnn -> nnnna
+				//saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app), "\n" + app + "\n", "\n\n");
+			else
+				saux = HMMPI::Replace(HMMPI::Replace(s, "\n", "\n" + app), "\n" + app + "\n", "\n\n");
+
+			std::cout << ApplyCTT(app + saux);
+			report += app + saux;
+		}
+	}
 }
 //------------------------------------------------------------------------------------------
 // the main procedure that parses "InputLines" and executes all commands

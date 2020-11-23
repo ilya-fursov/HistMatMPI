@@ -307,6 +307,7 @@ public:
 	std::chrono::high_resolution_clock::time_point time1;		// records the construction time
 
 	Parser_1();
+	static int StrListN();			// number of lines for HMMPI::StringListing depending on 'verbosity'
 	void AddKW_item(KW_item *kwi);      // adds 'kwi' to 'KWList'
 	void AddCTT(ConsTextTweak *ctt);	// adds 'ctt' to 'CTTList'
 	void DeleteItems();					// deletes all KW_items from heap

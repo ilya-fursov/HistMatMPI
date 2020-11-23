@@ -2653,23 +2653,33 @@ KW_parameters::~KW_parameters()
 	delete par_map;
 }
 //------------------------------------------------------------------------------------------
-std::string KW_parameters::msg() const
+std::string KW_parameters::msg(int N) const	// message listing "val" values, 'N' (the number of lines) is used in HMMPI::StringListing
 {
-	char buff[HMMPI::BUFFSIZE], buffeng[HMMPI::BUFFSIZE];
+	char b1[HMMPI::BUFFSIZE], b2[HMMPI::BUFFSIZE], b3[HMMPI::BUFFSIZE];
 
-	sprintf(buff, "Загружены параметры:\n%-10.300s\t%-11s\t%-5s\n", "параметр", "значение", "A/N");
-	sprintf(buffeng, "Loaded parameters:\n%-10.300s\t%-11s\t%-5s\n", "parameter", "value", "A/N");
-	std::string res = HMMPI::MessageRE(buff, buffeng);
+	HMMPI::StringListing stlist_rus("\t"), stlist_eng("\t");
+	stlist_rus.AddLine(std::vector<std::string>{"параметр", "значение", "A/N"});
+	stlist_eng.AddLine(std::vector<std::string>{"parameter", "value", "A/N"});
 
 	for (size_t i = 0; i < val.size(); i++)
 	{
-		sprintf(buff, "%-10.300s\t%-11.6g\t%-5.3s\n", name[i].c_str(), val[i], act[i].c_str());
-		res += buff;
+		sprintf(b1, "%.300s", name[i].c_str());
+		sprintf(b2, "%.7g", val[i]);
+		sprintf(b3, "%.3s", act[i].c_str());
+
+		stlist_rus.AddLine(std::vector<std::string>{b1, b2, b3});
+		stlist_eng.AddLine(std::vector<std::string>{b1, b2, b3});
 	}
 
-	sprintf(buff, "Активных параметров: %zu/%zu\n", act_ind.size(), tot_ind.size());
-	sprintf(buffeng, "Active parameters: %zu/%zu\n", act_ind.size(), tot_ind.size());
-	res += HMMPI::MessageRE(buff, buffeng);
+	std::string res = HMMPI::MessageRE("Загружены параметры:\n", "Loaded parameters:\n");
+	int M = N+1;
+	if (N == -1)
+		M = N;
+	res += HMMPI::MessageRE(stlist_rus.Print(M, N), stlist_eng.Print(M, N));
+
+	sprintf(b1, "Активных параметров: %zu/%zu\n", act_ind.size(), tot_ind.size());
+	sprintf(b2, "Active parameters: %zu/%zu\n", act_ind.size(), tot_ind.size());
+	res += HMMPI::MessageRE(b1, b2);
 
 	return res;
 }

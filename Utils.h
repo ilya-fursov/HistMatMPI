@@ -129,6 +129,7 @@ double StoD(std::string s, bool &complete);		// complete = true if whole string 
 long StoL(std::string s);		// throws exception if whole string is not a number
 double StoD(std::string s);		// throws exception if whole string is not a number
 
+int StrLen(const std::string &str);				// string length, counting russian characters properly
 std::string ToUpper(const std::string &s);				// converts string to uppercase
 std::string Replace(const std::string &source, const std::string &find, const std::string &repl, int *count = NULL);	// in 'source', replaces all occurrences of 'find' with 'repl'; replacements count is ADDED to "count" if the latter is not NULL
 std::string ReplaceArr(std::string source, const std::vector<std::string> &find, const std::vector<std::string> &repl, int *count = NULL);	// in 'source', replaces all occurrences of 'find[i]' with 'repl[i]'
@@ -143,12 +144,15 @@ std::string getCWD(std::string fullname);			// get 'path' from 'path+file'
 std::string getFile(std::string fullname);			// get 'file' from 'path+file'
 //------------------------------------------------------------------------------------------
 // Class for accumulating the strings (lines) and then generating a formatted output for print.
-// Handles the sub-string (item) width for different rows, and omits the rows from the middle of necessary
+// Handles the sub-string (item) width for different rows, and omits the rows from the middle if necessary
 class StringListing
 {
 private:
+	const std::string dots;
+
 	inline void fill_max_length(size_t i, std::vector<size_t> &maxlen) const;	// helper function
 	std::string print(size_t i, const std::vector<size_t> &maxlen) const;		// helper function
+	std::string print_dots(const std::vector<size_t> &maxlen) const;			// helper function, prints "..."
 
 protected:
 	std::string delim;						// delimiter

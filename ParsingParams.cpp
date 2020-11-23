@@ -243,7 +243,7 @@ void KW_runSingle::Run()
 	templ->set_keep("FIRST");
 #endif
 
-	std::string msg = parameters->msg();
+	std::string msg = parameters->msg(K->StrListN());
 	std::vector<double> p = parameters->get_init_act();
 	if (!PM->CheckLimits_ACT(p))
 	{

@@ -143,6 +143,22 @@ double StoD(std::string s)
 	return res;
 }
 //------------------------------------------------------------------------------------------
+int StrLen(const std::string &str)				// string length, counting russian characters properly
+{
+	int res_eng = 0;
+	int res_rus = 0;
+	for (const char &a : str)
+		if (int(a) < 0)
+			res_rus++;
+		else
+			res_eng++;
+
+	if (res_rus % 2 != 0)
+		throw Exception("Odd number of chars in russian characters in StrLen()");
+
+	return res_eng + res_rus/2;
+}
+//------------------------------------------------------------------------------------------
 std::string ToUpper(const std::string &s)
 {
 	std::string res = s;
@@ -289,8 +305,11 @@ inline void StringListing::fill_max_length(size_t i, std::vector<size_t> &maxlen
 {
 	assert(i < data.size());
 	for (size_t j = 0; j < n; j++)
-		if (data[i][j].length() > maxlen[j])
-			maxlen[j] = data[i][j].length();
+	{
+		const size_t len = StrLen(data[i][j]);
+		if (len > maxlen[j])
+			maxlen[j] = len;
+	}
 }
 //------------------------------------------------------------------------------------------
 std::string StringListing::print(size_t i, const std::vector<size_t> &maxlen) const	// helper function
@@ -301,7 +320,11 @@ std::string StringListing::print(size_t i, const std::vector<size_t> &maxlen) co
 	char msg[BUFFSIZE];
 	for (size_t j = 0; j < n; j++)
 	{
-		sprintf(msg, "%-*.*s", (int)maxlen[j], BUFFSIZE-5, data[i][j].c_str());
+		int rus_count = (int)data[i][j].length() - StrLen(data[i][j]);
+		if (rus_count < 0)
+			throw Exception("rus_count < 0 in StringListing::print");
+
+		sprintf(msg, "%-*.*s", (int)maxlen[j] + rus_count, BUFFSIZE-5, data[i][j].c_str());
 		if (j > 0)
 			res += delim;
 		res += msg;
@@ -310,7 +333,22 @@ std::string StringListing::print(size_t i, const std::vector<size_t> &maxlen) co
 	return res;
 }
 //------------------------------------------------------------------------------------------
-StringListing::StringListing(std::string d) : delim(d), n(0)
+std::string StringListing::print_dots(const std::vector<size_t> &maxlen) const			// helper function, prints "..."
+{
+	std::string res;
+	char msg[BUFFSIZE];
+	for (size_t j = 0; j < n; j++)
+	{
+		sprintf(msg, "%-*.*s", (int)maxlen[j], BUFFSIZE-5, dots.c_str());
+		if (j > 0)
+			res += delim;
+		res += msg;
+	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+StringListing::StringListing(std::string d) : dots("..."), delim(d), n(0)
 {
 }
 //------------------------------------------------------------------------------------------
@@ -338,7 +376,7 @@ std::string StringListing::Print(int begin_max, int end_max) const
 	bool one_piece = (begin_max + end_max >= (int)data.size()) || (begin_max < 0) || (end_max < 0);
 
 	// find the max. length
-	std::vector<size_t> maxlen(n, 0);				// max. string length for each column
+	std::vector<size_t> maxlen(n, dots.length());				// max. string length for each column
 	if (one_piece)
 		for (size_t i = 0; i < data.size(); i++)
 			fill_max_length(i, maxlen);
@@ -359,7 +397,9 @@ std::string StringListing::Print(int begin_max, int end_max) const
 	{
 		for (size_t i = 0; i < (size_t)begin_max; i++)
 			res += print(i, maxlen) + "\n";
-		res += "...\n";
+
+		res += print_dots(maxlen) + "\n";
+
 		for (size_t i = data.size() - end_max; i < data.size(); i++)
 			res += print(i, maxlen) + "\n";
 	}

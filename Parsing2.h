@@ -883,7 +883,7 @@ public:
 	KW_parameters();
 	~KW_parameters();						// frees 'par_map'
 	HMMPI::TagPrintfMap *get_tag_map() const {return par_map;};
-	virtual std::string msg() const;		// message listing "val" values
+	virtual std::string msg(int N) const;			// message listing "val" values, 'N' (the number of lines) is used in HMMPI::StringListing
 	virtual void Write_params_log(const std::vector<double> &p, std::string fname) const;	// "p" - internal current values to be written instead of "val"
 	const ParamsInterface *GetParamsInterface() const;		// if const ParamsInterface is enough for some work (no matter from KW_limits or KW_parameters), use this function;
 															// it returns either KW_limits* or KW_parameters* or KW_parameters2*, depending on which one is defined (only one should be defined!);

@@ -2651,7 +2651,7 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 					if (RNK == 0 && !ignore_small_errors)
 					{
 						sw.open(log_file);
-						sw << parameters->msg() << "\n";
+						sw << parameters->msg(-1) << "\n";	// printing all lines to the file
 
 						// limits_msg is not reported, since problems with parameter bounds lead to an exception and immediate termination
 
