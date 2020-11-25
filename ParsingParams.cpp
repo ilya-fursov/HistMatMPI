@@ -649,34 +649,35 @@ void KW_runView_tNavSmry::Run()
 	IMPORTKWD(props, KW_view_tNavsmry_properties, "VIEW_TNAVSMRY_PROPERTIES");
 	Finish_pre();
 
-	std::string msg_dat, msg_vec;
+	std::string msg_dat_short, msg_vec_short;
+	std::string msg_dat_full, msg_vec_full;			// unused variables
 	std::string hdr1, hdr2;
 	std::vector<double> fac;
 
 	HMMPI::tNavSMRY smry(groups->sec_obj, Sdate->start);
 	smry.ReadFiles(config->model);
-	HMMPI::Mat M = smry.ExtractSummary(dates->dates, vect->vecs, msg_dat, msg_vec);
+	HMMPI::Mat M = smry.ExtractSummary(dates->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN());
 
-	if (msg_dat != "")
+	if (msg_dat_short != "")
 	{
-		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat + "\n");
+		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n");
 		K->TotalWarnings++;
 	}
-	if (msg_vec != "")
+	if (msg_vec_short != "")
 	{
-		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec + "\n");
+		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n");
 		K->TotalWarnings++;
 	}
 
-	props->make_headers(hdr1, hdr2, fac);
+	const int DateWidth = 21;							// 'date' column width
+	const int wid = config->width;						// other columns width
+	props->make_headers(hdr1, hdr2, fac, DateWidth, wid);
 
 	assert(fac.size() == M.JCount());
 	assert(dates->dates.size() == M.ICount());
 	M = M % fac;										// scaling by factors
 
 	// saving to file
-	const int DateWidth = 21;							// 'date' column width
-	const int wid = config->width;						// other columns width
 	FILE *f0 = fopen(config->outfile.c_str(), "w");
 	fprintf(f0, "%s\n", hdr1.c_str());
 	fprintf(f0, "%s\n", hdr2.c_str());

@@ -126,9 +126,9 @@ KW_view_tNavsmry_properties::KW_view_tNavsmry_properties()
 	FinalizeParams();
 }
 //------------------------------------------------------------------------------------------
-void KW_view_tNavsmry_properties::make_headers(std::string &hdr1, std::string &hdr2, std::vector<double> &factors)
+void KW_view_tNavsmry_properties::make_headers(std::string &hdr1, std::string &hdr2, std::vector<double> &factors, const int DateWidth, const int wid)
 {													// generates headers for SMRY output to ASCII, and fills a vector of scaling factors
-	Start_pre();
+	Start_pre();									// DateWidth - 'date' column width, wid - other columns width
 	IMPORTKWD(eclvecs, KW_eclvectors, "ECLVECTORS");
 	IMPORTKWD(config, KW_view_tNavsmry_config, "VIEW_TNAVSMRY_CONFIG");
 	Finish_pre();
@@ -137,13 +137,16 @@ void KW_view_tNavsmry_properties::make_headers(std::string &hdr1, std::string &h
 	factors = std::vector<double>(N);
 	hdr1 = hdr2 = "";
 
-	const int DateWidth = 21;						// 'date' column width
-	const int wid = config->width;					// other columns width
 	char buff1[HMMPI::BUFFSIZE], buff2[HMMPI::BUFFSIZE];
 
 	assert(wid < 400);
-	sprintf(buff1, "%-*.*s", DateWidth, DateWidth, config->title.c_str());
-	sprintf(buff2, "%-*.*s", DateWidth, DateWidth, std::string(HMMPI::MessageRE("дата/время", "date/time")).c_str());
+	const std::string str2 = HMMPI::MessageRE("дата/время", "date/time");
+	const int len1 = (int)config->title.length() - HMMPI::StrLen(config->title);
+	const int len2 = (int)str2.length() - HMMPI::StrLen(str2);
+	assert(len1 >= 0 && len2 >= 0);
+
+	sprintf(buff1, "%-*.*s", DateWidth+len1, DateWidth+len1, config->title.c_str());
+	sprintf(buff2, "%-*.*s", DateWidth+len2, DateWidth+len2, str2.c_str());
 
 	hdr1 += buff1;
 	hdr2 += buff2;
@@ -161,7 +164,9 @@ void KW_view_tNavsmry_properties::make_headers(std::string &hdr1, std::string &h
 			f = Conv[prop].first;
 		}
 
-		sprintf(buff2, "\t%-*.*s", wid, wid, title.c_str());
+		const int len3 = (int)title.length() - HMMPI::StrLen(title);
+		assert(len3 >= 0);
+		sprintf(buff2, "\t%-*.*s", wid+len3, wid+len3, title.c_str());
 		factors[i] = f;
 
 		hdr1 += buff1;
@@ -1351,10 +1356,10 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 	DECLKWD(simcmd, KW_simcmd, "SIMCMD");
 
 	int count = 0;		// for reporting
-	char buff[HMMPI::BUFFSIZE], buff_rus[HMMPI::BUFFSIZE], buff_small[HMMPI::BUFFSIZE];
-	sprintf(buff, "%-30.300s\t%-10s\t%-10s\n", "Replaced in", "params", "filenames");	// make message header
-	sprintf(buff_rus, "%-36.300s\t%-15s\t%-17s\n", "Замен в", "парам.", "имён ф-ов");
-	std::string res = HMMPI::MessageRE(buff_rus, buff);
+	char b1[HMMPI::BUFFSIZE], b2[HMMPI::BUFFSIZE], b3[HMMPI::BUFFSIZE];
+	HMMPI::StringListing stl_rus("\t"), stl_eng("\t");
+	stl_rus.AddLine(std::vector<std::string>{"Замен в", "парам.", "имён ф-ов"});		// make message header
+	stl_eng.AddLine(std::vector<std::string>{"Replaced in", "params", "filenames"});
 
 	std::set<std::string> tags_left = par.get_tag_names();			// "par" will only be modified below in SetModPath(), which only affects MOD and PATH, which are of no interest in get_tag_names()
 
@@ -1374,7 +1379,7 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 	// substitute filenames and params in SIMCMD
 	for (size_t i = 0; i < simcmd->cmd.size(); i++)
 	{
-		sprintf(buff_small, "SIMCMD-%zu", i+1);
+		sprintf(b3, "SIMCMD-%zu", i+1);
 		try
 		{
 			int countfn = 0;
@@ -1382,12 +1387,14 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 			simcmd->cmd_work[i] = HMMPI::ReplaceArr(std::move(simcmd->cmd_work[i]), orig_file, work_file_subst, &countfn);
 			simcmd->cmd_work[i] = HMMPI::stringTagPrintf(simcmd->cmd_work[i], par, count, tags_left);
 
-			sprintf(buff, "%-30.300s\t  %-8d\t    %-6d\n", buff_small, count, countfn);
-			res += buff;
+			sprintf(b1, "%d", count);
+			sprintf(b2, "%d", countfn);
+			stl_rus.AddLine(std::vector<std::string>{b3, b1, b2});
+			stl_eng.AddLine(std::vector<std::string>{b3, b1, b2});
 		}
 		catch (std::exception &e)
 		{
-			throw HMMPI::EObjFunc((std::string)e.what() + " (" + buff_small + ")");
+			throw HMMPI::EObjFunc((std::string)e.what() + " (" + b3 + ")");
 		}
 	}
 
@@ -1409,8 +1416,10 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 			}
 			sw.close();
 
-			sprintf(buff, "%-30.300s\t  %-8d\t    %-6d\n", orig_file[i].c_str(), count, countfn);
-			res += buff;
+			sprintf(b1, "%d", count);
+			sprintf(b2, "%d", countfn);
+			stl_rus.AddLine(std::vector<std::string>{orig_file[i].c_str(), b1, b2});
+			stl_eng.AddLine(std::vector<std::string>{orig_file[i].c_str(), b1, b2});
 		}
 		catch (std::exception &e)
 		{
@@ -1434,7 +1443,7 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 										  "WARNING: some parameters were not used: {0:%s}\n", msg));
 	}
 
-	return res;
+	return HMMPI::MessageRE(stl_rus.Print(-1, -1), stl_eng.Print(-1, -1));
 }
 //------------------------------------------------------------------------------------------
 void KW_templates::ClearFiles()						// _NOTE_ for the case "TEMPLATES_KEEP_NO_ASCII" the files "work_file_subst" are same on all ranks,

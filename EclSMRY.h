@@ -129,10 +129,15 @@ public:
 	virtual std::string vecs_file() const = 0;			// name of file with vecs
 	virtual std::string data_file() const = 0;			// name of file with data
 
-	Mat ExtractSummary(const std::vector<Date> &dates1, std::vector<pair> vecs1, std::string &msg_dat, std::string &msg_vec, std::string suff = "") const;	// extracts summary, as defined by [dates1 x vecs1],
+	Mat ExtractSummary(const std::vector<Date> &dates1, std::vector<pair> vecs1,
+					   std::string &msg_dat_short, std::string &msg_vec_short,
+					   std::string &msg_dat_full, std::string &msg_vec_full,
+					   int N, std::string suff = "") const;
+										// extracts summary, as defined by [dates1 x vecs1],
 										// fills summary with "0" where dates1[*] or vecs1[*] are not found in this->dates, this->vecs
 										// before searching vectors, attaches "suff" (e.g. "H", "S") to vecs1[*].second, making e.g. WBHP+H, WWCT+S
-										// "msg_dat", "msg_vec" return info about not-found dates and vectors
+										// "msg_dat_short", "msg_vec_short" and their full versions return info about not-found dates and vectors
+										// 'N' is the StringListing parameter used for the short message versions.
 };
 //--------------------------------------------------------------------------------------------------
 // class for reading binary *.SMSPEC, *.UNSMRY

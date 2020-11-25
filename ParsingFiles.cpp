@@ -1488,7 +1488,7 @@ HMMPI::Vector2<double> KW_funsmry::ReadData(std::string mod_root, int i0, int i1
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
-void KW_textsmry::ReadInd(std::string *K_msg)
+void KW_textsmry::ReadInd(std::string *K_msg)		// reads from "Hdr", fills "ind", "ind_sigma", updates "not_found"
 {
 	Start_pre();
 	IMPORTKWD(vect, KW_eclvectors, "ECLVECTORS");
@@ -1500,8 +1500,8 @@ void KW_textsmry::ReadInd(std::string *K_msg)
 	size_t len = Hdr.JCount();			// total columns in text summary
 
 	std::string auxmsg = HMMPI::MessageRE("Найдены вектора (TEXT):\n", "Found vectors (TEXT):\n");
-	std:: string notfound_msg = "";
 	not_found = 0;
+	HMMPI::StringListing stl_rus("\t"), stl_eng("\t"), stl_missing("\t");
 
 	for (size_t i = 0; i < Vlen; i++)	// loop through all ECLVECTORS
 	{
@@ -1530,20 +1530,22 @@ void KW_textsmry::ReadInd(std::string *K_msg)
 			if (ind_sigma[i] == -1)
 				vectsigma = HMMPI::stringFormatArr("{0:%g}", std::vector<double>{vect->sigma[i]});
 
-			auxmsg += Hdr(0, ind[i]) + "\t" + Hdr(1, ind[i]) +
-					HMMPI::stringFormatArr(HMMPI::MessageRE("\tиндекс = {0:%s}, сигма = {1:%s}\n",
-											  	  	  	  	"\tindex = {0:%s}, sigma = {1:%s}\n"), std::vector<std::string>{indi, vectsigma});
+			stl_rus.AddLine(std::vector<std::string>{Hdr(0, ind[i]), Hdr(1, ind[i]), (std::string)"индекс = " + indi, (std::string)"сигма = " + vectsigma});
+			stl_eng.AddLine(std::vector<std::string>{Hdr(0, ind[i]), Hdr(1, ind[i]), (std::string)"index = " + indi, (std::string)"sigma = " + vectsigma});
 		}
 		else
 		{
-			notfound_msg += "* " + vect->WGname[i] + "\t" + vect->vect[i] + "H\n";
+			stl_missing.AddLine(std::vector<std::string>{(std::string)"* " + vect->WGname[i], vect->vect[i] + "H"});
 			not_found++;
 		}
 	}
+	const int N = K->StrListN();
+	auxmsg += HMMPI::MessageRE(stl_rus.Print(N, N), stl_eng.Print(N, N));
 
 	if (not_found > 0 && not_found < (int)Vlen)
 	{
-		auxmsg += HMMPI::stringFormatArr("ПРЕДУПРЕЖДЕНИЕ: В TEXTSMRY не найден(о) {0:%d} вектор(ов):\n", "WARNING: In TEXTSMRY {0:%d} vector(s) were not found:\n", not_found) + notfound_msg;
+		auxmsg += HMMPI::stringFormatArr("ПРЕДУПРЕЖДЕНИЕ: В TEXTSMRY не найден(о) {0:%d} вектор(ов):\n",
+										 "WARNING: In TEXTSMRY {0:%d} vector(s) were not found:\n", not_found) + stl_missing.Print(N, N);
 		warnings++;
 	}
 
@@ -1552,15 +1554,6 @@ void KW_textsmry::ReadInd(std::string *K_msg)
 
 	if (K_msg != 0)
 		*K_msg += auxmsg;
-}
-//------------------------------------------------------------------------------------------
-KW_textsmry::KW_textsmry()
-{
-	name = "TEXTSMRY";
-	not_found = 0;
-	found_ts = 0;
-	erows = 1;
-	warnings = 0;
 }
 //------------------------------------------------------------------------------------------
 void KW_textsmry::DataIO(int i)
@@ -1578,9 +1571,35 @@ void KW_textsmry::DataIO(int i)
 
 	if (found_ts < (int)data.ICount())
 	{
-		K->AppText(HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: Не все временные шаги из DATES были найдены в TEXTSMRY\n", "WARNING: Some time steps from DATES were not found in TEXTSMRY\n"));
+		K->AppText(HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: Некоторые временные шаги из DATES не были найдены в TEXTSMRY:\n", "WARNING: Some time steps from DATES were not found in TEXTSMRY:\n"));
+		K->AppText(missing_dates(K->StrListN()));
 		K->TotalWarnings++;
 	}
+}
+//------------------------------------------------------------------------------------------
+std::string KW_textsmry::missing_dates(int N)	// list of missing dates, based on 'found_ts_flag'; N - number of lines for StringListing
+{
+	Start_pre();
+	IMPORTKWD(datesW, KW_dates, "DATES");
+	Finish_pre();
+
+	HMMPI::StringListing stlist("\t");
+	assert(found_ts_flag.size() == datesW->dates.size());
+
+	for (size_t i = 0; i < found_ts_flag.size(); i++)
+		if (!found_ts_flag[i])
+			stlist.AddLine(std::vector<std::string>{datesW->dates[i].ToString()});
+
+	return stlist.Print(N, N);
+}
+//------------------------------------------------------------------------------------------
+KW_textsmry::KW_textsmry()
+{
+	name = "TEXTSMRY";
+	not_found = 0;
+	found_ts = 0;
+	erows = 1;
+	warnings = 0;
 }
 //------------------------------------------------------------------------------------------
 HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
@@ -1599,6 +1618,7 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 		CheckFileOpen(fname);
 
 		const size_t dcount = datesW->D.size();
+		found_ts_flag = std::vector<bool>(dcount, false);
 		size_t j = 0;
 
 		sr.open(fname);
@@ -1676,8 +1696,11 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 					throw HMMPI::Exception((std::string)HMMPI::MessageRE("Даты идут не в возрастающем порядке: ", "Dates are not in increasing order: ") +
 							date0.ToString() + ", " + date1.ToString());
 
-				while (date1 > datesW->dates[j])		// "j" is the time step currently being filled
-					j++;								// scroll the DATES
+				while (j < dcount && date1 > datesW->dates[j])		// "j" is the time step currently being filled
+					j++;											// scroll the DATES
+
+				if (j >= dcount)
+					continue;
 
 				if (date1 == datesW->dates[j])			// date matches: fill the time step "j"
 				{
@@ -1691,6 +1714,7 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 						else
 							res(j, k+pcount) = vect->sigma[k];
 					}
+					found_ts_flag[j] = true;
 					found_ts++;
 					j++;
 				}

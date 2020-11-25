@@ -1307,7 +1307,7 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 #ifdef ECLFORMATTED
 					spec->ind = spec->ReadData(mod_name + ".FSMSPEC", spec->Y, spec->M, spec->D, &msg_vect);
 #else
-					std::string msg_dat, msg_vec;
+					std::string msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full;
 					HMMPI::EclSMRY SMRY_mod;			// load whole summary
 					SMRY_mod.ReadFiles(mod_name);
 #endif
@@ -1374,17 +1374,17 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 						throw HMMPI::Exception(HMMPI::stringFormatArr("Файл UNSMRY был изменен до изменения файла DATA ({0:%d})",
 																	  "File UNSMRY was changed before DATA file ({0:%d})", f_ind));		// "small error" - i.e. not EObjFunc
 
-					HMMPI::Vector2<double> SMRY = SMRY_mod.ExtractSummary(datesW->dates, vect->vecs, msg_dat, msg_vec);
-					if (msg_dat != "")
+					HMMPI::Vector2<double> SMRY = SMRY_mod.ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN());
+					if (msg_dat_full != "")
 					{
-						msg_vect += msg_dat + "\n";
-						K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat + "\n");
+						msg_vect += msg_dat_full + "\n";
+						K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n");
 						K->TotalWarnings++;
 					}
-					if (msg_vec != "")
+					if (msg_vec_full != "")
 					{
-						msg_vect += msg_vec + "\n";
-						K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec + "\n");
+						msg_vect += msg_vec_full + "\n";
+						K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n");
 						K->TotalWarnings++;
 					}
 
@@ -1409,11 +1409,11 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 						spec->indH = spec->ReadDataH(mod_name + ".FSMSPEC", &msg_vect);
 						smry_hist = smry->ReadData(mod_name + ".FUNSMRY", true);	// history!
 #else
-						smry_hist = SMRY_mod.ExtractSummary(datesW->dates, vect->vecs, msg_dat, msg_vec, "H");
-						if (msg_vec != "")
+						smry_hist = SMRY_mod.ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN(), "H");
+						if (msg_vec_full != "")
 						{
-							msg_vect += msg_vec + "\n";
-							K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec + "\n");
+							msg_vect += msg_vec_full + "\n";
+							K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n");
 							K->TotalWarnings++;
 						}
 #endif
@@ -2235,8 +2235,11 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 	std::string headerH1, headerH2, headerH3;																	// D2 [M2] H2 S2
 	std::string headerS1, headerS2, headerS3;																	// D3 [M3] H3 S3
 
+	const std::string date_hdr = HMMPI::MessageRE("дата/время", "date/time");
+	const int date_hdr_add = (int)date_hdr.length() - HMMPI::StrLen(date_hdr);
+	assert(date_hdr_add >= 0);
 	sprintf(buffM, "%-*s", DateWidth, "");
-	sprintf(buffH, "%-*s", DateWidth, std::string(HMMPI::MessageRE("дата/время", "date/time")).c_str());
+	sprintf(buffH, "%-*s", DateWidth + date_hdr_add, date_hdr.c_str());
 	const std::string date_gap = buffM;
 	headerD1 += buffM;
 	headerD2 += buffM;
@@ -2567,27 +2570,27 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 
 					// 2. Get modelled data
 					std::string model_name = (*tmap)["PATH"]->ToString() + "/" + (*tmap)["MOD"]->ToString();
-					std::string msg_vect = "", msg_vect_stdout = "";	// ultimate "vectors" messages
-					std::string msg_dat, msg_vec;						// work messages
+					std::string msg_vect_file = "", msg_vect_stdout = "";		// ultimate "vectors" messages
+					std::string msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full;		// work messages; the full versions are for file output
 
 					smry->ReadFiles(model_name);						// load whole summary
-					HMMPI::Vector2<double> SMRY = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat, msg_vec);
+					HMMPI::Vector2<double> SMRY = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN());
 
 					std::vector<std::string> smry_files{smry->data_file(), smry->vecs_file(), smry->dates_file()};		// check files modification time
 					for (const auto &f : smry_files)
 						if (HMMPI::FileModCompare(f, templ->DataFileSubst()) < 0)
-							throw HMMPI::Exception(HMMPI::stringFormatArr("[{0:%d}] Файл " + f + " был изменен до изменения файла DATA",
-																		  "[{0:%d}] File " + f + " was changed before DATA file", RNK));	// "small error" - i.e. not EObjFunc
-					if (msg_dat != "")									// the warnings below are issued after potential error with files modification time
+							throw HMMPI::Exception(HMMPI::stringFormatArr("[{0:%d}] Файл " + f + " был изменен до изменения DATA-файла",
+																		  "[{0:%d}] File " + f + " was changed before DATA-file", RNK));	// "small error" - i.e. not EObjFunc
+					if (msg_dat_full != "")									// the warnings below are issued after potential error with files modification time
 					{
-						msg_vect += msg_dat + "\n";
-						msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat + "\n";
+						msg_vect_file += msg_dat_full + "\n";
+						msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n";
 						warning_count++;
 					}
-					if (msg_vec != "")
+					if (msg_vec_full != "")
 					{
-						msg_vect += msg_vec + "\n";
-						msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec + "\n";
+						msg_vect_file += msg_vec_full + "\n";
+						msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n";
 						warning_count++;
 					}
 
@@ -2601,11 +2604,11 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 					}
 					else 												// option with history from model's UNSMRY
 					{
-						smry_hist = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat, msg_vec, "H");
-						if (msg_vec != "")
+						smry_hist = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN(), "H");
+						if (msg_vec_full != "")
 						{
-							msg_vect += msg_vec + "\n";
-							msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec + "\n";
+							msg_vect_file += msg_vec_full + "\n";
+							msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n";
 							warning_count++;
 						}
 					}
@@ -2656,7 +2659,7 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 						// limits_msg is not reported, since problems with parameter bounds lead to an exception and immediate termination
 
 						sw << templ_msg << "\n";
-						sw << msg_vect;
+						sw << msg_vect_file;
 						write_smry(sw, SMRY, smry_hist, of_vec, text_sigma);
 
 						double prior = 0;

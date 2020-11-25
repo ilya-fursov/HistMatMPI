@@ -372,42 +372,45 @@ std::string SimSMRY::VecsToStr() const
 	return res;
 }
 //--------------------------------------------------------------------------------------------------
-Mat SimSMRY::ExtractSummary(const std::vector<Date> &dates1, std::vector<pair> vecs1, std::string &msg_dat, std::string &msg_vec, std::string suff) const
-{
-	// attach "suff"
-	if (suff != "")
-		for (auto &v : vecs1)
-			v.second += suff;
+Mat SimSMRY::ExtractSummary(const std::vector<Date> &dates1, std::vector<pair> vecs1, std::string &msg_dat_short, std::string &msg_vec_short,
+						   std::string &msg_dat_full, std::string &msg_vec_full, int N, std::string suff) const
+{																// extracts summary, as defined by [dates1 x vecs1],
+	// attach "suff"											// fills summary with "0" where dates1[*] or vecs1[*] are not found in this->dates, this->vecs
+	if (suff != "")												// before searching vectors, attaches "suff" (e.g. "H", "S") to vecs1[*].second, making e.g. WBHP+H, WWCT+S
+		for (auto &v : vecs1)									// "msg_dat_short", "msg_vec_short" and their full versions return info about not-found dates and vectors
+			v.second += suff;									// 'N' is the StringListing parameter used for the short message versions.
 
 	std::vector<int> inddates = GetSubvecInd(dates, dates1);
 	std::vector<int> indvecs = GetSubvecInd(vecs, vecs1);
-	char buff[HMMPI::BUFFSIZE];
 
 	// generate "msgs"
-	msg_dat = msg_vec = "";
+	StringListing stldates("\t"), stlvecs("\t");
 	int count_d = 0, count_v = 0;
 	for (size_t i = 0; i < inddates.size(); i++)
 		if (inddates[i] == -1)
 		{
-			msg_dat += dates1[i].ToString() + "\n";
+			stldates.AddLine(std::vector<std::string>{dates1[i].ToString()});
 			count_d++;
 		}
 
 	if (count_d > 0)
-		msg_dat = stringFormatArr("В " + dates_file() + " не найдены даты ({0:%d}):\n", "In " + dates_file() + " the following dates ({0:%d}) were not found:\n", count_d) + msg_dat;
-
+	{
+		msg_dat_short = stringFormatArr("В " + dates_file() + " не найдены даты ({0:%d}):\n", "In " + dates_file() + " the following dates ({0:%d}) were not found:\n", count_d) + stldates.Print(N, N);
+		msg_dat_full = stringFormatArr("В " + dates_file() + " не найдены даты ({0:%d}):\n", "In " + dates_file() + " the following dates ({0:%d}) were not found:\n", count_d) + stldates.Print(-1, -1);
+	}
 
 	for (size_t i = 0; i < indvecs.size(); i++)
 		if (indvecs[i] == -1)
 		{
-			sprintf(buff, "%-8.100s %-8.100s\n", vecs1[i].first.c_str(), vecs1[i].second.c_str());
-			msg_vec += buff;
+			stlvecs.AddLine(std::vector<std::string>{vecs1[i].first, vecs1[i].second});
 			count_v++;
 		}
 
 	if (count_v > 0)
-		msg_vec = stringFormatArr("В " + vecs_file() + " не найдены вектора ({0:%d}):\n", "In " + vecs_file() + " the following vectors ({0:%d}) were not found:\n", count_v) + msg_vec;
-
+	{
+		msg_vec_short = stringFormatArr("В " + vecs_file() + " не найдены вектора ({0:%d}):\n", "In " + vecs_file() + " the following vectors ({0:%d}) were not found:\n", count_v) + stlvecs.Print(N, N);
+		msg_vec_full = stringFormatArr("В " + vecs_file() + " не найдены вектора ({0:%d}):\n", "In " + vecs_file() + " the following vectors ({0:%d}) were not found:\n", count_v) + stlvecs.Print(-1, -1);
+	}
 
 	return Mat(Reorder(Data, dates.size(), vecs.size(), inddates, indvecs, true), dates1.size(), vecs1.size());
 }

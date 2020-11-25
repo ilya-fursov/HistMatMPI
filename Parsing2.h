@@ -299,7 +299,9 @@ public:
 
 	std::map<std::string, Prop> Conv;	// filled in UpdateParams()
 	KW_view_tNavsmry_properties();
-	void make_headers(std::string &hdr1, std::string &hdr2, std::vector<double> &factors);	// generates headers for SMRY output to ASCII, and fills a vector of scaling factors
+	void make_headers(std::string &hdr1, std::string &hdr2, std::vector<double> &factors, const int DateWidth, const int wid);
+										// generates headers for SMRY output to ASCII, and fills a vector of scaling factors
+										// DateWidth - 'date' column width, wid - other columns width
 };
 //------------------------------------------------------------------------------------------
 class KW_multiple_seq : public KW_params	// defines the sequence for RUNMULTIPLE
@@ -1412,9 +1414,11 @@ protected:
 	std::string msg;
 	int not_found;						// counts not found vectors
 	int found_ts;						// counts found time steps
+	std::vector<bool> found_ts_flag;	// marks the found time steps; filled in ReadData(); size = DATES->D.size
 
 	void ReadInd(std::string *K_msg);	// reads from "Hdr", fills "ind", "ind_sigma", updates "not_found"
 	virtual void DataIO(int i);
+	std::string missing_dates(int N);	// list of missing dates, based on 'found_ts_flag'; N - number of lines for StringListing
 public:
 	HMMPI::RandNormal randn;
 	std::vector<int> ind_sigma;			// indices of S-columns
