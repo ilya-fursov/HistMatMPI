@@ -1488,6 +1488,19 @@ HMMPI::Vector2<double> KW_funsmry::ReadData(std::string mod_root, int i0, int i1
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+void KW_textsmry::CheckHdrRepeats() const		// checks for repeating columns in the header; throws an error if needed
+{
+	std::vector<std::pair<std::string, std::string>> work(Hdr.JCount());
+	for (size_t i = 0; i < work.size(); i++)
+		work[i] = std::make_pair(Hdr(0, i), Hdr(1, i));
+
+	std::pair<std::string, std::string> dup;
+	if (HMMPI::FindDuplicate(work, dup))
+		throw HMMPI::Exception((std::string)HMMPI::MessageRE(
+				"В TEXTSMRY найдены столбцы с одинаковым заголовком: ",
+				"In TEXTSMRY there are columns with identical header: ") + dup.first + " " + dup.second);
+}
+//------------------------------------------------------------------------------------------
 void KW_textsmry::ReadInd(std::string *K_msg)		// reads from "Hdr", fills "ind", "ind_sigma", updates "not_found"
 {
 	Start_pre();
@@ -1656,6 +1669,7 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 			throw HMMPI::Exception("Неправильный заголовок", "Incorrect header");
 
 		msg = "";
+		CheckHdrRepeats();
 		ReadInd(&msg);
 		const size_t pcount = ind.size();
 		assert(pcount == vect->WGname.size());

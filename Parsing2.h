@@ -1416,6 +1416,7 @@ protected:
 	int found_ts;						// counts found time steps
 	std::vector<bool> found_ts_flag;	// marks the found time steps; filled in ReadData(); size = DATES->D.size
 
+	void CheckHdrRepeats() const;		// checks for repeating columns in the header; throws an error if needed
 	void ReadInd(std::string *K_msg);	// reads from "Hdr", fills "ind", "ind_sigma", updates "not_found"
 	virtual void DataIO(int i);
 	std::string missing_dates(int N);	// list of missing dates, based on 'found_ts_flag'; N - number of lines for StringListing
