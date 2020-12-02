@@ -317,14 +317,16 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 		throw HMMPI::Exception("Wrong seq->type in KW_runMultiple::Run");
 
 	// save the parameters sequence: header
-	FILE *fd = fopen(seq->logfile.c_str(), "w");
-	if (fd != NULL)
-	{
-		fputs(HMMPI::ToString(parameters->name, "%-17.17s").c_str(), fd);
-		fclose(fd);
-	}
-	else
-		throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+		FILE *fd = fopen(seq->logfile.c_str(), "w");
+		if (fd != NULL)
+		{
+			fputs(HMMPI::ToString(parameters->name, "%-17.17s").c_str(), fd);
+			fclose(fd);
+		}
+		else
+			throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
+	RANK0_SYNCERR_END(MPI_COMM_WORLD);
 
 	time_t t0, t1;
 	time(&t0);
@@ -342,14 +344,16 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 		K->AppText(msg2);
 
 		// save the parameters sequence
-		FILE *fd = fopen(seq->logfile.c_str(), "a");
-		if (fd != NULL)
-		{
-			fputs(HMMPI::ToString(parameters->InternalToExternal(params[i]), "%-17.12g").c_str(), fd);
-			fclose(fd);
-		}
-		else
-			throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
+		RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+			FILE *fd = fopen(seq->logfile.c_str(), "a");
+			if (fd != NULL)
+			{
+				fputs(HMMPI::ToString(parameters->InternalToExternal(params[i]), "%-17.12g").c_str(), fd);
+				fclose(fd);
+			}
+			else
+				throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
+		RANK0_SYNCERR_END(MPI_COMM_WORLD);
 
 		time(&t1);
 		double dT = difftime(t1, t0)/double(3600);
@@ -398,15 +402,15 @@ void KW_runOptProxy::Run()
 
 	const std::string params_log_file = this->CWD + "/ParamsLog.txt";	// resulting solution vector is saved here
 	const std::string progress_file = this->CWD + "/ObjFunc_progress.txt";
-	if (K->MPI_rank == 0)
-	{
+
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
 		FILE *f = fopen(progress_file.c_str(), "w");
 		if (f != 0)
 		{
 			fprintf(f, "%-5.5s\t%-8.8s\t%-10.10s\t%-11.11s\t%-17.17s\t%-10.10s\t%-2.2s\t%-17.17s\t%-12.12s\t%-12.12s\n", "#MOD", "HOURS", "DX", "PROXY", "SIM", "Tk", "*", "SIMBEST", "DIST_MIN", "DIST_AVG");
 			fclose(f);
 		}
-	}
+	RANK0_SYNCERR_END(MPI_COMM_WORLD);
 
 	std::vector<double> p = parameters->init;		// full-dim, internal params
 	std::vector<double> simbest = p;				// p - current params, simbest - params for simulator-best point
@@ -568,8 +572,7 @@ void KW_runOptProxy::Run()
 		if (difftime(t1, t0)/double(3600) > config->MaxHours || iter >= config->MaxIter)
 			finished = 1;
 
-		if (K->MPI_rank == 0)
-		{
+		RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
 			FILE *f = fopen(progress_file.c_str(), "a");
 			if (f != 0)
 			{
@@ -581,7 +584,7 @@ void KW_runOptProxy::Run()
 
 			if (write_params_log)
 				PMecl->WriteLimits(simbest, params_log_file);
-		}
+		RANK0_SYNCERR_END(MPI_COMM_WORLD);
 
 		MPI_Bcast(&finished, 1, MPI_INT, 0, MPI_COMM_WORLD);
 		delete Opt;
