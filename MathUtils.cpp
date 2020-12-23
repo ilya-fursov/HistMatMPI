@@ -1163,7 +1163,8 @@ Mat Mat::operator*(const Mat &m) const		// *this * m, using Manual | BLAS depend
 		const int lda = jcount;
 		const int ldb = sz_J;
 		const int ldc = sz_J;
-		cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, icount, sz_J, jcount, 1.0, p, lda, pm, ldb, 0.0, pres, ldc);
+		if (sz_I > 0 && sz_J > 0 && sz > 0)
+			cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, icount, sz_J, jcount, 1.0, p, lda, pm, ldb, 0.0, pres, ldc);
 	}
 	else
 		throw Exception("Bad op_switch in Mat::operator*(Mat)");
@@ -1183,11 +1184,12 @@ std::vector<double> Mat::operator*(const std::vector<double> &v) const		// *this
 	}
 	else if (op_switch == 2)
 	{
-		std::vector<double> res(icount);
+		std::vector<double> res(icount, 0.0);
 		const int lda = jcount;
 		const double alpha = 1;
 		const double beta = 0;
-		cblas_dgemv(CblasRowMajor, CblasNoTrans, icount, jcount, alpha, data.data(), lda, v.data(), 1, beta, res.data(), 1);
+		if (icount > 0 && jcount > 0)
+			cblas_dgemv(CblasRowMajor, CblasNoTrans, icount, jcount, alpha, data.data(), lda, v.data(), 1, beta, res.data(), 1);
 
 		return res;
 	}
