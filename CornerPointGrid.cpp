@@ -645,10 +645,10 @@ bool CornGrid::find_cell_in_window(double x, double y, int i0, int i1, int j0, i
 	return false;
 }
 //------------------------------------------------------------------------------------------
-bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt) const	// [RANK-0] for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
-{								// return "true" if (x,y,z) is in the same semispace relative to the plane span{v0,v1,v2} as "vt"
-	assert(grid_loaded);
-	assert(cell_coord_filled);
+bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt, double shift) const	// [RANK-0]
+{										// for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
+	assert(grid_loaded);				// return "true" if (x,y,z) is non-strictly in the same semispace relative to the plane span{v0,v1,v2} as "vt"
+	assert(cell_coord_filled);			// if v0, v1, v2, vt are all in one plane, vt.z += shift is used for testing
 	assert(i >= 0 && (size_t)i < Nx);
 	assert(j >= 0 && (size_t)j < Ny);
 	assert(k >= 0 && (size_t)k < Nz);
@@ -658,6 +658,7 @@ bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int 
 	assert(vt >= 0 && vt < 8);
 
 	size_t ind = Nx*Ny*k + Nx*j + i;
+	// points in R^3
 	Mat X0(std::vector<double>{cell_coord[24*ind + 3*v0], cell_coord[24*ind + 3*v0 + 1], cell_coord[24*ind + 3*v0 + 2]});
 	Mat X1(std::vector<double>{cell_coord[24*ind + 3*v1], cell_coord[24*ind + 3*v1 + 1], cell_coord[24*ind + 3*v1 + 2]});
 	Mat X2(std::vector<double>{cell_coord[24*ind + 3*v2], cell_coord[24*ind + 3*v2 + 1], cell_coord[24*ind + 3*v2 + 2]});
@@ -670,8 +671,21 @@ bool CornGrid::point_in_same_semispace(double x, double y, double z, int i, int 
 	Mat UA = A - X0;
 	Mat prod = VecProd(U1, U2);
 
+	// check_t*check_A < 0 -- strictly different semispace
+	// check_t*check_A > 0 -- strictly same semispace
+	// check_t == 0		   -- degenerate case: v0, v1, v2, vt are all in one plane, perturbation to be made
+	// check_A == 0		   -- non-strictly same semispace (same plane)
+
 	double check_t = InnerProd(prod, Ut);
 	double check_A = InnerProd(prod, UA);
+
+	if (check_t == 0)			// degenerate case: v0, v1, v2, vt are all in one plane
+	{
+		Xt(2, 0) += shift;
+		Ut = Xt - X0;
+		check_t = InnerProd(prod, Ut);
+		assert(check_t != 0);
+	}
 
 	psspace_call_count++;
 	if (check_t*check_A < 0)
@@ -684,14 +698,14 @@ bool CornGrid::point_below_lower_plane(const pointT &X0, int i, int j, int k, co
 {
 	double x, y, z;
 	std::tie(x, y, z) = X0;
-	return !grid->point_in_same_semispace(x, y, z, i, j, k, 4, 5, 7, 0);
+	return !grid->point_in_same_semispace(x, y, z, i, j, k, 4, 5, 7, 0, - grid->delta_Z);
 }
 //------------------------------------------------------------------------------------------
 bool CornGrid::point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid)	// [RANK-0] "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
 {
 	double x, y, z;
 	std::tie(x, y, z) = X0;
-	return grid->point_in_same_semispace(x, y, z, i, j, k, 0, 1, 3, 4);
+	return grid->point_in_same_semispace(x, y, z, i, j, k, 0, 1, 3, 4, + grid->delta_Z);
 }
 //------------------------------------------------------------------------------------------
 int CornGrid::find_k_lower_bound(int i, int j, double x, double y, double z) const		// [RANK-0] for column (i,j) find the smallest "k" such that
@@ -769,7 +783,7 @@ double CornGrid::calc_scaled_dist(int i1, int j1, int k1, int i2, int j2, int k2
 //}
 //------------------------------------------------------------------------------------------
 CornGrid::CornGrid(MPI_Comm c) : comm(c), grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), Nz_local(0), pbp_call_count(0), psspace_call_count(0),
-					   min_cell_height(1e-3), actnum_name("ACTNUM"), actnum_min(0), actnum_count(0), cell_coord_filled(false),
+					   delta_Z(10.0), min_cell_height(1e-3), actnum_name("ACTNUM"), actnum_min(0), actnum_count(0), cell_coord_filled(false),
 					   state_found(false), dx0(0), dy0(0), theta0(0)
 {
 	MPI_Comm_rank(c, &rank);

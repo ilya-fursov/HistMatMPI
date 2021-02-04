@@ -1654,7 +1654,11 @@ void KW_runKriging::Run()
 	std::vector<int> counts, displs;						// two arrays for distributing NG grids
 	HMMPI::MPI_count_displ(MPI_COMM_WORLD, NG, counts, displs);
 	if (actnum_count*NG >= (size_t)INT_MAX)
-		throw HMMPI::Exception("Array size exceeds INT_MAX in KW_runKriging::Run");
+	{
+		char buff[HMMPI::BUFFSIZE];
+		sprintf(buff, "Array size (%zu) exceeds INT_MAX (%zu) in KW_runKriging::Run", actnum_count*NG, (size_t)INT_MAX);
+		throw HMMPI::Exception(buff);
+	}
 
 	for (auto &v : counts)
 		v *= actnum_count;

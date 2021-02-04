@@ -65,6 +65,7 @@ private:
 	size_t Nz_local;		// [DISTR] Nz on a particular rank, after distribution
 	mutable size_t pbp_call_count;		// counts point_between_pillars() calls since the last grid loading
 	mutable size_t psspace_call_count;	// counts point_in_same_semispace() calls since the last grid loading
+	const double delta_Z;	// perturbation for Z in point_in_same_semispace()
 
 	std::vector<double> coord;		// read from COORD
 	std::vector<double> zcorn;		// read from ZCORN [RANK-0] -- although, this global array is not used anywhere
@@ -119,9 +120,10 @@ protected:
 	bool find_cell_in_window(double x, double y, int i0, int i1, int j0, int j1, double t, int &ii, int &jj);	// iteratively searches the cell index window [i0, i1)*[j0, j1)
 									// for the first encounter of cell [ii, jj] containing the point (x, y); uses point_between_pillars() test; returns "true" on success
 
-	bool point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt) const;	// [RANK-0] for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
-									// return "true" if (x,y,z) is in the same semispace relative to the plane span{v0,v1,v2} as "vt"
-
+	bool point_in_same_semispace(double x, double y, double z, int i, int j, int k, int v0, int v1, int v2, int vt, double shift) const;	// [RANK-0]
+									// for cell (i,j,k) consider the voxel vertices v0, v1, v2, vt = [0, 8)
+									// return "true" if (x,y,z) is non-strictly in the same semispace relative to the plane span{v0,v1,v2} as "vt"
+									// if v0, v1, v2, vt are all in one plane, vt.z += shift is used for testing
 	static bool point_below_lower_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// [RANK-0] "true" if X0=(x,y,z) is strictly below the lower plane of cell (i,j,k)
 	static bool point_below_upper_plane(const pointT &X0, int i, int j, int k, const CornGrid *grid);	// [RANK-0] "true" if X0=(x,y,z) is non-strictly below the upper plane of cell (i,j,k)
 	int find_k_lower_bound(int i, int j, double x, double y, double z) const;		// [RANK-0] for column (i,j) find the smallest "k" such that
