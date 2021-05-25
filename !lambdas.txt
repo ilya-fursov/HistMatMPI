@@ -1,3 +1,4 @@
+	// ---
 	// * USER * define a list of lambda-functions (double->double) which are to be integrated
 	std::vector<std::function<double(double)>> Funcs;
 	Funcs.push_back([](double x) -> double {return 1;});		// NTG	#0
