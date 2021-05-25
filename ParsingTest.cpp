@@ -512,7 +512,7 @@ void KW_rundebug::Run()
 
 	K->AppText(stl.Print(14, 17));
 
-	std::cout << "---------\n";
+	std::cout  <<  "---------\n";
 	std::string s12 = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ_Hello_world";
 	std::cout << s12 << "\n";
 	for (size_t i = 0; i < s12.length(); i++)
