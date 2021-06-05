@@ -331,7 +331,8 @@ public:
 
 	KW_simcmd();
 	virtual void UpdateParams() noexcept;	// initial setup of "cmd_work"
-	void RunCmd() const;					// runs all commands in "cmd_work" (on all ranks where it is called)
+	void RunCmd(MPI_Comm comm) const;		// runs all commands in "cmd_work" (on all ranks where it is called)
+											// "comm" is passed to CmdLauncher::Run()
 };
 //------------------------------------------------------------------------------------------
 class KW_shell : public KW_multparams

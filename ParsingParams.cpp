@@ -1044,10 +1044,14 @@ void KW_runGrad::Run()
 	std::vector<HMMPI::Mat> di_FI(p.size());	// dFI/dx_i
 	try
 	{
-		Hess = PM->ObjFuncHess_ACT(p);
-		FI = PM->ObjFuncFisher_ACT(p);			// models which cannot calculate ObjFuncHess, ObjFuncFisher, produce an exception, for them Hess, FI = empty
-		for (size_t i = 0; i < p.size(); i++)
-			di_FI[i] = PM->ObjFuncFisher_dxi_ACT(p, i);
+		bool TEMP_DEBUG = true;		// TODO DEBUG
+		if (!TEMP_DEBUG)
+		{
+			Hess = PM->ObjFuncHess_ACT(p);
+			FI = PM->ObjFuncFisher_ACT(p);			// models which cannot calculate ObjFuncHess, ObjFuncFisher, produce an exception, for them Hess, FI = empty
+			for (size_t i = 0; i < p.size(); i++)
+				di_FI[i] = PM->ObjFuncFisher_dxi_ACT(p, i);
+		}
 	}
 	catch (...)
 	{

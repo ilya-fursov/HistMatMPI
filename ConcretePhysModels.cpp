@@ -2566,7 +2566,7 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 					std::string templ_msg = templ->WriteFiles(*tmap);			// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
 
 					HMMPI::MPI_BarrierSleepy(comm);
-					simcmd->RunCmd();
+					simcmd->RunCmd(comm);
 
 					// 2. Get modelled data
 					std::string model_name = (*tmap)["PATH"]->ToString() + "/" + (*tmap)["MOD"]->ToString();
@@ -2723,7 +2723,7 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 		try	  // try-catch block should be sync across all ranks
 		{
 			HMMPI::MPI_BarrierSleepy(comm);
-			simcmd->RunCmd();
+			simcmd->RunCmd(comm);
 		}
 		catch (...)
 		{
@@ -2899,7 +2899,7 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 			obj_func_msg += "\n";
 
 			HMMPI::MPI_BarrierSleepy(comm);
-			simcmd->RunCmd();
+			simcmd->RunCmd(comm);
 
 			// 2. Get objective_function, modelled_data, historical_data, sigmas, gradient
 			for (size_t i = 0; i < Files.size(); i++)
@@ -2978,7 +2978,7 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 		try		// try-catch block is sync across all ranks
 		{
 			HMMPI::MPI_BarrierSleepy(comm);
-			simcmd->RunCmd();
+			simcmd->RunCmd(comm);
 		}
 		catch (...)
 		{
@@ -3191,7 +3191,7 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 			obj_func_msg += "\n";
 
 			HMMPI::MPI_BarrierSleepy(comm);
-			simcmd->RunCmd();
+			simcmd->RunCmd(comm);
 
 			// 2. Get objective_function, modelled_data, historical_data, sigmas, gradient
 			bool file_ok = true;
@@ -3234,7 +3234,7 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 		try
 		{
 			HMMPI::MPI_BarrierSleepy(comm);
-			simcmd->RunCmd();
+			simcmd->RunCmd(comm);
 		}
 		catch (...)
 		{

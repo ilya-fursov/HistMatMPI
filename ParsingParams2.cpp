@@ -236,11 +236,11 @@ void KW_simcmd::UpdateParams() noexcept
 	cmd_work = cmd;
 }
 //------------------------------------------------------------------------------------------
-void KW_simcmd::RunCmd() const
-{
+void KW_simcmd::RunCmd(MPI_Comm comm) const		// runs all commands in "cmd_work" (on all ranks where it is called)
+{												// "comm" is passed to CmdLauncher::Run()
 	HMMPI::CmdLauncher launcher;
 	for (const std::string &c : cmd_work)
-		launcher.Run(c);
+		launcher.Run(c, comm);
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

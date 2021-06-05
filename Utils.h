@@ -167,7 +167,8 @@ public:
 };
 //------------------------------------------------------------------------------------------
 // CmdLauncher - class for executing commands via system() or MPI_Comm_spawn()
-// Currently only deals with MPI_COMM_WORLD, since only one hostfile is currently supported
+// system() : works with a user-provided communicator
+// MPI_Comm_spawn() : currently only deals with MPI_COMM_WORLD, since only one hostfile is currently supported
 //
 // The compatibility of mpi calls (spawn) and non-mpi (system) calls of HistMatMPI
 // and another program (standard one: std, or MPI one: MPI) is shown in the scheme below:
@@ -206,10 +207,12 @@ public:
 	CmdLauncher();					// CTOR to be called on MPI_COMM_WORLD
 	~CmdLauncher();
 
-	void Run(std::string cmd) const;	// Runs command "cmd" (significant at rank-0), followed by a Barrier; should be called on all ranks of MPI_COMM_WORLD.
-										// For non-MPI command: uses system() on rank-0, and throws a sync exception if the exit status is non-zero
-										// For MPI command: uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
-										//					if tNavigator is invoked, the synchronization is based on *.end file
+	void Run(std::string cmd, MPI_Comm Comm = MPI_COMM_WORLD) const;
+						// Runs command "cmd" (significant at Comm-ranks-0), followed by a Barrier; should be called on all ranks of "Comm".
+						// For non-MPI command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status is non-zero.
+						// For MPI command: "Comm" must be MPI_COMM_WORLD;
+						// 					uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
+						//					if tNavigator is invoked, the synchronization is based on *.end file
 };
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

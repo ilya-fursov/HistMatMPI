@@ -596,36 +596,37 @@ CmdLauncher::~CmdLauncher()
 	clear_mem();
 }
 //------------------------------------------------------------------------------------------
-void CmdLauncher::Run(std::string cmd) const	// Runs command "cmd" (significant at rank-0), followed by a Barrier; should be called on all ranks of MPI_COMM_WORLD.
-{												// For non-MPI command: uses system() on rank-0, and throws a sync exception if the exit status is non-zero
-	std::string main_cmd;						// For MPI command: uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
-	std::vector<char*> argv;					//					if tNavigator is invoked, the synchronization is based on *.end file
-	int sync_flag;
-	int np;
+void CmdLauncher::Run(std::string cmd, MPI_Comm Comm) const
+{												// Runs command "cmd" (significant at Comm-ranks-0), followed by a Barrier; should be called on all ranks of "Comm".
+	std::string main_cmd;						// For non-MPI command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status is non-zero.
+	std::vector<char*> argv;					// For MPI command: "Comm" must be MPI_COMM_WORLD;
+	int sync_flag;								// 					uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
+	int np, Crank;								//					if tNavigator is invoked, the synchronization is based on *.end file
 	bool ismpi;
 
-	if (rank == 0)
+	MPI_Comm_rank(Comm, &Crank);
+	if (Crank == 0)
 		ParseCmd(cmd, ismpi, np, main_cmd, argv, sync_flag);
-	MPI_Bcast(&ismpi, 1, MPI_BYTE, 0, MPI_COMM_WORLD);
-	MPI_Bcast(&sync_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ismpi, 1, MPI_BYTE, 0, Comm);
+	MPI_Bcast(&sync_flag, 1, MPI_INT, 0, Comm);
 
 	if (!ismpi)			// non-MPI; sync here
 	{
 		int status;
-		if (rank == 0)
+		if (Crank == 0)
 			status = system(cmd.c_str());
-		MPI_BarrierSleepy(MPI_COMM_WORLD);
-		MPI_Bcast(&status, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		MPI_BarrierSleepy(Comm);
+		MPI_Bcast(&status, 1, MPI_INT, 0, Comm);
 		if (status)		// error status; sync
 		{
 			char msg[BUFFSIZE], msgrus[BUFFSIZE];
-			if (rank == 0)
+			if (Crank == 0)
 			{
 				sprintf(msg, "Exit status %d in command: %.400s", status, cmd.c_str());
 				sprintf(msgrus, "Exit status %d в команде: %.400s", status, cmd.c_str());
 			}
-			MPI_Bcast(msg, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
-			MPI_Bcast(msgrus, BUFFSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+			MPI_Bcast(msg, BUFFSIZE, MPI_CHAR, 0, Comm);
+			MPI_Bcast(msgrus, BUFFSIZE, MPI_CHAR, 0, Comm);
 			throw EObjFunc(msgrus, msg);
 		}
 	}
@@ -633,6 +634,9 @@ void CmdLauncher::Run(std::string cmd) const	// Runs command "cmd" (significant 
 	{
 		MPI_Comm newcomm;
 		MPI_Info info;
+
+		if (Comm != MPI_COMM_WORLD)
+			throw Exception("Communicator should be 'MPI_COMM_WORLD' for the MPI_Comm_spawn() branch in CmdLauncher::Run()");
 
 		std::string hfile = MakeHostFile(np);		// hfile - on rank-0, np - on rank-0
 		MPI_Info_create(&info);
