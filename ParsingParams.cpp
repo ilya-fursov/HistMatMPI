@@ -542,11 +542,11 @@ void KW_runOptProxy::Run()
 			if (Tk > config->tau2)										// 0.75
 				Rk *= 2;
 
-			if (Rk < config->rmin)
-				Rk = config->rmin;
-
 			if (Rk == 0)						// this happens when delta_k == 0, i.e. proxy optimization is stuck
 				finished = 1;
+
+			if (Rk < config->rmin)
+				Rk = config->rmin;
 		}
 
 		if (config->LMstart == "SIMBEST")		// update simk
@@ -572,6 +572,7 @@ void KW_runOptProxy::Run()
 		if (difftime(t1, t0)/double(3600) > config->MaxHours || iter >= config->MaxIter)
 			finished = 1;
 
+		HMMPI::MPI_BarrierSleepy(MPI_COMM_WORLD);
 		RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
 			FILE *f = fopen(progress_file.c_str(), "a");
 			if (f != 0)
