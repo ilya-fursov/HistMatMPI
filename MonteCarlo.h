@@ -271,6 +271,7 @@ protected:
 	int rank_pm;		// from pm->comm
 	Rand gen;			// random number generator
 
+	int iter_counter;	// iteration counter
 	double of0, of1;	// o.f. at x0, x1
 	double dE;			// quantity for MH test: e.g. -of1/2 + of0/2, only referenced on RNK-0
 	std::vector<double> ModelledData0, ModelledData1;		// m.d. at x0 and x1, only contains useful info on rank_pm-0
@@ -291,7 +292,7 @@ protected:
 	virtual void save_output(const Mat &x) = 0;			// save output to files
 	virtual void accept_new_point(){};					// function called when a point is accepted
 	virtual void reject_new_point(){};					// function called when a point is rejected
-	virtual void make_updates(Mat &x, int i) = 0;		// update: e.g. proxy, mass matrix, eps; may be empty
+	virtual void make_updates(Mat &x) = 0;				// update: e.g. proxy, mass matrix, eps; may be empty
 
 public:
 	MCMC(PhysModel *p, Rand g, EpsUpdate1 eu, int bi, int ufreq, int Nadd);
@@ -316,7 +317,7 @@ protected:
 	virtual void proposal(const Mat &x);
 	virtual void process_new_point(const Mat &x);	// take x = x0 !
 	virtual void save_output(const Mat &x);
-	virtual void make_updates(Mat &x, int i);
+	virtual void make_updates(Mat &x);
 
 public:
 	RWM1(PhysModel *p, Rand g, EpsUpdate1 eu, int bi, int ufreq, int Nadd, double e, Mat cov);		// upper triangular part of 'cov' is used
@@ -392,7 +393,7 @@ protected:
 	virtual void proposal(const Mat &x);
 	virtual void process_new_point(const Mat &x);
 	virtual void save_output(const Mat &x);
-	virtual void make_updates(Mat &x, int i);
+	virtual void make_updates(Mat &x);
 	virtual void trainProxy(bool is_initial);				// trains proxy with Xnew, ynew, Datanew; "is_initial" should be 'true' when used in preprocess()
 public:
 	HMC1(PhysModel *p, PhysModel *aux, Rand g, LeapFrog lf, EpsUpdate1 eu, int bi, int lf_steps, double maxstep, int upd, int Nadd, std::vector<int> ind_gpts, std::vector<int> ind_gcomp, std::vector<int> dump_inds, int upd_type);
@@ -465,7 +466,7 @@ protected:
 	virtual void proposal(const Mat &x);
 	virtual void process_new_point(const Mat &x);
 	virtual void save_output(const Mat &x);
-	virtual void make_updates(Mat &x, int i);
+	virtual void make_updates(Mat &x);
 	virtual void trainProxy(bool is_initial);	// calls HMC1::trainProxy, and resets caches in Lfg
 public:
 	RHMC1(PhysModel *p, PhysModel *aux, Rand g, NonlinearSystemSolver *sol, EpsUpdate1 eu, int bi, int lf_steps, double MM_shift, double eps, double maxeps, int upd, int Nadd, int LFG_maxref, std::vector<int> ind_gpts, std::vector<int> ind_gcomp, std::vector<int> dump_inds, int upd_type);
@@ -504,7 +505,7 @@ protected:						// these two are reset in preprocess() and after each 'eps' upda
 	virtual void process_new_point(const Mat &x);	// take x = x0 !
 	virtual void save_output(const Mat &x);
 	virtual void accept_new_point();
-	virtual void make_updates(Mat &x, int i);
+	virtual void make_updates(Mat &x);
 	virtual void trainProxy(bool is_initial);		// calls HMC1::trainProxy, and resets caches in Ham0, Ham1
 
 public:
@@ -556,7 +557,7 @@ protected:
 	//virtual void save_output(const Mat &x);	* as in MMALA
 	virtual void accept_new_point();
 	virtual void reject_new_point();
-	//virtual void make_updates(Mat &x, int i);	* as in MMALA
+	//virtual void make_updates(Mat &x);		* as in MMALA
 	//virtual void trainProxy(bool is_initial); * as in MMALA
 
 public:

@@ -95,6 +95,7 @@ public:
 	virtual std::string ObjFuncMsg() const {return "";};			// a message which can be printed after ObjFunc calculation
 	virtual void SavePMState(){};		// saves some "state" of PM before ObjFuncMPI
 	virtual void RestorePMState(){};	// restores "state" of PM after running ObjFuncMPI
+	virtual void SetIntTag(int tag){};	// set some tag, e.g. a sample number in MCMC
 	void ExportIAC(PhysModel *p) const;				// exports 'init', 'act_ind', 'tot_ind', 'con' to "p"
 
 	MPI_Comm GetComm() const {return comm;};							// get communicator

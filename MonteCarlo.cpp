@@ -420,8 +420,8 @@ int LeapFrog::Run2(PhysModel *pm, Mat &x, Mat &p, int N, double &dr) const
 						BounceVel3(vel, con_ind);
 					else
 					{
-					    if (f0 != NULL)
-					    	fclose(f0);
+						if (f0 != NULL)
+							fclose(f0);
 						throw Exception("Unrecognized bounce_type '" + bounce_type + "' in LeapFrog::Run2");
 					}
 
@@ -1965,7 +1965,7 @@ double EpsUpdate1::EpsMult(int block_size, double acc_mult)	// calculates acc_ra
 //------------------------------------------------------------------------------------------
 // MCMC
 //------------------------------------------------------------------------------------------
-MCMC::MCMC(PhysModel *p, Rand g, EpsUpdate1 eu, int bi, int ufreq, int Nadd) : gen(std::move(g)), of0(0), of1(0), dE(0), pm(p), EUpd(eu), burn_in(bi), upd_freq(ufreq), Nadd_fval_pts(Nadd)
+MCMC::MCMC(PhysModel *p, Rand g, EpsUpdate1 eu, int bi, int ufreq, int Nadd) : gen(std::move(g)), iter_counter(0), of0(0), of1(0), dE(0), pm(p), EUpd(eu), burn_in(bi), upd_freq(ufreq), Nadd_fval_pts(Nadd)
 {
 	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
 	MPI_Comm_rank(pm->GetComm(), &rank_pm);
@@ -1985,6 +1985,7 @@ int MCMC::Run(int count, Mat &x0, std::string *msg_time)		//TODO ...
 
 	for (int i = 0; i < count; i++)
 	{
+		iter_counter = i;
 		x0.Bcast(0, MPI_COMM_WORLD);
 		proposal(x0);		// propose move x0 -> x1
 
@@ -2021,7 +2022,7 @@ int MCMC::Run(int count, Mat &x0, std::string *msg_time)		//TODO ...
 		else
 			reject_new_point();
 
-		make_updates(x0, i);							// update proxy etc
+		make_updates(x0);								// update proxy etc
 
 		if (i == burn_in-1)
 			time2 = std::chrono::high_resolution_clock::now();
@@ -2080,13 +2081,13 @@ void RWM1::save_output(const Mat &x)
 	}
 }
 //------------------------------------------------------------------------------------------
-void RWM1::make_updates(Mat &x, int i)
+void RWM1::make_updates(Mat &x)
 {
-	if ((i+1) % upd_freq == 0)
+	if ((iter_counter+1) % upd_freq == 0)
 	{
 		double e_mult = EUpd.EpsMult(upd_freq);
 		MPI_Bcast(&e_mult, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			eps *= e_mult;					// update epsilon
 	}
 }
@@ -2395,7 +2396,7 @@ void HMC1::save_output(const Mat &x)
 	}
 }
 //------------------------------------------------------------------------------------------
-void HMC1::make_updates(Mat &x, int i)
+void HMC1::make_updates(Mat &x)
 {
 	//DEBUG	-============- Leap frog trajectory dump
 //	if (i >= 1604 && i <= 1613)
@@ -2405,16 +2406,16 @@ void HMC1::make_updates(Mat &x, int i)
 	//DEBUG
 
 	// update proxy, mass matrix and epsilon
-	if ((i+1) % upd_freq == 0)
+	if ((iter_counter+1) % upd_freq == 0)
 	{
-		if (std::find(proxy_dump_inds.begin(), proxy_dump_inds.end(), i) != proxy_dump_inds.end() && pm_aux->is_proxy())
+		if (std::find(proxy_dump_inds.begin(), proxy_dump_inds.end(), iter_counter) != proxy_dump_inds.end() && pm_aux->is_proxy())
 		{
 			if (RNK == 0)
-				std::cout << "-------------------- Saving proxy-" << i << " to a dump file --------------------\n";		// this only goes to stdout, not report file
-			proxy_int->SetDumpFlag(i);
+				std::cout << "-------------------- Saving proxy-" << iter_counter << " to a dump file --------------------\n";		// this only goes to stdout, not report file
+			proxy_int->SetDumpFlag(iter_counter);
 		}
 
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			trainProxy(false);					// update the proxy
 
 		if (pm_aux->is_proxy())
@@ -2422,14 +2423,14 @@ void HMC1::make_updates(Mat &x, int i)
 
 		x.Bcast(0, MPI_COMM_WORLD);
 
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			LF.Recalc(pm_aux, x);				// recalculate mass matrix only during burn-in
 		else
 			LF.resetBFGSVecs();
 
 		double e_mult = EUpd.EpsMult(upd_freq);
 		MPI_Bcast(&e_mult, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			LF.eps *= e_mult;					// update epsilon
 		if (LF.eps > max_step_eps)
 			LF.eps = max_step_eps;
@@ -2517,7 +2518,9 @@ void SOL_HMC::preprocess(const Mat &x)
 //------------------------------------------------------------------------------------------
 void SOL_HMC::proposal(const Mat &x)
 {
-	of0_aux = pm_aux->ObjFunc_ACT(x.ToVector());
+	pm_aux->SetIntTag(iter_counter);				// the iteration counter will be available to the simulator
+	of0_aux = pm_aux->ObjFunc_ACT(x.ToVector());	// x is "x0", the initial point, i.e. a legal sample
+	pm_aux->SetIntTag(-1);							// all subsequent calculations in proposal don't use smpl_tag
 
 	// advance velocity p0 by OU process
 	if (RNK == 0)
@@ -2664,19 +2667,19 @@ void RHMC1::save_output(const Mat &x)
 	Lfg.iter_count = 0;
 }
 //------------------------------------------------------------------------------------------
-void RHMC1::make_updates(Mat &x, int i)
+void RHMC1::make_updates(Mat &x)
 {
 	// update proxy and epsilon
-	if ((i+1) % upd_freq == 0)
+	if ((iter_counter+1) % upd_freq == 0)
 	{
-		if (std::find(proxy_dump_inds.begin(), proxy_dump_inds.end(), i) != proxy_dump_inds.end() && pm_aux->is_proxy())
+		if (std::find(proxy_dump_inds.begin(), proxy_dump_inds.end(), iter_counter) != proxy_dump_inds.end() && pm_aux->is_proxy())
 		{
 			if (RNK == 0)
-				std::cout << "-------------------- Saving proxy-" << i << " to a dump file --------------------\n";		// this only goes to stdout, not report file
-			proxy_int->SetDumpFlag(i);
+				std::cout << "-------------------- Saving proxy-" << iter_counter << " to a dump file --------------------\n";		// this only goes to stdout, not report file
+			proxy_int->SetDumpFlag(iter_counter);
 		}
 
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			trainProxy(false);
 
 		if (pm_aux->is_proxy())
@@ -2686,7 +2689,7 @@ void RHMC1::make_updates(Mat &x, int i)
 
 		double e_mult = EUpd.EpsMult(upd_freq);
 		MPI_Bcast(&e_mult, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			step_eps *= e_mult;					// update epsilon
 		if (step_eps > max_step_eps)
 			step_eps = max_step_eps;
@@ -2861,19 +2864,19 @@ void MMALA::accept_new_point()
 	of0_aux = of1_aux;							// rank-0
 }
 //------------------------------------------------------------------------------------------
-void MMALA::make_updates(Mat &x, int i)
+void MMALA::make_updates(Mat &x)
 {
 	// update proxy and epsilon
-	if ((i+1) % upd_freq == 0)
+	if ((iter_counter+1) % upd_freq == 0)
 	{
-		if (std::find(proxy_dump_inds.begin(), proxy_dump_inds.end(), i) != proxy_dump_inds.end() && pm_aux->is_proxy())
+		if (std::find(proxy_dump_inds.begin(), proxy_dump_inds.end(), iter_counter) != proxy_dump_inds.end() && pm_aux->is_proxy())
 		{
 			if (RNK == 0)
-				std::cout << "-------------------- Saving proxy-" << i << " to a dump file --------------------\n";		// this only goes to stdout, not report file
-			proxy_int->SetDumpFlag(i);
+				std::cout << "-------------------- Saving proxy-" << iter_counter << " to a dump file --------------------\n";		// this only goes to stdout, not report file
+			proxy_int->SetDumpFlag(iter_counter);
 		}
 
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			trainProxy(false);					// update the proxy
 
 		if (pm_aux->is_proxy())
@@ -2883,7 +2886,7 @@ void MMALA::make_updates(Mat &x, int i)
 		double e_mult = EUpd.EpsMult(upd_freq, acc_mult);
 		MMALA_accepts = MMALA_steps = 0;
 		MPI_Bcast(&e_mult, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		if (i < burn_in)
+		if (iter_counter < burn_in)
 			eps *= e_mult;						// update epsilon
 		if (eps > max_step_eps)
 			eps = max_step_eps;

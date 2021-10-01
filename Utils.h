@@ -301,15 +301,16 @@ public:
 class TagPrintfMap : public std::map<std::string, TagPrintfValBase*>
 {
 public:
-	TagPrintfMap();											// adds tags: MOD, PATH, RANK, SIZE; for the latter two also sets values (global MPI rank and size)
-	TagPrintfMap(const std::vector<std::string> &tags, const std::vector<double> &vals);	// apart from 4 default tags, adds "tags" with "vals"
+	TagPrintfMap();											// adds tags: MOD, PATH, RANK, SIZE, SMPL; for RANK, SIZE also sets values (global MPI rank and size)
+	TagPrintfMap(const std::vector<std::string> &tags, const std::vector<double> &vals);	// apart from 5 default tags, adds "tags" with "vals"
 	TagPrintfMap(const TagPrintfMap &M) = delete;			// no copies so far
 	const TagPrintfMap &operator=(const TagPrintfMap &M) = delete;
 	~TagPrintfMap();										// frees "vals"
 	void SetModPath(std::string mod, std::string path);		// sets values for MOD and PATH tags
 	void SetSize(int size);									// sets value for SIZE tag
+	void SetSmpl(int smpl);									// sets value for SMPL tag
 	void SetDoubles(const std::vector<std::string> &tags, const std::vector<double> &vals);	// sets "vals" for "tags", where "tags" is a subset of {this->first}
-	std::set<std::string> get_tag_names() const;			// returns the set of all tag names (except MOD, PATH, RANK, SIZE)
+	std::set<std::string> get_tag_names() const;			// returns the set of all tag names (except MOD, PATH, RANK, SIZE, SMPL)
 };
 //------------------------------------------------------------------------------------------
 std::string stringTagPrintf(const std::string &format, const std::map<std::string, TagPrintfValBase*> &tag_val, int &count, std::set<std::string> &tags_left);	// Writes vals corresponding to tags (tag_val) to appropriate tag locations in "format".

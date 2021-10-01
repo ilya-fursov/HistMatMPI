@@ -2893,6 +2893,7 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 			// 1. Substitute the parameters and run the model
 			HMMPI::TagPrintfMap *tmap = parameters->get_tag_map();		// object handling the parameters - fill it!
 			tmap->SetSize(parallel_size);
+			tmap->SetSmpl(smpl_tag);
 			const std::vector<double> par_external = parameters->InternalToExternal(params);
 			tmap->SetDoubles(parameters->name, par_external);
 			obj_func_msg = templ->WriteFiles(*tmap);					// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
@@ -3020,7 +3021,7 @@ std::vector<double> PMpConnect::fread_vector(FILE *file)
 	return res;
 }
 //---------------------------------------------------------------------------
-PMpConnect::PMpConnect(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : PhysModel(k, kw, c), of_cache(-1.0), hist_sigmas_ok(false), K(k), CWD(cwd)			// all data are taken from keywords of "k"; "kw" is used only to handle prerequisites
+PMpConnect::PMpConnect(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : PhysModel(k, kw, c), of_cache(-1.0), hist_sigmas_ok(false), smpl_tag(-1), K(k), CWD(cwd)			// all data are taken from keywords of "k"; "kw" is used only to handle prerequisites
 {
 	DECLKWD(parameters, KW_parameters2, "PARAMETERS2");
 	DECLKWD(pcon, KW_pConnect_config, "PCONNECT_CONFIG");
@@ -3050,7 +3051,7 @@ PMpConnect::PMpConnect(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : 
 //---------------------------------------------------------------------------
 PMpConnect::PMpConnect(const PMpConnect &PM) : PhysModel(PM), of_cache(PM.of_cache), data_cache(PM.data_cache), par_of_cache(PM.par_of_cache),
 		grad_cache(PM.grad_cache), par_grad_cache(PM.par_grad_cache),
-		hist_cache(PM.hist_cache), sigma_cache(PM.sigma_cache), hist_sigmas_ok(PM.hist_sigmas_ok),
+		hist_cache(PM.hist_cache), sigma_cache(PM.sigma_cache), hist_sigmas_ok(PM.hist_sigmas_ok), smpl_tag(PM.smpl_tag),
 		K(PM.K), CWD(PM.CWD), obj_func_msg(PM.obj_func_msg), scale(PM.scale)
 {
 }
@@ -3080,7 +3081,7 @@ size_t PMpConnect::ModelledDataSize() const
 //---------------------------------------------------------------------------
 double PMpConnect::ObjFunc(const std::vector<double> &params)					// calculates objective function [and gradient] by running the simulation model;
 {																				// modelled_data is also filled; simulation is only done on comm-RANKS-0
-	if (params != par_of_cache)
+	if (params != par_of_cache || smpl_tag != -1)		// Note: non-trivial (!= -1) smpl_tag also causes running the simulation
 	{
 #ifdef TEST_CACHES
 		std::cout << "[" << RNK << "] * Recalculate PMpConnect obj. func. cache *\n";

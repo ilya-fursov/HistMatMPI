@@ -1039,6 +1039,7 @@ TagPrintfMap::TagPrintfMap()
 	(*this)["PATH"] = new TagPrintfVal<std::string>("");
 	(*this)["RANK"] = new TagPrintfVal<int>(rank);
 	(*this)["SIZE"] = new TagPrintfVal<int>(size);
+	(*this)["SMPL"] = new TagPrintfVal<int>(-1);
 }
 //------------------------------------------------------------------------------------------
 TagPrintfMap::TagPrintfMap(const std::vector<std::string> &tags, const std::vector<double> &vals) : TagPrintfMap()	// calls default ctor
@@ -1080,6 +1081,12 @@ void TagPrintfMap::SetSize(int size)
 	(*this)["SIZE"] = new TagPrintfVal<int>(size);
 }
 //------------------------------------------------------------------------------------------
+void TagPrintfMap::SetSmpl(int smpl)
+{
+	delete (*this)["SMPL"];
+	(*this)["SMPL"] = new TagPrintfVal<int>(smpl);
+}
+//------------------------------------------------------------------------------------------
 void TagPrintfMap::SetDoubles(const std::vector<std::string> &tags, const std::vector<double> &vals)	// sets "vals" for "tags", where "tags" is a subset of {this->first}
 {
 	if (tags.size() != vals.size())
@@ -1096,7 +1103,7 @@ void TagPrintfMap::SetDoubles(const std::vector<std::string> &tags, const std::v
 	}
 }
 //------------------------------------------------------------------------------------------
-std::set<std::string> TagPrintfMap::get_tag_names() const		// returns the set of all tag names (except MOD, PATH, RANK, SIZE)
+std::set<std::string> TagPrintfMap::get_tag_names() const		// returns the set of all tag names (except MOD, PATH, RANK, SIZE, SMPL)
 {
 	std::vector<std::string> names;								// first, bring the names to the vector
 	names.reserve(this->size());
@@ -1108,6 +1115,7 @@ std::set<std::string> TagPrintfMap::get_tag_names() const		// returns the set of
 	res.erase("PATH");
 	res.erase("RANK");
 	res.erase("SIZE");
+	res.erase("SMPL");
 
 	return res;
 }

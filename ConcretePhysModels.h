@@ -211,6 +211,7 @@ private:
 	std::vector<double> hist_cache;		// cached historical data
 	std::vector<double> sigma_cache;	// cached sigmas
 	bool hist_sigmas_ok;				// if 'true', then 'hist_cache', 'sigma_cache' are valid
+	int smpl_tag;						// sample number in MCMC
 
 	void run_simulation(const std::vector<double> &params);			// runs pConnect to fill of_cache [grad_cache]
 	static std::vector<double> fread_vector(FILE *file);
@@ -231,6 +232,7 @@ public:
 																				// modelled_data is also filled; simulation is only done on comm-RANKS-0
 	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);	// gradient of objective function; internally, run_simulation() is called
 	virtual std::string ObjFuncMsg() const {return obj_func_msg;};
+	virtual void SetIntTag(int tag){smpl_tag = tag;};
 
 	virtual std::vector<HMMPI::Mat> CorrBlocks() const;		// 1 x 1 blocks
 	virtual std::vector<double> Std() const;				// sigmas (only non-zero sigmas are used)
