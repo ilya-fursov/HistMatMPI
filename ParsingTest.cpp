@@ -477,53 +477,21 @@ void KW_rundebug::Run()
 			0.00087268269504576,
 		};
 
-	HMMPI::Func1D_CDF F(x1, y1);		// N(0, 1)
-
-	for (double x0 = -4+1e-9; x0 <= 5; x0 += 0.5)
-		std::cout << x0 << "\t" << HMMPI::integr_Gauss(g2, n, x0, 1.2, 0.001, F) << "\t" << HMMPI::integr_Gauss(g2, n, x0, 1.2, 0.001) << "\n";
 
 
 
-	std::cout << "******** test StringListing ***********\n";
-	HMMPI::StringListing stl("\t");
-	stl.AddLine(std::vector<std::string>{"1", "Hello1", "A"});
-	stl.AddLine(std::vector<std::string>{"2", "Hello12", "B"});
-	stl.AddLine(std::vector<std::string>{"3", "Hello123", "C"});
-	stl.AddLine(std::vector<std::string>{"4", "Hello1234", "D"});
-	stl.AddLine(std::vector<std::string>{"5", "Hello12345", "E"});
-	stl.AddLine(std::vector<std::string>{"6", "Hello123456", "F"});
-	stl.AddLine(std::vector<std::string>{"7", "Hello1234567", "G"});
-	stl.AddLine(std::vector<std::string>{"8", "Hello12345678", "H"});
-	stl.AddLine(std::vector<std::string>{"9", "Hello123456789", "I"});
-	stl.AddLine(std::vector<std::string>{"10", "Hello12345678910", "J"});
-	stl.AddLine(std::vector<std::string>{"11", "Hello1234567891011", "K"});
-	stl.AddLine(std::vector<std::string>{"12", "Hello123456789101112", "L"});
-	stl.AddLine(std::vector<std::string>{"13", "Hello12345678910111213", "M"});
-	stl.AddLine(std::vector<std::string>{"14", "Hello222120191817161514", "N"});
-	stl.AddLine(std::vector<std::string>{"15", "Hello2221201918171615", "O"});
-	stl.AddLine(std::vector<std::string>{"16", "Hello22212019181716", "P"});
-	stl.AddLine(std::vector<std::string>{"17", "Hello222120191817", "Q"});
-	stl.AddLine(std::vector<std::string>{"18", "Hello2221201918", "R"});
-	stl.AddLine(std::vector<std::string>{"19", "Hello22212019", "S"});
-	stl.AddLine(std::vector<std::string>{"20", "Hello222120", "T"});
-	stl.AddLine(std::vector<std::string>{"21", "Hello2221", "U"});
-	stl.AddLine(std::vector<std::string>{"22", "Hello22", "V"});
-
-
-	K->AppText(stl.Print(14, 17));
-
-	std::cout  <<  "---------\n";
-	std::string s12 = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ_Hello_world";
-	std::cout << s12 << "\n";
-	for (size_t i = 0; i < s12.length(); i++)
-		std::cout << s12[i] << "\t" << int(s12[i]) << "\n";
-	std::cout << "---------\n";
-	std::cout << "The length is: " << HMMPI::StrLen(s12);
-	//std::cout << std::char_traits<char>::length(s12.c_str()) << "\n";
-	//std::cout << std::char_traits<wchar_t>::length(s12.c_str()) << "\n";
-
-
-
+	std::vector<std::string> vec1;
+	if (K->MPI_rank == 0)
+	{
+		vec1.push_back("one");
+		vec1.push_back("two");
+		vec1.push_back("three");
+		vec1.push_back("four");
+	}
+	HMMPI::Bcast_vector(vec1, 0, MPI_COMM_WORLD);
+	std::cout << "RANK-" << K->MPI_rank << ",vec_size=" << vec1.size() << "\n";
+	for (size_t i = 0; i < vec1.size(); i++)
+		std::cout << "RANK-" << K->MPI_rank << ",v[" << i << "]=" << vec1[i] << "\n";
 
 
 

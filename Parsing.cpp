@@ -34,29 +34,33 @@ size_t Parser_1::posit;
 //------------------------------------------------------------------------------------------
 void DataLines::LoadFromFile(std::string fname)		// (OK)
 {
-	std::ifstream sr;
-	sr.exceptions(std::ios_base::badbit);
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD)
+		std::ifstream sr;
+		sr.exceptions(std::ios_base::badbit);
 
-	try
-	{
-		sr.open(fname.c_str());
-		if (sr.fail())
-			throw HMMPI::Exception((std::string)"Failed opening " + fname);
-
-		std::string line;
-		while (!sr.eof())
+		try
 		{
-			getline(sr, line);
-			lines.push_back(line);
-		}
-		sr.close();
-	}
-	catch (...)
-	{
-		if (sr.is_open())
+			sr.open(fname.c_str());
+			if (sr.fail())
+				throw HMMPI::Exception((std::string)"Failed opening " + fname);
+
+			std::string line;
+			while (!sr.eof())
+			{
+				getline(sr, line);
+				lines.push_back(line);
+			}
 			sr.close();
-		throw;
-	}
+		}
+		catch (...)
+		{
+			if (sr.is_open())
+				sr.close();
+			throw;
+		}
+	RANK0_SYNCERR_END(MPI_COMM_WORLD)
+
+	HMMPI::Bcast_vector(lines, 0, MPI_COMM_WORLD);
 }
 //------------------------------------------------------------------------------------------
 std::vector<std::string> DataLines::EliminateEmpty()	// (OK)
@@ -70,13 +74,7 @@ std::vector<std::string> DataLines::EliminateEmpty()	// (OK)
 			lines[i] = lines[i].substr(0, ind);			// remove comments
 
 		std::string tr_ln = HMMPI::Trim(lines[i], trim);
-
-		ind = tr_ln.find("-\\-");						// treat special '--'
-		while (ind != std::string::npos)
-		{
-			tr_ln.replace(ind, 3, "--");
-			ind = tr_ln.find("-\\-");
-		}
+		tr_ln = HMMPI::Replace(tr_ln, "-\\-", "--");	// treat special '--'
 
 		if (tr_ln.size() > 0)  							// check the line is not empty
             res.push_back(tr_ln);
@@ -937,7 +935,7 @@ void Parser_1::AppText(std::string s)	// (OK)
 	if (!silent && echo && MPI_rank == 0)
 	{
 		s = HMMPI::Replace(s, "/./", "/", NULL);	// print paths in a more clear way
-		if (Shift == 0 || s == "\n")
+		if (Shift == 0)
 		{
 			std::cout << ApplyCTT(s);
 			report += s;
@@ -947,19 +945,12 @@ void Parser_1::AppText(std::string s)	// (OK)
 			char buff[HMMPI::BUFFSIZE];
 			sprintf(buff, "[%d] ->\t", Shift);		//	6.10.2013, C++98
 
-			std::string app = buff;
-			std::string saux;
-			if (s == "\n")
-				saux = s;
-			else if (*--s.end() == '\n')
-				//saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app), "\n" + app + "\n", "\n\n") + "\n";		orig
-				saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app)  + "\n", "\n" + app + "\n", "\n\n");		// TODO could be further improved, nnnn -> nnnna
-				//saux = HMMPI::Replace(HMMPI::Replace(s.substr(0, s.length()-1), "\n", "\n" + app), "\n" + app + "\n", "\n\n");
-			else
-				saux = HMMPI::Replace(HMMPI::Replace(s, "\n", "\n" + app), "\n" + app + "\n", "\n\n");
+			const std::string app = buff;
+			std::string saux = app + s;
+			saux = HMMPI::Replace(saux, app + "\n", "\n");
 
-			std::cout << ApplyCTT(app + saux);
-			report += app + saux;
+			std::cout << ApplyCTT(saux);
+			report += saux;
 		}
 	}
 }

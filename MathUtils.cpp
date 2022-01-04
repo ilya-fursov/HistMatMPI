@@ -274,6 +274,26 @@ void Bcast_vector(double **v, int len1, int len2, int root, MPI_Comm comm)
 #endif
 }
 //------------------------------------------------------------------------------------------
+void Bcast_vector(std::vector<std::string> &v, int root, MPI_Comm comm)			// MPI broadcast vector<string> from 'root' rank; memory allocation is done if needed
+{
+	if (comm == MPI_COMM_NULL)
+		return;
+
+	int sz = v.size();							// vector size to be broadcasted from 'root'
+	MPI_Bcast(&sz, 1, MPI_INT, root, comm);
+	if ((int)v.size() != sz)
+		v = std::vector<std::string>(sz);		// reallocate array
+
+	for (size_t i = 0; i < v.size(); i++)
+		Bcast_string(v[i], root, comm);
+
+#ifdef TESTBCAST
+	int rank00;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank00);
+	std::cout << "rank " << rank00 << "\tBcast_vector<string>\n";
+#endif
+}
+//------------------------------------------------------------------------------------------
 namespace ManualMath
 {
 double InnerProd(const std::vector<double> &a, const std::vector<double> &b)

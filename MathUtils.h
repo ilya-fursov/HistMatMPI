@@ -48,6 +48,7 @@ void Bcast_vector(std::vector<char> &v, int root, MPI_Comm comm);		// MPI broadc
 void Bcast_vector(std::vector<std::vector<double>> &v, int root, MPI_Comm comm);	// MPI broadcast vector of vectors from 'root' rank; memory allocation is done if needed
 void Bcast_vector(std::vector<std::vector<std::vector<double>>> &v, int root, MPI_Comm comm);	// MPI broadcast vector^3 from 'root' rank; memory allocation is done if needed
 void Bcast_vector(double **v, int len1, int len2, int root, MPI_Comm comm);			// MPI broadcast vector of vectors v[len1][len2] from 'root' rank; memory should be allocated IN ADVANCE
+void Bcast_vector(std::vector<std::string> &v, int root, MPI_Comm comm);			// MPI broadcast vector<string> from 'root' rank; memory allocation is done if needed
 
 namespace ManualMath
 {
