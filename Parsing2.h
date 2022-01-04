@@ -1257,8 +1257,7 @@ public:
 class KW_include : public KW_fname
 {
 protected:
-	std::vector<inputLN> IncludeLines(int shift, std::vector<std::string> lines);	// get IncludeLines from 'lines', with 'shift' and proper 'CWD'
-	virtual void DataIO(int i);			// reads include file, passes it to K->AddInputLines()
+	virtual void DataIO(int i);			// reads the include file and passes it to execution
 
 public:
 	KW_include();

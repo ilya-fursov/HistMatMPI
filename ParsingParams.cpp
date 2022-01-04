@@ -1379,7 +1379,7 @@ void KW_runmpicheck::Run()
 	const int HSTSIZE = 100;
 	char buff[BUFFSIZE], hst[HSTSIZE];
 
-	std::string cat = HMMPI::stringFormatArr(HMMPI::MessageRE("(eng) {0:%2d}:{1:%d}\t", "Process {0:%2d}:{1:%d}\t"),
+	std::string cat = HMMPI::stringFormatArr(HMMPI::MessageRE("Процесс {0:%2d}:{1:%d}\t", "Process {0:%2d}:{1:%d}\t"),
 				 std::vector<int>{rank, msize});
 
 	gethostname(hst, HSTSIZE);

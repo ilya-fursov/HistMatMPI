@@ -27,7 +27,9 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &Parser_1::MPI_size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &Parser_1::MPI_rank);
 
+	const std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now();
 	Parser_1 kw1;
+
 	HMMPI::TextAttr TA;
 	try
 	{
@@ -36,8 +38,7 @@ int main(int argc, char *argv[])
 		if (argc == 0 || argc == 1)
 			throw HMMPI::Exception("Не задан контрольный файл", "Control file not defined");
 
-		cwd = argv[0];
-		cwd = cwd.substr(0, cwd.find_last_of("/"));		// cwd where program started
+		cwd = HMMPI::getCWD(argv[0]); 						// cwd where the program started
 
 		// check consistency of data sizes used for Eclipse output binary reading
 		HMMPI::EclSMRYInitCheckSizes();
@@ -61,8 +62,7 @@ int main(int argc, char *argv[])
 				throw HMMPI::Exception("Неправильный язык, ожидается: eng, rus, null", "Incorrect language, expected: eng, rus, null");
 		}
 
-		cwd += "/" + control_file;						// cwd where control file is located
-		cwd = cwd.substr(0, cwd.find_last_of("/"));
+		cwd = HMMPI::getCWD(cwd + "/" + control_file);		// cwd where control file is located
 		if (control_file.find_last_of("/") != std::string::npos)
 			control_file = control_file.substr(control_file.find_last_of("/") + 1);
 
@@ -70,9 +70,6 @@ int main(int argc, char *argv[])
 		kw1.AppText((std::string)"Control file: " + control_file + "\n");
 		kw1.AppText((std::string)"Language: " + HMMPI::MessageRE::lang + "\n");
 		kw1.AppText((std::string)"Reading control file...\n\n");
-
-		DataLines dl1;
-		dl1.LoadFromFile(cwd + "/" + control_file);
 
 		// Adding keyword items
 		kw1.AddKW_item(new KW_include);
@@ -218,11 +215,29 @@ int main(int argc, char *argv[])
 		fclose(f);
 #endif
 
+		CWD_holder::N = cwd;	// CMAES output
+
+		DataLines dl1;
+		dl1.LoadFromFile(cwd + "/" + control_file);
+
 		kw1.InitCWD = cwd;
 		kw1.verbosity = 0;
-		CWD_holder::N = cwd;	// CMAES output
-		kw1.SetInputLines(dl1.EliminateEmpty());
-		kw1.ReadAll2();
+		kw1.TotalErrors = 0;
+		kw1.TotalWarnings = 0;
+
+		kw1.ReadLines(dl1.EliminateEmpty(), 0, cwd);
+
+		// final stuff
+		kw1.AppText(HMMPI::MessageRE("Чтение управляющего файла завершено\n", "Finished reading control file\n"));
+		kw1.AppText(HMMPI::stringFormatArr("Предупреждений: {0:%d}\n", "Warnings: {0:%d}\n", kw1.TotalWarnings));
+		kw1.AppText(HMMPI::stringFormatArr("Ошибок: {0:%d}\n", "Errors: {0:%d}\n", kw1.TotalErrors));
+
+		const std::chrono::high_resolution_clock::time_point time2 = std::chrono::high_resolution_clock::now();
+		kw1.AppText(HMMPI::stringFormatArr("Время: {0:%.3f} сек.\n", "Time elapsed: {0:%.3f} sec.\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
+
+		KW_report *report = dynamic_cast<KW_report*>(kw1.GetKW_item("REPORT"));
+		if (report->GetState() == "")
+			report->data_io();
 
 		kw1.DeleteItems();
 		kw1.DeleteCTTs();

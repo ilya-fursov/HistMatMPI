@@ -39,14 +39,6 @@ public:
 };
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
-// a struct for handling "INCLUDES"
-struct inputLN
-{
-	std::string line;		// line of text
-	int shift;				// 'include' shift level
-	std::string cwd;		// CWD where the include file resides; this CWD is tracked so that the include file can use paths relative to its own location
-};
-//------------------------------------------------------------------------------------------
 // this stand-alone function throws exception if file cannot be opened
 void CheckFileOpen(std::string fname);
 //------------------------------------------------------------------------------------------
@@ -75,6 +67,7 @@ protected:
 	std::string delim;		// delimiters used by the keyword to parse parameters
 	std::string trim;		// symbols removed from left and right of each parameters line
 	std::string CWD;		// current working directory
+	int Shift;				// shift level for include files
 	int erows, ecols;		// expected number of rows and columns as parameters; "-1" means any number of parameters
 	int dec_verb;			// verbosity decrement for this keyword; when printing messages, this keyword will use [verbosity] = [global 'verbosity'] - [dec_verb]
 	HMMPI::Vector2<std::string> par_table;	// erows x ecols table of parameters; this is the raw table, before any processing;
@@ -87,10 +80,11 @@ protected:
 public:
 	std::string name;		// name of the keyword; use UPPERCASE here
 
-	KW_item(){delim = " \t\r"; trim = " \t\r"; K = 0; state = "Nothing is specified\n"; erows = 1; ecols = 0; dec_verb = 0;};		// in derived classes/functions explicitly ResetState() to show there are no errors
+	KW_item(){delim = " \t\r"; trim = " \t\r"; K = 0; state = "Nothing is specified\n"; Shift = 0; erows = 1; ecols = 0; dec_verb = 0;};		// in derived classes/functions explicitly ResetState() to show there are no errors
 	virtual ~KW_item(){};
 	void SetParser(Parser_1 *a){K = a;};       // set Parser pointer K
 	void SetCWD(std::string s){CWD = s;};	   // set CWD
+	void SetShift(int d){Shift = d;};		   // set Shift
 	std::string GetState() const {return state;};
 	void SetState(std::string s) {state = s;};			// "s" should have '\n'
 	void ExpParams(int &rows, int &cols){rows = erows; cols = ecols;};   // how many parameters are expected by the keyword (rows - how many lines, cols - how many columns);
@@ -281,17 +275,13 @@ public:
 //------------------------------------------------------------------------------------------
 class Parser_1 : public OptContext
 {
-private:
-	std::vector<inputLN> InputLines;   	// it is assumed InputLines = DataLines::EliminateEmpty()
-
 protected:
+	int Shift;							// shift level for includes
 	std::map<std::string, KW_item*> KWList;		// list (map) of all recognisable keywords, stored here as pointers
 	std::vector<ConsTextTweak*> CTTList;		// list of all text tweaks applied during AppText()
 
 	std::string ApplyCTT(std::string s);		// applies all rules from CTTList to "s" and returns the result -- to be used in AppText()
 public:
-	static int Shift;				// is used to indicate the level of 'include'
-	static size_t posit;			// position (index) to read in 'InputLines'
 	std::string report;					// accumulates message for KW_report
 	std::string msg;                	// buffer for accumulating messages for one keyword which is being parsed and processed
 	bool echo;                    		// if 'true', text will be output by MPI process 0
@@ -304,7 +294,6 @@ public:
 	static int MPI_size;			// in MPI_COMM_WORLD
 	int TotalErrors;					// counts all errors for the final report
 	int TotalWarnings;
-	std::chrono::high_resolution_clock::time_point time1;		// records the construction time
 
 	Parser_1();
 	static int StrListN();			// number of lines for HMMPI::StringListing depending on 'verbosity'
@@ -312,15 +301,15 @@ public:
 	void AddCTT(ConsTextTweak *ctt);	// adds 'ctt' to 'CTTList'
 	void DeleteItems();					// deletes all KW_items from heap
 	void DeleteCTTs();					// deletes all CTTList entries from heap
-	void SetInputLines(const std::vector<std::string> &IL);			// sets 'InputLines' from 'IL' (from the main control file)
-	void AddInputLines(const std::vector<inputLN> &newIL, int i);	// inserts 'newIL' in the middle, starting from index i ('newIL' - from the include file)
-
 
 	template <class T> T *GetKW();	 	// pointer to concrete descendant of KW_item
 	const KW_item *GetKW_item(std::string s) const;	 // pointer to KW_item with name "s", NULL if not found; search is done inside KWList;
 	KW_item *GetKW_item(std::string s);	// non-const version of the above
 	void AppText(std::string s);      	// sends/appends 's' to "cout" and to 'report', also adding the 'include' level numbers
-	void ReadAll2();              		// parses the whole control file
+	void ReadLines(const std::vector<std::string> &InputLines, int shift, std::string cwd);     // parses and executes the control file (main or include)
+										// use InputLines = DataLines::EliminateEmpty()
+										// set 'shift' to 0 for the main file, increment it for the includes
+										// 'cwd' is the CWD of the file in question
 };
 //------------------------------------------------------------------------------------------
 template <class T>

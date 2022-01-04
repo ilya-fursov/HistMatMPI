@@ -28,23 +28,11 @@ KW_include::KW_include()	// (OK)
 void KW_include::DataIO(int i)	// (OK)
 {
 	DataLines dl;
-	dl.LoadFromFile(CWD + "/" + fnames[0]);				// read the file
-	std::vector<inputLN> IL = IncludeLines(K->Shift+1, dl.EliminateEmpty());		// prepare lines to insert
-	K->AddInputLines(IL, K->posit+1);		// insert the lines to Parser
-}
-//------------------------------------------------------------------------------------------
-std::vector<inputLN> KW_include::IncludeLines(int shift, std::vector<std::string> lines)	// (OK)
-{
-	size_t len = lines.size();
-	std::vector<inputLN> res = std::vector<inputLN>(len);
-	std::string c = HMMPI::getCWD(CWD + "/" + fnames[0]);
-	for (size_t i = 0; i < len; i++)
-	{
-		res[i].line = lines[i];
-		res[i].shift = shift;
-		res[i].cwd = c;
-	}
-	return res;
+	std::string full_fname = CWD + "/" + fnames[0];
+
+	K->AppText("\n");
+	dl.LoadFromFile(full_fname);				// read the file
+	K->ReadLines(dl.EliminateEmpty(), Shift+1, HMMPI::getCWD(full_fname));		// execute
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

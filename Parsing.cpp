@@ -23,10 +23,8 @@
 
 std::string Parser_1::InitCWD;
 int Parser_1::verbosity;
-int Parser_1::Shift;
 int Parser_1::MPI_rank;
 int Parser_1::MPI_size;
-size_t Parser_1::posit;
 
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -841,10 +839,9 @@ std::string Parser_1::ApplyCTT(std::string s)
 	return s;
 }
 //------------------------------------------------------------------------------------------
-Parser_1::Parser_1() : report(""), msg(""), echo(true), silent(false), TotalErrors(0), TotalWarnings(0)		// (OK)
+Parser_1::Parser_1() : Shift(0), report(""), msg(""), echo(true), silent(false), TotalErrors(0), TotalWarnings(0)		// (OK)
 {
-	Shift = 0;
-	time1 = std::chrono::high_resolution_clock::now();
+
 }
 //------------------------------------------------------------------------------------------
 int Parser_1::StrListN()		// number of lines for HMMPI::StringListing depending on 'verbosity'
@@ -860,7 +857,7 @@ int Parser_1::StrListN()		// number of lines for HMMPI::StringListing depending 
 void Parser_1::AddKW_item(KW_item *kwi)		// (OK)
 {
 	if (KWList.find(kwi->name) != KWList.end())
-		throw HMMPI::Exception("(eng)", (std::string)"Duplicate addition of keyword " + kwi->name + " to Parser_1");
+		throw HMMPI::Exception((std::string)"Duplicate addition of keyword " + kwi->name + " to Parser_1");
 
 	KWList[kwi->name] = kwi;				// put <name, kwi> to the map
 	KWList[kwi->name]->SetParser(this);		// give reference of 'this' to kwi
@@ -887,33 +884,6 @@ void Parser_1::DeleteCTTs()
 		delete i;
 		i = 0;
 	}
-}
-//------------------------------------------------------------------------------------------
-void Parser_1::SetInputLines(const std::vector<std::string> &IL)	// (OK)
-{
-	InputLines = std::vector<inputLN>(IL.size());
-	for (size_t i = 0; i < IL.size(); i++)
-	{
-		InputLines[i].line = IL[i];
-		InputLines[i].shift = 0;
-		InputLines[i].cwd = InitCWD;
-	}
-}
-//------------------------------------------------------------------------------------------
-void Parser_1::AddInputLines(const std::vector<inputLN> &newIL, int i)		// (OK)
-{
-	size_t len = InputLines.size() + newIL.size();
-	std::vector<inputLN> res = std::vector<inputLN>(len);
-	for (int k = 0; k < i; k++)						// head
-		res[k] = InputLines[k];
-
-	for (size_t k = 0; k < newIL.size(); k++)		// 'newIL'
-		res[k + i] = newIL[k];
-
-	for (size_t k = i; k < InputLines.size(); k++)	// tail
-		res[newIL.size() + k] = InputLines[k];
-
-	InputLines = res;
 }
 //------------------------------------------------------------------------------------------
 const KW_item *Parser_1::GetKW_item(std::string s) const	// (OK)
@@ -944,9 +914,19 @@ void Parser_1::AppText(std::string s)	// (OK)
 		{
 			char buff[HMMPI::BUFFSIZE];
 			sprintf(buff, "[%d] ->\t", Shift);		//	6.10.2013, C++98
-
 			const std::string app = buff;
+
 			std::string saux = app + s;
+			bool endNewLine = false;
+			if (*--saux.end() == '\n')
+			{
+				endNewLine = true;
+				saux.pop_back();
+			}
+
+			saux = HMMPI::Replace(saux, "\n", "\n" + app);
+			if (endNewLine)
+				saux.push_back('\n');
 			saux = HMMPI::Replace(saux, app + "\n", "\n");
 
 			std::cout << ApplyCTT(saux);
@@ -955,67 +935,58 @@ void Parser_1::AppText(std::string s)	// (OK)
 	}
 }
 //------------------------------------------------------------------------------------------
-// the main procedure that parses "InputLines" and executes all commands
-void Parser_1::ReadAll2()	// (OK)
+// parses and executes the control file (main or include)
+// use InputLines = DataLines::EliminateEmpty()
+// set 'shift' to 0 for the main file, increment it for the includes
+// 'cwd' is the CWD of the file in question
+void Parser_1::ReadLines(const std::vector<std::string> &InputLines, int shift, std::string cwd)
 {
-	TotalErrors = 0;
-	TotalWarnings = 0;
-	Shift = 0;
-	for (posit = 0; posit < InputLines.size(); posit++)		// 'posit' = position (index) which is read currently in 'InputLines'
+	const int shift_save = Shift;
+	Shift = shift;
+	for (size_t posit = 0; posit < InputLines.size(); posit++)
 	{
-			msg = "";
+		msg = "";
+		KW_item *kw_it = GetKW_item(InputLines[posit]);
+		if (kw_it != 0)
+		{
+			int erows, ecols;
+			kw_it->ExpParams(erows, ecols);   			// expected parameters for the keyword
 
-			KW_item *kw_it = GetKW_item(InputLines[posit].line);
-			Shift = InputLines[posit].shift;
-			if (kw_it != 0)
+			std::vector<std::string> Spar;				// all lines till the next keyword
+			int s_count = 0;
+			while (posit+s_count+1 < InputLines.size() && GetKW_item(InputLines[posit+s_count+1]) == 0)	// add all lines which are not-keywords
 			{
-				int erows, ecols;
-				kw_it->ExpParams(erows, ecols);   			// expected parameters for the keyword
-
-				std::vector<std::string> Spar;				// all lines till the next keyword
-				int s_count = 0;
-				while (posit+s_count+1 < InputLines.size() && GetKW_item(InputLines[posit+s_count+1].line) == 0)	// add all lines which are not-keywords
-				{
-					Spar.push_back(InputLines[posit+s_count+1].line);
-					s_count++;
-				}
-
-				posit += s_count;   	// update the counter; now 'posit' = "just before the next keyword"
-				AppText(HMMPI::stringFormatArr("Кл. слово {0:%s}\n", "Keyword {0:%s}\n", kw_it->name));		// report current keyword name
-
-				kw_it->SetCWD(InputLines[posit].cwd);
-				kw_it->ResetState();				// reset state = no errors
-				kw_it->ReadParamTable(Spar);
-				kw_it->ProcessParamTable();
-
-				MPI_Barrier(MPI_COMM_WORLD);
-				if (kw_it->GetState() == "")		// check if there are no errors so far
-					kw_it->Action();
-
-				if (erows != -1)
-					for (int j = erows; j < s_count; j++)
-						AppText(HMMPI::stringFormatArr("Лишн. стр. {0:%s}\n", "redund. ln. {0:%s}\n", Spar[j]));		// report redundant lines
-
-				AppText(msg + "\n");
+				Spar.push_back(InputLines[posit+s_count+1]);
+				s_count++;
 			}
-			else	// keyword not recognised - report the error
-			{
-				AppText(HMMPI::stringFormatArr("Кл. слово {0:%s}\n", "Keyword {0:%s}\n", InputLines[posit].line));
-				AppText((std::string)(HMMPI::MessageRE("ОШИБКА: некорректное кл. слово", "ERROR: incorrect keyword\n\n")));
-				TotalErrors++;
-			}
+
+			posit += s_count;   	// update the counter; now 'posit' = "just before the next keyword"
+			AppText(HMMPI::stringFormatArr("Кл. слово {0:%s}\n", "Keyword {0:%s}\n", kw_it->name));		// report current keyword name
+
+			kw_it->SetCWD(cwd);
+			kw_it->SetShift(shift);
+			kw_it->ResetState();				// reset state = no errors
+			kw_it->ReadParamTable(Spar);
+			kw_it->ProcessParamTable();
+
+			MPI_Barrier(MPI_COMM_WORLD);
+			if (kw_it->GetState() == "")		// check if there are no errors so far
+				kw_it->Action();
+
+			if (erows != -1)
+				for (int j = erows; j < s_count; j++)
+					AppText(HMMPI::stringFormatArr("Лишн. стр. {0:%s}\n", "redund. ln. {0:%s}\n", Spar[j]));	// report redundant lines
+
+			AppText(msg + "\n");
+		}
+		else	// keyword not recognised - report the error
+		{
+			AppText(HMMPI::stringFormatArr("Кл. слово {0:%s}\n", "Keyword {0:%s}\n", InputLines[posit]));
+			AppText((std::string)(HMMPI::MessageRE("ОШИБКА: некорректное кл. слово\n\n", "ERROR: incorrect keyword\n\n")));
+			TotalErrors++;
+		}
 	}
-	Shift = 0;
-    AppText(HMMPI::MessageRE("Чтение управляющего файла завершено\n", "Finished reading control file\n"));
-	AppText(HMMPI::stringFormatArr("Предупреждений: {0:%d}\n", "Warnings: {0:%d}\n", TotalWarnings));
-	AppText(HMMPI::stringFormatArr("Ошибок: {0:%d}\n", "Errors: {0:%d}\n", TotalErrors));
-
-	const std::chrono::high_resolution_clock::time_point time2 = std::chrono::high_resolution_clock::now();
-	AppText(HMMPI::stringFormatArr("Время: {0:%.3f} сек.\n", "Time elapsed: {0:%.3f} sec.\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
-
-	KW_report *report = dynamic_cast<KW_report*>(GetKW_item("REPORT"));
-	if (report->GetState() == "")
-		report->data_io();
+	Shift = shift_save;
 }
 //------------------------------------------------------------------------------------------
 
