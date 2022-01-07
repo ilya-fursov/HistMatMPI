@@ -8,6 +8,7 @@
 #include "Utils.h"
 #include "MathUtils.h"
 #include "EclSMRY.h"
+#include "Parsing.h"
 #include <mpi.h>
 #include <iostream>
 #include <fstream>
@@ -316,7 +317,7 @@ std::string StringListing::print(size_t i, const std::vector<size_t> &maxlen) co
 {
 	assert(i < data.size());
 
-	std::string res;
+	std::string res = "";
 	char msg[BUFFSIZE];
 	for (size_t j = 0; j < n; j++)
 	{
@@ -415,15 +416,29 @@ void CmdLauncher::clear_mem() const			// clears 'mem'
 		delete [] v;
 }
 //------------------------------------------------------------------------------------------
-void CmdLauncher::ParseCmd(std::string cmd, bool &IsMPI, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const
-{											// Parses 'cmd' to decide whether it is an MPI command (and setting IsMPI flag)
-	std::vector<std::string> toks;			// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
-	tokenize(cmd, toks, " \t\r\n", true);	// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
-											//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
+// Parses 'cmd' to decide whether it is a system() command, MPI/spawn command, or include-file command
+//  	and setting the respective run_type: 0, 1, 2.
+// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
+// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
+//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
+// In the include-file case, 'main_cmd' will keep the corresponding file name.
+void CmdLauncher::ParseCmd(std::string cmd, int &run_type, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const
+{
+	std::vector<std::string> toks;
+	tokenize(cmd, toks, " \t\r\n", true);
 
-	if (toks.size() > 1 && (toks[0] == "mpirun" || toks[0] == "mpiexec"))	// MPI case
+	if (toks.size() == 2 && ToUpper(toks[0]) == "RUNFILE")						// include-file case
 	{
-		IsMPI = true;
+		run_type = 2;
+		main_cmd = toks[1];
+
+		N = 1;
+		argv = std::vector<char*>();	// empty vector
+		sync_flag = 1;
+	}
+	else if (toks.size() > 1 && (toks[0] == "mpirun" || toks[0] == "mpiexec"))	// MPI case
+	{
+		run_type = 1;
 		N = 1;
 		int main_start = 1;				// index where the main cmd tokens start
 		if (toks.size() > 3 && (toks[1] == "-n" || toks[1] == "-np"))
@@ -445,9 +460,9 @@ void CmdLauncher::ParseCmd(std::string cmd, bool &IsMPI, int &N, std::string &ma
 
 		sync_flag = get_sync_flag(main_cmd);
 	}
-	else								// non-MPI case
+	else								// system() case
 	{
-		IsMPI = false;
+		run_type = 0;
 		N = 1;
 		main_cmd = cmd;
 		argv = std::vector<char*>();	// empty vector
@@ -596,21 +611,28 @@ CmdLauncher::~CmdLauncher()
 	clear_mem();
 }
 //------------------------------------------------------------------------------------------
-void CmdLauncher::Run(std::string cmd, MPI_Comm Comm) const
-{												// Runs command "cmd" (significant at Comm-ranks-0), followed by a Barrier; should be called on all ranks of "Comm".
-	std::string main_cmd;						// For non-MPI command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status is non-zero.
-	std::vector<char*> argv;					// For MPI command: "Comm" must be MPI_COMM_WORLD;
-	int sync_flag;								// 					uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
-	int np, Crank;								//					if tNavigator is invoked, the synchronization is based on *.end file
-	bool ismpi;
+// Runs command "cmd" (significant at Comm-ranks-0), followed by a Barrier; should be called on all ranks of "Comm".
+// For non-MPI command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status is non-zero.
+// For MPI command: "Comm" must be MPI_COMM_WORLD;
+// 					uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
+//					if tNavigator is invoked, the synchronization is based on *.end file
+// For include-file command: parser "K" executes the specified file
+// TODO currently any CDWs are not used; may need to add them
+void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
+{
+	std::string main_cmd;
+	std::vector<char*> argv;
+	int sync_flag;
+	int np, Crank;
+	int run_type;
 
 	MPI_Comm_rank(Comm, &Crank);
 	if (Crank == 0)
-		ParseCmd(cmd, ismpi, np, main_cmd, argv, sync_flag);
-	MPI_Bcast(&ismpi, 1, MPI_BYTE, 0, Comm);
+		ParseCmd(cmd, run_type, np, main_cmd, argv, sync_flag);
+	MPI_Bcast(&run_type, 1, MPI_INT, 0, Comm);
 	MPI_Bcast(&sync_flag, 1, MPI_INT, 0, Comm);
 
-	if (!ismpi)			// non-MPI; sync here
+	if (run_type == 0)					// non-MPI; sync here
 	{
 		int status;
 		if (Crank == 0)
@@ -630,7 +652,7 @@ void CmdLauncher::Run(std::string cmd, MPI_Comm Comm) const
 			throw EObjFunc(msgrus, msg);
 		}
 	}
-	else				// MPI
+	else if (run_type == 1)				// MPI
 	{
 		MPI_Comm newcomm;
 		MPI_Info info;
@@ -684,6 +706,17 @@ void CmdLauncher::Run(std::string cmd, MPI_Comm Comm) const
 		if (rank == 0)
 			remove(hfile.c_str());
 	}
+	else if (run_type == 2)				// include-file
+	{
+		Bcast_string(main_cmd, 0, Comm);		// main_cmd contains the file name
+
+		DataLines dl;
+		K->AppText("\n");
+		dl.LoadFromFile(main_cmd);				// read the file
+		K->ReadLines(dl.EliminateEmpty(), 1, HMMPI::getCWD(main_cmd));		// execute
+	}
+	else
+		throw Exception("Incorrect run_type in CmdLauncher::Run()");		// sync
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

@@ -2250,9 +2250,9 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 		sprintf(workM, "mod%zu", i+1);
 		sprintf(workH, "hist%zu", i+1);
 		sprintf(workS, "sigma%zu", i+1);
-		sprintf(buffM, "\t%-*s", Width, workM);
-		sprintf(buffH, "\t%-*s", Width, workH);
-		sprintf(buffS, "\t%-*s", Width, workS);
+		sprintf(buffM, "\t%-*.*s", Width, HMMPI::BUFFSIZE-5, workM);
+		sprintf(buffH, "\t%-*.*s", Width, HMMPI::BUFFSIZE-5, workH);
+		sprintf(buffS, "\t%-*.*s", Width, HMMPI::BUFFSIZE-5, workS);
 		headerM1 += buffM;
 		headerH1 += buffH;
 		headerS1 += buffS;
@@ -2522,6 +2522,48 @@ PMEclipse::~PMEclipse()
 #endif
 }
 //---------------------------------------------------------------------------
+//	PMEclipse::ObjFunc() outline, showing how execution control is managed in MPI:
+//
+//	if (comm_rank == 0)
+//	{A
+//		while (complete == 0)
+//		{B
+//			try
+//			{C
+//				MPI_BarrierSleepy(comm);
+//				simcmd->RunCmd(comm);
+//				...
+//				...
+//			}C
+//			catch (-> immediate termination, fill err_msg)
+//			catch (-> terminate or re-run, fill err_msg)
+//
+//			MPI_BarrierSleepy(comm);
+//			MPI_Bcast(complete);
+//		}B
+//	}A
+//	else	  	  // comm_rank != 0
+//	{A'
+//		while (complete == 0)
+//		{B'
+//			try
+//			{C'
+//				MPI_BarrierSleepy(comm);
+//				simcmd->RunCmd(comm);
+//			}C'
+//			catch (...)
+//
+//			MPI_BarrierSleepy(comm);
+//			MPI_Bcast(complete);
+//		}B'
+//	}A'
+//
+//	MPI_BarrierSleepy(comm);
+//	MPI_Bcast(warning_count);
+//	MPI_Bcast(err_msg);
+//	if (err_msg[0] != 0)
+//		throw Exception(err_msg);		// sync exception
+//
 double PMEclipse::ObjFunc(const std::vector<double> &params)
 {
 	DECLKWD(parameters, KW_parameters, "PARAMETERS");
@@ -2531,12 +2573,12 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 	DECLKWD(textsmry, KW_textsmry, "TEXTSMRY");
 	DECLKWD(simcmd, KW_simcmd, "SIMCMD");
 
-	int parallel_size = 0;		// parallel simulation size
-	int parallel_rank = -1;
+	int comm_size = 0;		// parallel simulation size
+	int comm_rank = -1;
 	if (comm != MPI_COMM_NULL)
 	{
-		MPI_Comm_size(comm, &parallel_size);
-		MPI_Comm_rank(comm, &parallel_rank);
+		MPI_Comm_size(comm, &comm_size);
+		MPI_Comm_rank(comm, &comm_rank);
 	}
 
 	std::vector<double> of_vec;	// o.f. contribution for each vector, its sum is the final result
@@ -2544,190 +2586,196 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 	int warning_count = 0;
 	char err_msg[HMMPI::BUFFSIZE];
 	err_msg[0] = 0;
-	if (parallel_rank == 0)		// processing is done on comm-RANKS-0, simulation - on all ranks
+	int complete = 0;			// while-loop controller: 0 - running, 1 - finished, 2 - error
+
+	if (comm_rank == 0)			// processing is done on comm-RANKS-0, simulation - on all ranks
 	{
-		try						// this try-catch block is intended for MPI synchronisation of errors
+		while (complete == 0)	// make several attempts to calculate obj. func.
 		{
-			if (!CheckLimits(params))
-				throw HMMPI::EObjFunc(HMMPI::MessageRE("Параметры выходят за допустимый диапазон",
-													   "Parameters are out of range"));
-			bool complete = false;
-			while (!complete)		// make several attempts to calculate obj. func.
+			std::ofstream sw;	// ObjFuncLog.txt
+			sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
+			try					// this try-catch block is intended to separate severe errors (EObjFunc) from everything else
 			{
-				std::ofstream sw;	// ObjFuncLog.txt
-				sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
-				try					// this try-catch block is intended to separate severe errors (EObjFunc) from everything else
+				// 1. Substitute the parameters and run the model
+				if (!CheckLimits(params))
+					throw HMMPI::EObjFunc(HMMPI::MessageRE("Параметры выходят за допустимый диапазон",
+														   "Parameters are out of range"));
+
+				HMMPI::TagPrintfMap *tmap = parameters->get_tag_map();		// object handling the parameters - fill it!
+				tmap->SetSize(comm_size);
+				std::vector<double> par_external = parameters->InternalToExternal(params);
+				tmap->SetDoubles(parameters->name, par_external);
+				std::string templ_msg = templ->WriteFiles(*tmap);			// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
+
+				HMMPI::MPI_BarrierSleepy(comm);
+				simcmd->RunCmd(comm);
+
+				// 2. Get modelled data
+				std::string model_name = (*tmap)["PATH"]->ToString() + "/" + (*tmap)["MOD"]->ToString();
+				std::string msg_vect_file = "", msg_vect_stdout = "";		// ultimate "vectors" messages
+				std::string msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full;		// work messages; the full versions are for file output
+
+				smry->ReadFiles(model_name);						// load whole summary
+				HMMPI::Vector2<double> SMRY = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN());
+
+				std::vector<std::string> smry_files{smry->data_file(), smry->vecs_file(), smry->dates_file()};		// check files modification time
+				for (const auto &f : smry_files)
+					if (HMMPI::FileModCompare(f, templ->DataFileSubst()) < 0)
+						throw HMMPI::Exception(HMMPI::stringFormatArr("[{0:%d}] Файл " + f + " был изменен до изменения DATA-файла",
+																	  "[{0:%d}] File " + f + " was changed before DATA-file", RNK));	// "small error" - i.e. not EObjFunc
+				if (msg_dat_full != "")									// the warnings below are issued after potential error with files modification time
 				{
-					// 1. Substitute the parameters and run the model
-					HMMPI::TagPrintfMap *tmap = parameters->get_tag_map();		// object handling the parameters - fill it!
-					tmap->SetSize(parallel_size);
-					std::vector<double> par_external = parameters->InternalToExternal(params);
-					tmap->SetDoubles(parameters->name, par_external);
-					std::string templ_msg = templ->WriteFiles(*tmap);			// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
+					msg_vect_file += msg_dat_full + "\n";
+					msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n";
+					warning_count++;
+				}
+				if (msg_vec_full != "")
+				{
+					msg_vect_file += msg_vec_full + "\n";
+					msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n";
+					warning_count++;
+				}
 
-					HMMPI::MPI_BarrierSleepy(comm);
-					simcmd->RunCmd(comm);
-
-					// 2. Get modelled data
-					std::string model_name = (*tmap)["PATH"]->ToString() + "/" + (*tmap)["MOD"]->ToString();
-					std::string msg_vect_file = "", msg_vect_stdout = "";		// ultimate "vectors" messages
-					std::string msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full;		// work messages; the full versions are for file output
-
-					smry->ReadFiles(model_name);						// load whole summary
-					HMMPI::Vector2<double> SMRY = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN());
-
-					std::vector<std::string> smry_files{smry->data_file(), smry->vecs_file(), smry->dates_file()};		// check files modification time
-					for (const auto &f : smry_files)
-						if (HMMPI::FileModCompare(f, templ->DataFileSubst()) < 0)
-							throw HMMPI::Exception(HMMPI::stringFormatArr("[{0:%d}] Файл " + f + " был изменен до изменения DATA-файла",
-																		  "[{0:%d}] File " + f + " was changed before DATA-file", RNK));	// "small error" - i.e. not EObjFunc
-					if (msg_dat_full != "")									// the warnings below are issued after potential error with files modification time
-					{
-						msg_vect_file += msg_dat_full + "\n";
-						msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n";
-						warning_count++;
-					}
+				// 3. Get historical data
+				HMMPI::Vector2<double> smry_hist;					// historical data
+				bool text_sigma = false;
+				if (textsmry->data.Length() != 0)					// option with history from TEXTSMRY
+				{
+					text_sigma = true;
+					smry_hist = textsmry->pet_dat;
+				}
+				else 												// option with history from model's UNSMRY
+				{
+					smry_hist = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN(), "H");
 					if (msg_vec_full != "")
 					{
 						msg_vect_file += msg_vec_full + "\n";
 						msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n";
 						warning_count++;
 					}
+				}
 
-					// 3. Get historical data
-					HMMPI::Vector2<double> smry_hist;					// historical data
-					bool text_sigma = false;
-					if (textsmry->data.Length() != 0)					// option with history from TEXTSMRY
+				// 4. Calculate the objective function
+				size_t Nsteps = SMRY.ICount();
+				size_t Nvecs = SMRY.JCount();
+				assert(Nvecs == vect->sigma.size());
+
+				of_vec = std::vector<double>(Nvecs);
+				int count_undef = 0;
+				modelled_data = std::vector<double>();
+				for (size_t p = 0; p < Nvecs; p++)		// fill modelled_data (and calculate o.f. for NOT-TEXTSMRY case)
+				{
+					double of1 = 0;						// o.f. contribution of vector "p"
+					for (size_t t = 0; t < Nsteps; t++)
 					{
-						text_sigma = true;
-						smry_hist = textsmry->pet_dat;
-					}
-					else 												// option with history from model's UNSMRY
-					{
-						smry_hist = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN(), "H");
-						if (msg_vec_full != "")
-						{
-							msg_vect_file += msg_vec_full + "\n";
-							msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n";
-							warning_count++;
-						}
-					}
-
-					// 4. Calculate the objective function
-					size_t Nsteps = SMRY.ICount();
-					size_t Nvecs = SMRY.JCount();
-					assert(Nvecs == vect->sigma.size());
-
-					of_vec = std::vector<double>(Nvecs);
-					int count_undef = 0;
-					modelled_data = std::vector<double>();
-					for (size_t p = 0; p < Nvecs; p++)		// fill modelled_data (and calculate o.f. for NOT-TEXTSMRY case)
-					{
-						double of1 = 0;						// o.f. contribution of vector "p"
-						for (size_t t = 0; t < Nsteps; t++)
-						{
-							double sigma = 0;
-							if (text_sigma)
-								sigma = smry_hist(t, p + Nvecs);
-							else
-								sigma = vect->sigma[p];
-
-							if (!HMMPI::IsNaN(smry_hist(t, p)) && sigma != 0)
-							{
-								of1 += pow((SMRY(t, p) - smry_hist(t, p))/sigma, 2);
-								modelled_data.push_back(SMRY(t, p));
-							}
-							else
-								count_undef++;
-						}
-						of_vec[p] = of1;
-					}
-					if (text_sigma)							// of_vec with covariances is redefined here
-					{
-						VCL->ObjFunc(SMRY, smry_hist, cov_is_diag);
-						of_vec = VCL->of1;
-					}
-					res = HMMPI::Mat(of_vec).Sum();
-
-					// 5. Messaging
-					// printing to file
-					if (RNK == 0 && !ignore_small_errors)
-					{
-						sw.open(log_file);
-						sw << parameters->msg(-1) << "\n";	// printing all lines to the file
-
-						// limits_msg is not reported, since problems with parameter bounds lead to an exception and immediate termination
-
-						sw << templ_msg << "\n";
-						sw << msg_vect_file;
-						write_smry(sw, SMRY, smry_hist, of_vec, text_sigma);
-
-						double prior = 0;
-						std::string prior_msg = form_prior(prior);
-						sw << HMMPI::stringFormatArr("\nf = {0:%.8g}\n", std::vector<double>{res + prior});
-						sw << prior_msg;
-						if (prior_msg != "")
-							sw << HMMPI::stringFormatArr("Likelihood = {0:%.8g}\n", std::vector<double>{res});
+						double sigma = 0;
 						if (text_sigma)
+							sigma = smry_hist(t, p + Nvecs);
+						else
+							sigma = vect->sigma[p];
+
+						if (!HMMPI::IsNaN(smry_hist(t, p)) && sigma != 0)
 						{
-							if (!cov_is_diag)
-								sw << (std::string)HMMPI::stringFormatArr("Была использована полная ковариационная матрица (при маленьких R в {0:%s} она становится диагональной)\n",
-																		  "Full covariance matrix was used (it becomes diagonal for small R in {0:%s})\n", vect->name);
-							else
-								sw << (std::string)HMMPI::MessageRE("Была использована диагональная ковариационная матрица\n",
-																	"Diagonal covariance matrix was used\n");
+							of1 += pow((SMRY(t, p) - smry_hist(t, p))/sigma, 2);
+							modelled_data.push_back(SMRY(t, p));
 						}
-						sw << HMMPI::stringFormatArr(HMMPI::MessageRE("Использовано точек данных: {0:%d}\nНеиспользованных значений / нулевых сигм: {1:%d}\nВсего точек данных: {2:%d}",
-																	  "Used data points: {0:%d}\nUnused values / zero sigmas: {1:%d}\nTotal data points: {2:%d}"),
-																	  std::vector<int>{int(Nvecs*Nsteps) - count_undef, count_undef, int(Nvecs*Nsteps)});
-						sw.close();
+						else
+							count_undef++;
 					}
-					obj_func_msg = templ_msg + "\n" + msg_vect_stdout;
-
-					// 6. Clear files
-					templ->ClearFiles();
-					templ->ClearFilesEcl();
-
-					complete = true;
+					of_vec[p] = of1;
 				}
-				catch (const HMMPI::EObjFunc &e)	// immediate termination
+				if (text_sigma)							// of_vec with covariances is redefined here
 				{
-					if (sw.is_open())
-						sw.close();
-
-					throw e;
+					VCL->ObjFunc(SMRY, smry_hist, cov_is_diag);
+					of_vec = VCL->of1;
 				}
-				catch (const std::exception &e)
-				{
-					if (sw.is_open())
-						sw.close();
+				res = HMMPI::Mat(of_vec).Sum();
 
-					if (!ignore_small_errors)
+				// 5. Messaging
+				// printing to file
+				if (RNK == 0 && !ignore_small_errors)
+				{
+					sw.open(log_file);
+					sw << parameters->msg(-1) << "\n";	// printing all lines to the file
+
+					// limits_msg is not reported, since problems with parameter bounds lead to an exception and immediate termination
+
+					sw << templ_msg << "\n";
+					sw << msg_vect_file;
+					write_smry(sw, SMRY, smry_hist, of_vec, text_sigma);
+
+					double prior = 0;
+					std::string prior_msg = form_prior(prior);
+					sw << HMMPI::stringFormatArr("\nf = {0:%.8g}\n", std::vector<double>{res + prior});
+					sw << prior_msg;
+					if (prior_msg != "")
+						sw << HMMPI::stringFormatArr("Likelihood = {0:%.8g}\n", std::vector<double>{res});
+					if (text_sigma)
 					{
-						complete = true;
-						throw HMMPI::Exception(e.what());
+						if (!cov_is_diag)
+							sw << (std::string)HMMPI::stringFormatArr("Была использована полная ковариационная матрица (при маленьких R в {0:%s} она становится диагональной)\n",
+																	  "Full covariance matrix was used (it becomes diagonal for small R in {0:%s})\n", vect->name);
+						else
+							sw << (std::string)HMMPI::MessageRE("Была использована диагональная ковариационная матрица\n",
+																"Diagonal covariance matrix was used\n");
 					}
-					else
-						K->AppText(HMMPI::stringFormatArr("*** ошибка: {0:%s}, симулятор будет перезапущен\n",
-														  "*** error: {0:%s}, simulator will be re-run\n", (std::string)e.what()));
+					sw << HMMPI::stringFormatArr(HMMPI::MessageRE("Использовано точек данных: {0:%d}\nНеиспользованных значений / нулевых сигм: {1:%d}\nВсего точек данных: {2:%d}",
+																  "Used data points: {0:%d}\nUnused values / zero sigmas: {1:%d}\nTotal data points: {2:%d}"),
+																  std::vector<int>{int(Nvecs*Nsteps) - count_undef, count_undef, int(Nvecs*Nsteps)});
+					sw.close();
 				}
-			} // while (!complete)
-		}
-		catch (const std::exception &e)
-		{
-			sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
-		}
-	}
-	else	  // parallel_rank != 0
-	{
-		try	  // try-catch block should be sync across all ranks
-		{
-			HMMPI::MPI_BarrierSleepy(comm);
-			simcmd->RunCmd(comm);
-		}
-		catch (...)
-		{
+				obj_func_msg = templ_msg + "\n" + msg_vect_stdout;
 
+				// 6. Clear files
+				templ->ClearFiles();
+				templ->ClearFilesEcl();
+
+				complete = 1;
+			}
+			catch (const HMMPI::EObjFunc &e)	// immediate termination
+			{
+				if (sw.is_open())
+					sw.close();
+
+				sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
+				complete = 2;
+			}
+			catch (const std::exception &e)
+			{
+				if (sw.is_open())
+					sw.close();
+
+				if (!ignore_small_errors)
+				{
+					sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
+					complete = 2;
+				}
+				else
+					K->AppText(HMMPI::stringFormatArr("*** ошибка: {0:%s}, симулятор будет перезапущен\n",
+													  "*** error: {0:%s}, simulator will be re-run\n", (std::string)e.what()));
+			}
+
+			HMMPI::MPI_BarrierSleepy(comm);
+			MPI_Bcast(&complete, 1, MPI_INT, 0, comm);
+
+		} // while (complete == 0)
+	}
+	else	  	  // comm_rank != 0
+	{
+		while (complete == 0)
+		{
+			try	  // try-catch block should be sync across all ranks
+			{
+				HMMPI::MPI_BarrierSleepy(comm);
+				simcmd->RunCmd(comm);
+			}
+			catch (...)
+			{
+
+			}
+
+			HMMPI::MPI_BarrierSleepy(comm);
+			MPI_Bcast(&complete, 1, MPI_INT, 0, comm);
 		}
 	}
 

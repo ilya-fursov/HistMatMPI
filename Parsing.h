@@ -67,7 +67,6 @@ protected:
 	std::string delim;		// delimiters used by the keyword to parse parameters
 	std::string trim;		// symbols removed from left and right of each parameters line
 	std::string CWD;		// current working directory
-	int Shift;				// shift level for include files
 	int erows, ecols;		// expected number of rows and columns as parameters; "-1" means any number of parameters
 	int dec_verb;			// verbosity decrement for this keyword; when printing messages, this keyword will use [verbosity] = [global 'verbosity'] - [dec_verb]
 	HMMPI::Vector2<std::string> par_table;	// erows x ecols table of parameters; this is the raw table, before any processing;
@@ -80,11 +79,10 @@ protected:
 public:
 	std::string name;		// name of the keyword; use UPPERCASE here
 
-	KW_item(){delim = " \t\r"; trim = " \t\r"; K = 0; state = "Nothing is specified\n"; Shift = 0; erows = 1; ecols = 0; dec_verb = 0;};		// in derived classes/functions explicitly ResetState() to show there are no errors
+	KW_item(){delim = " \t\r"; trim = " \t\r"; K = 0; state = "Nothing is specified\n"; erows = 1; ecols = 0; dec_verb = 0;};		// in derived classes/functions explicitly ResetState() to show there are no errors
 	virtual ~KW_item(){};
 	void SetParser(Parser_1 *a){K = a;};       // set Parser pointer K
 	void SetCWD(std::string s){CWD = s;};	   // set CWD
-	void SetShift(int d){Shift = d;};		   // set Shift
 	std::string GetState() const {return state;};
 	void SetState(std::string s) {state = s;};			// "s" should have '\n'
 	void ExpParams(int &rows, int &cols){rows = erows; cols = ecols;};   // how many parameters are expected by the keyword (rows - how many lines, cols - how many columns);
@@ -202,13 +200,11 @@ protected:
 	virtual void AddParam(std::vector<double> *val, const char *pname);
 	virtual void AddParam(std::vector<std::string> *val, const char *pname);
 	std::string CheckExpected(int i, int j);		// returns "" if string parameter at row=i, col=j has a valid value, error message otherwise
-	virtual void PrintParams() noexcept;			// print only if verbosity >= 1
+	virtual void PrintParams() noexcept;			// print only if verbosity >= -1
 
 public:
 	KW_multparams(){erows = -1; ecols = 0;};
 	virtual void ProcessParamTable() noexcept;		// process 'par_table'; will ALLOCATE new data vectors; normally does not need redefinition in derived classes
-
-	static int max_str_len(const std::vector<std::string> &vec_str);	// max_i of length(vec_str[i]), used for nicer formatting
 };
 //------------------------------------------------------------------------------------------
 // base class for a column of 'double'
@@ -289,14 +285,13 @@ public:
 	static std::string InitCWD;		// initial CWD (where program starts)
 	static int verbosity;			// global verbosity for printing messages, default = 0, larger positive numbers - more verbose
 
-
 	static int MPI_rank;			// in MPI_COMM_WORLD
 	static int MPI_size;			// in MPI_COMM_WORLD
 	int TotalErrors;					// counts all errors for the final report
 	int TotalWarnings;
 
 	Parser_1();
-	static int StrListN();			// number of lines for HMMPI::StringListing depending on 'verbosity'
+	static int StrListN(int dec_verb = 0);		// number of lines for HMMPI::StringListing depending on 'verbosity - dec_verb'
 	void AddKW_item(KW_item *kwi);      // adds 'kwi' to 'KWList'
 	void AddCTT(ConsTextTweak *ctt);	// adds 'ctt' to 'CTTList'
 	void DeleteItems();					// deletes all KW_items from heap
@@ -306,9 +301,9 @@ public:
 	const KW_item *GetKW_item(std::string s) const;	 // pointer to KW_item with name "s", NULL if not found; search is done inside KWList;
 	KW_item *GetKW_item(std::string s);	// non-const version of the above
 	void AppText(std::string s);      	// sends/appends 's' to "cout" and to 'report', also adding the 'include' level numbers
-	void ReadLines(const std::vector<std::string> &InputLines, int shift, std::string cwd);     // parses and executes the control file (main or include)
+	void ReadLines(const std::vector<std::string> &InputLines, int shift_inc, std::string cwd);     // parses and executes the control file (main or include)
 										// use InputLines = DataLines::EliminateEmpty()
-										// set 'shift' to 0 for the main file, increment it for the includes
+										// set the increment 'shift_inc' to 0 for the main file, and 1 for the includes
 										// 'cwd' is the CWD of the file in question
 };
 //------------------------------------------------------------------------------------------

@@ -40,7 +40,8 @@ void DataLines::LoadFromFile(std::string fname)		// (OK)
 		{
 			sr.open(fname.c_str());
 			if (sr.fail())
-				throw HMMPI::Exception((std::string)"Failed opening " + fname);
+				throw HMMPI::Exception((std::string)"Невозможно открыть " + fname,
+									   (std::string)"Failed opening " + fname);
 
 			std::string line;
 			while (!sr.eof())
@@ -632,7 +633,7 @@ std::string KW_multparams::CheckExpected(int i, int j)	// (OK)
 //------------------------------------------------------------------------------------------
 void KW_multparams::PrintParams() noexcept
 {
-	if (K->verbosity - dec_verb >= 1)		// report all parameter values
+	if (K->verbosity - dec_verb >= -1)		// report the parameter values
 	{
 		std::string MSG = HMMPI::MessageRE("Текущие значения:\n", "Current values:\n");
 
@@ -641,14 +642,16 @@ void KW_multparams::PrintParams() noexcept
 			fmt_w1 = 2;
 		if (par_table.ICount() > 100)
 			fmt_w1 = 3;
+		if (par_table.ICount() > 1000)
+			fmt_w1 = 4;
+		if (par_table.ICount() > 10000)
+			fmt_w1 = 5;
 
-		std::vector<int> maxlen(par_table.JCount(), 0);		// formatting stuff: for columns of type "string", keeps the max string length of each column
-		for (size_t j = 0; j < par_table.JCount(); j++)		// 					 for other column types, keeps 0
-			if (TYPE[j] == 2)				// "string"
-				maxlen[j] = max_str_len(*(std::vector<std::string>*)DATA[j]);
+		HMMPI::StringListing SL("\t");
 
 		for (size_t i = 0; i < par_table.ICount(); i++)
 		{
+			std::vector<std::string> line(par_table.JCount());
 			for (size_t j = 0; j < par_table.JCount(); j++)
 			{
 				assert(TYPE[j] >= 0 && TYPE[j] <= 2);
@@ -659,16 +662,15 @@ void KW_multparams::PrintParams() noexcept
 				else if (TYPE[j] == 1)
 					sprintf(buff, "%s%-*d = %-7g", NAMES[j].c_str(), fmt_w1, (int)i, (*(std::vector<double>*)DATA[j])[i]);
 				else if (TYPE[j] == 2)
-					sprintf(buff, "%s%-*d = %-*s", NAMES[j].c_str(), fmt_w1, (int)i, maxlen[j], (*(std::vector<std::string>*)DATA[j])[i].c_str());
+					sprintf(buff, "%s%-*d = %-.*s", NAMES[j].c_str(), fmt_w1, (int)i, HMMPI::BUFFSIZE-5, (*(std::vector<std::string>*)DATA[j])[i].c_str());
 
-				MSG += buff;
-				if (j < par_table.JCount()-1)
-					MSG += "\t";
-				else
-					MSG += "\n";
+				line[j] = buff;
 			}
+			SL.AddLine(line);
 		}
-		K->AppText(MSG);
+
+		const int N = Parser_1::StrListN(dec_verb);
+		K->AppText(MSG + SL.Print(N, N));
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -726,31 +728,6 @@ void KW_multparams::ProcessParamTable()  noexcept		// (OK)
 						else
 							(*(std::vector<std::string>*)DATA[j])[i] = EXPECTED[j][0];	// something is expected - take the first one
 					}
-
-					// **** obsolete ****: different behaviour for rows after the first row
-//					if (i == 0)		// first row, defaults are (int)0, (double)0, (string)"" / (string)expected[0]
-//					{
-//						if (TYPE[j] == 0)
-//							(*(std::vector<int>*)DATA[j])[i] = 0;
-//						else if (TYPE[j] == 1)
-//							(*(std::vector<double>*)DATA[j])[i] = 0.0;
-//						else if (TYPE[j] == 2)
-//						{
-//							if (EXPECTED[j].size() == 0)
-//								(*(std::vector<std::string>*)DATA[j])[i] = "";				// nothing expected - take ""
-//							else
-//								(*(std::vector<std::string>*)DATA[j])[i] = EXPECTED[j][0];	// something is expected - take the first one
-//						}
-//					}
-//					else			// for rows after the first row, take defaults from previous row
-//					{
-//						if (TYPE[j] == 0)
-//							(*(std::vector<int>*)DATA[j])[i] = (*(std::vector<int>*)DATA[j])[i-1];
-//						else if (TYPE[j] == 1)
-//							(*(std::vector<double>*)DATA[j])[i] = (*(std::vector<double>*)DATA[j])[i-1];
-//						else if (TYPE[j] == 2)
-//							(*(std::vector<std::string>*)DATA[j])[i] = (*(std::vector<std::string>*)DATA[j])[i-1];
-//					}
 				}
 			}
 		}
@@ -759,16 +736,6 @@ void KW_multparams::ProcessParamTable()  noexcept		// (OK)
 	{
 		SilentError(make_err_msg());
 	}
-}
-//------------------------------------------------------------------------------------------
-int KW_multparams::max_str_len(const std::vector<std::string> &vec_str)		// max_i of length(vec_str[i]), used for nicer formatting
-{
-	int res = 0;
-	for (const auto &s : vec_str)
-		if ((int)s.length() >= res)
-			res = s.length();
-
-	return res;
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -844,14 +811,19 @@ Parser_1::Parser_1() : Shift(0), report(""), msg(""), echo(true), silent(false),
 
 }
 //------------------------------------------------------------------------------------------
-int Parser_1::StrListN()		// number of lines for HMMPI::StringListing depending on 'verbosity'
+int Parser_1::StrListN(int dec_verb)		// number of lines for HMMPI::StringListing depending on 'verbosity - dec_verb'
 {
-	if (verbosity >= 1)
+	const int dv = verbosity - dec_verb;
+	if (dv >= 2)
 		return -1;				// all lines
-	else if (verbosity >= 0)
+	else if (dv >= 1)
+		return 20;
+	else if (dv >= 0)
 		return 7;
-	else
+	else if (dv >= -1)
 		return 2;
+	else
+		return 0;
 }
 //------------------------------------------------------------------------------------------
 void Parser_1::AddKW_item(KW_item *kwi)		// (OK)
@@ -937,12 +909,14 @@ void Parser_1::AppText(std::string s)	// (OK)
 //------------------------------------------------------------------------------------------
 // parses and executes the control file (main or include)
 // use InputLines = DataLines::EliminateEmpty()
-// set 'shift' to 0 for the main file, increment it for the includes
+// set the increment 'shift_inc' to 0 for the main file, and 1 for the includes
 // 'cwd' is the CWD of the file in question
-void Parser_1::ReadLines(const std::vector<std::string> &InputLines, int shift, std::string cwd)
+void Parser_1::ReadLines(const std::vector<std::string> &InputLines, int shift_inc, std::string cwd)
 {
+	const std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now();
+
 	const int shift_save = Shift;
-	Shift = shift;
+	Shift += shift_inc;
 	for (size_t posit = 0; posit < InputLines.size(); posit++)
 	{
 		msg = "";
@@ -964,7 +938,6 @@ void Parser_1::ReadLines(const std::vector<std::string> &InputLines, int shift, 
 			AppText(HMMPI::stringFormatArr("Кл. слово {0:%s}\n", "Keyword {0:%s}\n", kw_it->name));		// report current keyword name
 
 			kw_it->SetCWD(cwd);
-			kw_it->SetShift(shift);
 			kw_it->ResetState();				// reset state = no errors
 			kw_it->ReadParamTable(Spar);
 			kw_it->ProcessParamTable();
@@ -986,6 +959,13 @@ void Parser_1::ReadLines(const std::vector<std::string> &InputLines, int shift, 
 			TotalErrors++;
 		}
 	}
+
+	if (Shift > 0)
+	{
+		const std::chrono::high_resolution_clock::time_point time2 = std::chrono::high_resolution_clock::now();
+		AppText(HMMPI::stringFormatArr("Время: {0:%.3f} сек.\n", "Time: {0:%.3f} sec.\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
+	}
+
 	Shift = shift_save;
 }
 //------------------------------------------------------------------------------------------

@@ -32,7 +32,7 @@ void KW_include::DataIO(int i)	// (OK)
 
 	K->AppText("\n");
 	dl.LoadFromFile(full_fname);				// read the file
-	K->ReadLines(dl.EliminateEmpty(), Shift+1, HMMPI::getCWD(full_fname));		// execute
+	K->ReadLines(dl.EliminateEmpty(), 1, HMMPI::getCWD(full_fname));		// execute
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

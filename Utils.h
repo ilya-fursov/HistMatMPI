@@ -68,6 +68,8 @@
 
 extern "C" int FileModTime(const char *file, time_t *time);		// C function, sets "time" to "file" modification time (seconds); returns "0" if all ok
 
+class Parser_1;													// forward declaration for CmdLauncher::Run()
+
 namespace HMMPI
 {
 
@@ -166,9 +168,10 @@ public:
 															// "-1" means output all lines
 };
 //------------------------------------------------------------------------------------------
-// CmdLauncher - class for executing commands via system() or MPI_Comm_spawn()
+// CmdLauncher - class for executing commands via system(), or MPI_Comm_spawn(), or the inner parser.
 // system() : works with a user-provided communicator
 // MPI_Comm_spawn() : currently only deals with MPI_COMM_WORLD, since only one hostfile is currently supported
+// inner parser : executes some include (control) file
 //
 // The compatibility of mpi calls (spawn) and non-mpi (system) calls of HistMatMPI
 // and another program (standard one: std, or MPI one: MPI) is shown in the scheme below:
@@ -190,11 +193,13 @@ protected:
 	int rank;						// rank in MPI_COMM_WORLD
 
 public:
-	void ParseCmd(std::string cmd, bool &IsMPI, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const;
-									// Parses 'cmd' to decide whether it is an MPI command (and setting IsMPI flag)
+	void ParseCmd(std::string cmd, int &run_type, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const;
+									// Parses 'cmd' to decide whether it is a system() command, MPI/spawn command, or include-file command
+									//  	and setting the respective run_type: 0, 1, 2.
 									// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
 									// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
 									//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
+									// In the include-file case, 'main_cmd' will keep the corresponding file name.
 	std::vector<std::string> HostList(int np) const;	// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
 																// 'np' (ref. on rank-0) is the number of MPI processes to be launched
 	std::string MakeHostFile(int np) const;				// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
@@ -207,12 +212,13 @@ public:
 	CmdLauncher();					// CTOR to be called on MPI_COMM_WORLD
 	~CmdLauncher();
 
-	void Run(std::string cmd, MPI_Comm Comm = MPI_COMM_WORLD) const;
+	void Run(std::string cmd, Parser_1 *K, MPI_Comm Comm = MPI_COMM_WORLD) const;
 						// Runs command "cmd" (significant at Comm-ranks-0), followed by a Barrier; should be called on all ranks of "Comm".
 						// For non-MPI command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status is non-zero.
 						// For MPI command: "Comm" must be MPI_COMM_WORLD;
 						// 					uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
 						//					if tNavigator is invoked, the synchronization is based on *.end file
+						// For include-file command: parser "K" executes the specified file
 };
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

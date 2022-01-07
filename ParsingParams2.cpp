@@ -225,7 +225,7 @@ KW_simcmd::KW_simcmd()
 	name = "SIMCMD";
 	delim = "";
 	ecols = 1;
-	dec_verb = -1;
+	dec_verb = 0;
 	DEFPARMULT(cmd);
 
 	FinalizeParams();
@@ -240,7 +240,7 @@ void KW_simcmd::RunCmd(MPI_Comm comm) const		// runs all commands in "cmd_work" 
 {												// "comm" is passed to CmdLauncher::Run()
 	HMMPI::CmdLauncher launcher;
 	for (const std::string &c : cmd_work)
-		launcher.Run(c, comm);
+		launcher.Run(c, K, comm);
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -249,7 +249,7 @@ KW_shell::KW_shell()
 	name = "SHELL";
 	delim = "";
 	ecols = 1;
-	dec_verb = -1;
+	dec_verb = 0;
 	DEFPARMULT(cmd);
 
 	FinalizeParams();
@@ -261,7 +261,7 @@ void KW_shell::FinalAction() noexcept
 	{
 		HMMPI::CmdLauncher launcher;
 		for (size_t i = 0; i < cmd.size(); i++)
-			launcher.Run(cmd[i]);
+			launcher.Run(cmd[i], K);
 	}
 	catch (const std::exception &e)
 	{
@@ -1269,7 +1269,7 @@ void KW_templates::PrintParams() noexcept
 		for (size_t i = 0; i < orig_file.size(); i++)
 		{
 #ifndef TEMPLATES_KEEP_NO_ASCII
-			sprintf(buff, "%30.200s %s %-.200s (keep %s)\n", orig_file[i].c_str(), mode[i].c_str(), work_file[i].c_str(), keep[i].c_str());
+			sprintf(buff, "%*.200s %s %-.200s (keep %s)\n", maxname, orig_file[i].c_str(), mode[i].c_str(), work_file[i].c_str(), keep[i].c_str());
 #else
 			sprintf(buff, "%*.*s %s %-.200s\n", maxname, maxname, orig_file[i].c_str(), mode[i].c_str(), work_file[i].c_str());
 #endif
@@ -1365,7 +1365,7 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 
 	std::string DataFile = HMMPI::stringTagPrintf(work_file[data_file_ind], par, count, tags_left);			// substitute params ($RANK) in template data-file
 	std::string DataFile_nopath = HMMPI::getFile(DataFile);
-	std::string path_DataFile = HMMPI::getCWD(DataFile);
+	std::string path_DataFile = this->CWD + "/" + HMMPI::getCWD(DataFile);
 	if (path_DataFile == "")
 		path_DataFile = ".";
 	par.SetModPath(DataFile_nopath.substr(0, DataFile_nopath.find_last_of(".")), path_DataFile);			// set MOD (without file extension) and PATH
@@ -1408,7 +1408,7 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 			int countfn = 0;
 			count = 0;
 
-			sw.open(work_file_subst[i]);
+			sw.open(this->CWD + "/" + work_file_subst[i]);
 			if (mode[i] == ">")
 			{
 				std::string BufferSubst = HMMPI::ReplaceArr(Buffer[i], orig_file, work_file_subst, &countfn);
@@ -1516,6 +1516,7 @@ void KW_templates::set_keep(std::string k)
 KW_eclvectors::KW_eclvectors()
 {
 	name = "ECLVECTORS";
+	dec_verb = 1;
 	DEFPARMULT(WGname);
 	DEFPARMULT(vect);
 	DEFPARMULT(sigma);
@@ -2640,6 +2641,7 @@ void KW_parameters::UpdateParams() noexcept
 KW_parameters::KW_parameters() : ln10(log(10)), reserved_names({"", "MOD", "PATH", "RANK", "SIZE"})
 {
 	KW_multparams::name = "PARAMETERS";
+	dec_verb = 2;
 	par_map = nullptr;
 
 	DEFPARMULT(name);		// 0
@@ -2681,10 +2683,7 @@ std::string KW_parameters::msg(int N) const	// message listing "val" values, 'N'
 	}
 
 	std::string res = HMMPI::MessageRE("Загружены параметры:\n", "Loaded parameters:\n");
-	int M = N+1;
-	if (N == -1)
-		M = N;
-	res += HMMPI::MessageRE(stlist_rus.Print(M, N), stlist_eng.Print(M, N));
+	res += HMMPI::MessageRE(stlist_rus.Print(N, N), stlist_eng.Print(N, N));
 
 	sprintf(b1, "Активных параметров: %zu/%zu\n", act_ind.size(), tot_ind.size());
 	sprintf(b2, "Active parameters: %zu/%zu\n", act_ind.size(), tot_ind.size());
@@ -3047,6 +3046,7 @@ void KW_dates::UpdateParams() noexcept
 KW_dates::KW_dates()
 {
 	name = "DATES";
+	dec_verb = 1;
 
 	DEFPARMULT(D);
 	DEFPARMULT(M);
@@ -3200,7 +3200,7 @@ KW_3points::KW_3points()
 {
 	name = "3POINTS";
 
-	NAMES = std::vector<std::string>{"P1", "P2", "P3"};
+	NAMES = std::vector<std::string>{"X", "Y", "Z"};
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
