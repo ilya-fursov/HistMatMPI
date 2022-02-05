@@ -43,9 +43,10 @@ int main(int argc, char *argv[])
 		// check consistency of data sizes used for Eclipse output binary reading
 		HMMPI::EclSMRYInitCheckSizes();
 
-		// check consistency of 'size_t' and MPI_UNSIGNED_LONG
-		if (!HMMPI::MPI_size_consistent())
-			throw HMMPI::Exception("Фатальная ошибка: несоответствие размеров данных", "Fatal error: data size mismatch");
+		// check consistency of 'size_t' and MPI_LONG_LONG, and other types
+		const std::string mpi_size_check_msg = HMMPI::MPI_size_consistent();
+		if (mpi_size_check_msg != "")
+			throw HMMPI::Exception("Фатальная ошибка: несоответствие размеров данных\n" + mpi_size_check_msg, "Fatal error: data size mismatch\n" + mpi_size_check_msg);
 
 		control_file = std::string(argv[1]);
 		if (argc > 2)
@@ -62,14 +63,13 @@ int main(int argc, char *argv[])
 				throw HMMPI::Exception("Неправильный язык, ожидается: eng, rus, null", "Incorrect language, expected: eng, rus, null");
 		}
 
-		cwd = HMMPI::getCWD(cwd + "/" + control_file);		// cwd where control file is located
-		if (control_file.find_last_of("/") != std::string::npos)
-			control_file = control_file.substr(control_file.find_last_of("/") + 1);
+		cwd = HMMPI::getCWD(HMMPI::getFullPath(cwd, control_file));		// cwd where control file is located
+		control_file = HMMPI::getFile(control_file);
 
-		kw1.AppText((std::string)"CWD: " + cwd + "\n");
-		kw1.AppText((std::string)"Control file: " + control_file + "\n");
-		kw1.AppText((std::string)"Language: " + HMMPI::MessageRE::lang + "\n");
-		kw1.AppText((std::string)"Reading control file...\n\n");
+		kw1.AppText("CWD: " + cwd + "\n");
+		kw1.AppText("Control file: " + control_file + "\n");
+		kw1.AppText("Language: " + HMMPI::MessageRE::lang + "\n");
+		kw1.AppText("Reading control file...\n\n");
 
 		// Adding keyword items
 		kw1.AddKW_item(new KW_include);
@@ -195,12 +195,12 @@ int main(int argc, char *argv[])
 
 		// Adding console text tweaks
 		//kw1.AddCTT(new CTT_Keyword(&TA));
-		kw1.AddCTT(new CTT_ColorString("ERROR", HMMPI::VT_RED, &TA));
-		kw1.AddCTT(new CTT_ColorString("WARNING", HMMPI::VT_YELLOW, &TA));
-		kw1.AddCTT(new CTT_ColorString("redund. ln.", HMMPI::VT_MAGENTA, &TA));
-		kw1.AddCTT(new CTT_ColorString("ОШИБКА", HMMPI::VT_RED, &TA));
-		kw1.AddCTT(new CTT_ColorString("ПРЕДУПРЕЖДЕНИЕ", HMMPI::VT_YELLOW, &TA));
-		kw1.AddCTT(new CTT_ColorString("Лишн. стр.", HMMPI::VT_MAGENTA, &TA));
+		kw1.AddCTT(new CTT_ColorString("ERROR", HMMPI::Color::VT_RED, &TA));
+		kw1.AddCTT(new CTT_ColorString("WARNING", HMMPI::Color::VT_YELLOW, &TA));
+		kw1.AddCTT(new CTT_ColorString("redund. ln.", HMMPI::Color::VT_MAGENTA, &TA));
+		kw1.AddCTT(new CTT_ColorString("ОШИБКА", HMMPI::Color::VT_RED, &TA));
+		kw1.AddCTT(new CTT_ColorString("ПРЕДУПРЕЖДЕНИЕ", HMMPI::Color::VT_YELLOW, &TA));
+		kw1.AddCTT(new CTT_ColorString("Лишн. стр.", HMMPI::Color::VT_MAGENTA, &TA));
 
 #ifdef TESTCTOR
 		FILE *testf = fopen(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{Parser_1::MPI_rank}).c_str(), "w");		// create empty file
@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
 		CWD_holder::N = cwd;	// CMAES output
 
 		DataLines dl1;
-		dl1.LoadFromFile(cwd + "/" + control_file);
+		dl1.LoadFromFile(HMMPI::getFullPath(cwd, control_file));
 
 		kw1.InitCWD = cwd;
 		kw1.verbosity = 0;

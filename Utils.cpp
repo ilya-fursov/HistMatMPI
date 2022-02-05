@@ -50,7 +50,7 @@ MessageRE::operator std::string()
 //------------------------------------------------------------------------------------------
 // Exception
 //------------------------------------------------------------------------------------------
-Exception::Exception(std::string s) : msg(s)
+Exception::Exception(std::string s) : ExceptionBase(s)
 {
 #ifdef ERROR_TO_FILE
 	int rank;
@@ -61,7 +61,7 @@ Exception::Exception(std::string s) : msg(s)
 #endif
 }
 //------------------------------------------------------------------------------------------
-Exception::Exception(std::string rus, std::string eng) : msg(MessageRE(rus, eng))
+Exception::Exception(std::string rus, std::string eng) : ExceptionBase(MessageRE(rus, eng))
 {
 #ifdef ERROR_TO_FILE
 	int rank;
@@ -285,19 +285,27 @@ void ParseEclSmallHdr(const std::string &s, std::string &a, int &b, std::string 
 	b = HMMPI::StoL(HMMPI::Trim(s.substr(i1+1, i2-i1-1), " \t\r\n"));
 }
 //------------------------------------------------------------------------------------------
-std::string getCWD(std::string fullname)
+std::string getCWD(std::string fullpath)
 {
-	size_t ind = fullname.find_last_of("/");
+	size_t ind = fullpath.find_last_of("/");
 	if (ind != std::string::npos)
-		return fullname.substr(0, ind);
+		return fullpath.substr(0, ind);
 	else
 		return "";
 }
 //------------------------------------------------------------------------------------------
-std::string getFile(std::string fullname)
+std::string getFile(std::string fullpath)
 {
-	size_t ind = fullname.find_last_of("/");
-	return fullname.substr(ind+1, std::string::npos);
+	size_t ind = fullpath.find_last_of("/");
+	return fullpath.substr(ind+1, std::string::npos);
+}
+//------------------------------------------------------------------------------------------
+std::string getFullPath(std::string path, std::string file)		// combines 'path' and 'file'
+{
+	if (path == "")
+		return file;
+	else
+		return path + "/" + file;
 }
 //------------------------------------------------------------------------------------------
 // StringListing
@@ -720,19 +728,32 @@ void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
-bool MPI_size_consistent()
-{
-	int mpival_ulong = 0, mpival_char = 0, mpival_byte = 0, mpival_long = 0;
+std::string MPI_size_consistent()		// checks consistency of type sizes: 'size_t' -- MPI_LONG_LONG, 'char' -- MPI_CHAR, 'bool' -- MPI_BYTE
+{										// on errors returns the message, on success returns ""
+	int mpival_ulong = 0, mpival_char = 0, mpival_byte = 0, mpival_long = 0, mpival_longlong = 0;
 	MPI_Type_size(MPI_UNSIGNED_LONG, &mpival_ulong);
 	MPI_Type_size(MPI_CHAR, &mpival_char);
 	MPI_Type_size(MPI_BYTE, &mpival_byte);
 	MPI_Type_size(MPI_LONG, &mpival_long);
+	MPI_Type_size(MPI_LONG_LONG, &mpival_longlong);
 
-	return (sizeof(size_t) == mpival_ulong &&		// MPI_UNSIGNED_LONG
-			sizeof(char) == mpival_char &&			// MPI_CHAR
-			sizeof(bool) == mpival_byte &&			// MPI_BYTE
-			sizeof(clock_t) == mpival_ulong &&		// MPI_UNSIGNED_LONG
-			sizeof(time_t) == mpival_long);			// MPI_LONG
+	char msg[BUFFSIZE];
+	sprintf(msg, "MPI_LONG_LONG    : %d\tsize_t : %zu\n"
+				 "MPI_CHAR         : %d\tchar   : %zu\n"
+				 "MPI_BYTE         : %d\tbool   : %zu\n"
+				 "MPI_UNSIGNED_LONG: %d\tclock_t: %zu\n"
+				 "MPI_LONG_LONG    : %d\ttime_t : %zu\n"
+				 "MPI_LONG         : %d\n",
+		mpival_longlong, sizeof(size_t), mpival_char, sizeof(char), mpival_byte, sizeof(bool), mpival_ulong, sizeof(clock_t), mpival_longlong, sizeof(time_t), mpival_long);
+
+	if (sizeof(size_t) == mpival_longlong &&	// MPI_LONG_LONG
+		sizeof(char) == mpival_char &&			// MPI_CHAR
+		sizeof(bool) == mpival_byte &&			// MPI_BYTE
+		sizeof(clock_t) == mpival_ulong &&		// MPI_UNSIGNED_LONG
+		sizeof(time_t) == mpival_longlong)		// MPI_LONG_LONG
+		return "";
+	else
+		return msg;
 }
 //------------------------------------------------------------------------------------------
 void MPI_BarrierSleepy(MPI_Comm comm)		// A (less responsive) barrier which does not consume much CPU

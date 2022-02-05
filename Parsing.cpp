@@ -789,7 +789,7 @@ std::string CTT_ColorString::Tweak(std::string s) const
 		std::string s2 = s.substr(pos + S.length());
 		s2 = Tweak(s2);						// recursion to process multiple occurrences of "S"
 		s = s1 + TA->set_fg_color(C) + S;
-		s += TA->set_fg_color(HMMPI::VT_DEFAULT) + s2;
+		s += TA->set_fg_color(HMMPI::Color::VT_DEFAULT) + s2;
 	}
 
 	return s;
@@ -869,7 +869,7 @@ const KW_item *Parser_1::GetKW_item(std::string s) const	// (OK)
 //------------------------------------------------------------------------------------------
 KW_item *Parser_1::GetKW_item(std::string s)
 {
-	return const_cast<KW_item*>(dynamic_cast<const Parser_1*>(this)->GetKW_item(s));
+	return const_cast<KW_item*>(const_cast<const Parser_1*>(this)->GetKW_item(s));
 }
 //------------------------------------------------------------------------------------------
 void Parser_1::AppText(std::string s)	// (OK)
@@ -879,7 +879,7 @@ void Parser_1::AppText(std::string s)	// (OK)
 		s = HMMPI::Replace(s, "/./", "/", NULL);	// print paths in a more clear way
 		if (Shift == 0)
 		{
-			std::cout << ApplyCTT(s);
+			std::cout << ApplyCTT(s) << std::flush;
 			report += s;
 		}
 		else
@@ -901,7 +901,7 @@ void Parser_1::AppText(std::string s)	// (OK)
 				saux.push_back('\n');
 			saux = HMMPI::Replace(saux, app + "\n", "\n");
 
-			std::cout << ApplyCTT(saux);
+			std::cout << ApplyCTT(saux) << std::flush;
 			report += saux;
 		}
 	}

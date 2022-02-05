@@ -584,7 +584,7 @@ void PM_DataProxy::process_data_size(const std::vector<double> &d)
 		}
 	}
 
-	MPI_Bcast(&data_size, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&data_size, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 }
 //---------------------------------------------------------------------------
 void PM_DataProxy::RecalcVals()

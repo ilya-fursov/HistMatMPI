@@ -420,7 +420,7 @@ void LinRegressConstr::CalcGg()
 
 #ifdef WRITE_LINREGRESS_FILES
 		std::ofstream fileG;
-		fileG.open(HMMPI::stringFormatArr(RegEntry::CWD + "/correl_Gg_{0:%d}.txt", std::vector<int>{(int)RLS_ind}));
+		fileG.open(HMMPI::stringFormatArr(HMMPI::getFullPath(RegEntry::CWD, "correl_Gg_{0:%d}.txt"), std::vector<int>{(int)RLS_ind}));
 		fileG << "f2\nG | g\n" << f2 << std::endl;
 		for (size_t i = 0; i < countIV; i++)
 		{
@@ -431,7 +431,7 @@ void LinRegressConstr::CalcGg()
 		fileG.close();
 
 		std::ofstream fileXi;
-		fileXi.open(HMMPI::stringFormatArr(RegEntry::CWD + "/correl_Xif_{0:%d}.txt", std::vector<int>{(int)RLS_ind}));
+		fileXi.open(HMMPI::stringFormatArr(HMMPI::getFullPath(RegEntry::CWD, "correl_Xif_{0:%d}.txt"), std::vector<int>{(int)RLS_ind}));
 		fileXi << "Xi | f" << std::endl;
 		for (size_t i = 0; i < countPTS; i++)
 		{
@@ -1210,7 +1210,7 @@ void RegEntryConstr::AddConstraints(LinRegress *lr)
 		LRC->xcur[i] = 0;
 
 #ifdef WRITE_REGENTRYCONSTR
-	std::ofstream sw(CWD + "/Constraints_A.txt");
+	std::ofstream sw(HMMPI::getFullPath(CWD, "Constraints_A.txt"));
 	for (size_t j = 0; j < LRC->A.JCount(); j++)
 	{
 		for (size_t i = 0; i < LRC->A.ICount(); i++)
@@ -1361,7 +1361,7 @@ void RegList::ReadAllData(const std::vector<Grid2D> &dA, const HMMPI::Vector2<Gr
 	}
 
 #ifdef WRITE_LINREGRESS_FILES
-	std::string fn = RegEntry::CWD + "/regions_data.txt";
+	std::string fn = HMMPI::getFullPath(RegEntry::CWD, "regions_data.txt");
 	std::ofstream sw;
 	sw.open(fn);
 	sw.close();
@@ -1594,8 +1594,8 @@ void RegListSpat::ReadSpatial(const Grid2D &REG, const KW_variogram_Cs *var, int
 
 #ifdef WRITE_LINREGRESS_FILES
 		std::ofstream fileC, fileL;
-		fileC.open(HMMPI::stringFormatArr(RegEntry::CWD + "/correl_Cov_{0:%d}.txt", std::vector<int>{(int)r}));
-		fileL.open(HMMPI::stringFormatArr(RegEntry::CWD + "/correl_L_{0:%d}.txt", std::vector<int>{(int)r}));
+		fileC.open(HMMPI::stringFormatArr(HMMPI::getFullPath(RegEntry::CWD, "correl_Cov_{0:%d}.txt"), std::vector<int>{(int)r}));
+		fileL.open(HMMPI::stringFormatArr(HMMPI::getFullPath(RegEntry::CWD, "correl_L_{0:%d}.txt"), std::vector<int>{(int)r}));
 		fileC << "Covariance matrix" << std::endl;
 		fileL << "Choleski decomposition" << std::endl;
 		for (int i = 0; i < REC->sz; i++)

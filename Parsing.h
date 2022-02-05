@@ -33,7 +33,7 @@ private:
 public:
 	DataLines(){};
 	void LoadFromFile(std::string fname);			// read the lines in MPI manner
-	int Length(){return lines.size();};
+	int Length(){return (int) lines.size();};
 	std::string Get(int n){return lines[n];};    	// get n-th element
 	std::vector<std::string> EliminateEmpty(); 		// eliminates empty entries and returns the VECTOR of lines
 };

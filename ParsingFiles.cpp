@@ -28,7 +28,7 @@ KW_include::KW_include()	// (OK)
 void KW_include::DataIO(int i)	// (OK)
 {
 	DataLines dl;
-	std::string full_fname = CWD + "/" + fnames[0];
+	std::string full_fname = HMMPI::getFullPath(CWD, fnames[0]);
 
 	K->AppText("\n");
 	dl.LoadFromFile(full_fname);				// read the file
@@ -121,7 +121,7 @@ void KW_functionXY::DataIO(int i)
 {
 	std::string fn;
 	if (fnames[i] != "")
-		fn = this->CWD + "/" + fnames[i];
+		fn = HMMPI::getFullPath(this->CWD, fnames[i]);
 	else
 		fn = "";
 
@@ -197,7 +197,7 @@ double KW_Pcapill::FuncValExtrapol(int func_ind, double x)
 //------------------------------------------------------------------------------------------
 void KW_Dtable::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[i];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[i]);
 	data = ReadTableFromFile(fn);
 
 	int M = 0, N = 0;
@@ -259,7 +259,7 @@ std::vector<std::vector<double>> KW_Dtable::ReadTableFromFile(std::string fn)
 //------------------------------------------------------------------------------------------
 void KW_conc_data::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[i];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[i]);
 	data = ReadTableFromFile(fn);
 
 	int M = 0, N = 0;
@@ -370,7 +370,7 @@ KW_fsmspec::KW_fsmspec()
 //------------------------------------------------------------------------------------------
 void KW_fsmspec::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	ind = ReadData(fn, Y, M, D, 0);
 }
 //------------------------------------------------------------------------------------------
@@ -559,7 +559,7 @@ KW_funrst::KW_funrst()
 //------------------------------------------------------------------------------------------
 void KW_funrst::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	data = ReadData(fn, "'SWAT    '", fixedFegrid);
 	K->AppText(HMMPI::stringFormatArr("(eng): {0:%d}\n", "Reading the file...\nLoaded time steps: {0:%d}\n", (int)data.size()));
 }
@@ -1119,7 +1119,7 @@ KW_funrstG::KW_funrstG()
 //------------------------------------------------------------------------------------------
 void KW_funrstG::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	data = ReadData(fn, "'SGAS    '", fixedFegrid);
 	K->AppText(HMMPI::stringFormatArr("(eng): {0:%d}\n", "Reading the file...\nLoaded time steps: {0:%d}\n", (int)data.size()));
 
@@ -1133,7 +1133,7 @@ KW_funrstA::KW_funrstA()
 //------------------------------------------------------------------------------------------
 void KW_funrstA::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	data = ReadData(fn, "'ATTR    '", fixedFegrid);
 	K->AppText(HMMPI::stringFormatArr("(eng): {0:%d}\n", "Reading the file...\nLoaded time steps: {0:%d}\n", (int)data.size()));
 }
@@ -1147,7 +1147,7 @@ KW_fegrid::KW_fegrid()
 //------------------------------------------------------------------------------------------
 void KW_fegrid::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	data = ReadData(fn, "'ACTNUM  '");
 	K->AppText(HMMPI::stringFormatArr("(eng) {0:%d}\n",
 									 "Reading the file...\nLoaded cells: {0:%d}\n", (int)data.size()));
@@ -1226,7 +1226,7 @@ void KW_funsmry::DataIO(int i)
 	Add_pre("FSMSPEC");		// check for FSMSPEC here, since this is not done in ReadData()
 	Finish_pre();
 
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	data = ReadData(fn);
 	if (count_dates == 0)
 		count_vecs = 0;
@@ -1560,7 +1560,7 @@ void KW_textsmry::ReadInd(std::string *K_msg)		// reads from "Hdr", fills "ind",
 void KW_textsmry::DataIO(int i)
 {
 	warnings = 0;
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	data = ReadData(fn);
 	pet_dat = data;
 	K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("Чтение файла...\nЗагружено временных шагов: {2:%d}/{0:%d}, найдено векторов: {1:%d}\n",
@@ -1770,7 +1770,7 @@ KW_refmap::KW_refmap()
 //------------------------------------------------------------------------------------------
 void KW_refmap::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	data = ReadData(fn);
 	K->AppText(HMMPI::stringFormatArr("(eng) {0:%d}\n", "Reading the file... Loaded values: {0:%d}\n", (int)data.size()));
 }
@@ -1979,7 +1979,7 @@ KW_refmapM::KW_refmapM()
 //------------------------------------------------------------------------------------------
 void KW_refmapM::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[i];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[i]);
 	data[i] = ReadData(fn);
 	K->AppText(HMMPI::stringFormatArr(HMMPI::MessageRE("(eng) {0:%d}{1:%d}\n", "Reading file #{0:%d}... Loaded values: {1:%d}\n"), std::vector<int>{i, (int)data[i].size()}));
 }
@@ -1999,7 +1999,7 @@ KW_initcmaes::KW_initcmaes()
 //------------------------------------------------------------------------------------------
 void KW_initcmaes::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 
 	std::ifstream sr;
 	sr.exceptions(std::ios_base::badbit);
@@ -2035,7 +2035,7 @@ void KW_initcmaes::WriteFromLimits(const std::vector<double> &x)	// to be called
 	const std::vector<double> min = par_interface->actmin();
 	const std::vector<double> max = par_interface->actmax();
 
-	std::string fn = this->CWD + "/" + fn_cmaes_init;
+	std::string fn = HMMPI::getFullPath(this->CWD, fn_cmaes_init);
 	std::ofstream sw;		// only used on RNK-0
 	if (K->MPI_rank == 0)
 		sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
@@ -2108,7 +2108,7 @@ KW_datafile::KW_datafile()
 //------------------------------------------------------------------------------------------
 void KW_datafile::DataIO(int i)
 {
-	std::string fn = this->CWD + "/" + fnames[0];		// PATH/MODEL0.DATA
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);		// PATH/MODEL0.DATA
 
 	std::ifstream sr;
 	sr.exceptions(std::ios_base::badbit);
@@ -2117,8 +2117,8 @@ void KW_datafile::DataIO(int i)
 	{
 		CheckFileOpen(fn);
 
-		std::string mod_name = fn.substr(fn.find_last_of("/")+1);
-		path = fn.substr(0, fn.find_last_of("/"));
+		std::string mod_name = HMMPI::getFile(fn);		
+		path = HMMPI::getCWD(fn);	
 
 		if (mod_name.length() <= 6 || mod_name.substr(mod_name.length()-6) != "0.DATA")
 			throw HMMPI::Exception("Дата-файл должен оканчиваться на ...0.DATA", "Data file should have ...0.DATA ending");
@@ -2192,7 +2192,7 @@ void KW_datafile::WriteDataFile(int i, bool adjrun)
 //------------------------------------------------------------------------------------------
 std::string KW_datafile::GetDataFileName(int i)
 {
-	return path + "/" + base_name + HMMPI::stringFormatArr("{0:%d}.DATA", std::vector<int>{i});
+	return HMMPI::getFullPath(path, base_name) + HMMPI::stringFormatArr("{0:%d}.DATA", std::vector<int>{i});
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -2208,7 +2208,7 @@ void KW_CoordZcorn::DataIO(int i)
 	IMPORTKWD(dims, KW_griddimens, "GRIDDIMENS");
 	Finish_pre();
 
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	std::string msg = HMMPI::MessageRE("Чтение файла...\n", "Reading the file...\n");
 
 	msg += CG.LoadCOORD_ZCORN(fn, dims->Nx, dims->Ny, dims->Nz, dims->X0, dims->Y0, (dims->grid_Y_axis == "POS"), dims->actnum_name, dims->actnum_min);
@@ -2228,7 +2228,7 @@ void KW_Actnum::DataIO(int i)
 	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
 	Finish_pre();
 
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	std::string msg = cz->CG.LoadACTNUM(fn);
 
 	K->AppText(std::string(HMMPI::MessageRE("Чтение файла...\n", "Reading the file...\n")) + msg + "\n");
@@ -2252,7 +2252,7 @@ void KW_WRfunrst::DataIO(int i)
 	IMPORTKWD(satsteps, KW_satsteps, "SATSTEPS");
 	Finish_pre();
 
-	std::string fn = this->CWD + "/" + fnames[0];
+	std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 	std::string seq_hdr = " 'SEQNUM  '           1 'INTE'\n           {0:%d}\n";
 	std::string prop_hdr = " '{0:%s}'          {1:%s} 'REAL'\n";
 	std::string prop0 = DIMS->krig_prop;
@@ -2324,7 +2324,7 @@ void KW_report::data_io()					// actual output to the file, performed in the end
 {
 	if (K->MPI_rank == 0)
 	{
-		std::string fn = this->CWD + "/" + fnames[0];
+		std::string fn = HMMPI::getFullPath(this->CWD, fnames[0]);
 
 		std::ofstream sw;
 		sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);

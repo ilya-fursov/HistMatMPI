@@ -15,9 +15,8 @@
 
 namespace HMMPI
 {
-
 //------------------------------------------------------------------------------------------
-enum Color
+enum class Color
 {
 	VT_BLACK = 0,
 	VT_RED = 1,
@@ -33,8 +32,6 @@ enum Color
 class TextAttr
 {
 protected:
-	const int LEN = 100;
-
 	bool is_b;		// here the "global state" is stored
 	bool is_i;
 	bool is_u;
@@ -42,24 +39,24 @@ protected:
 	Color fg_c;
 	Color bg_c;
 
-	std::string set_b(bool b){is_b = b; return (b) ? "\33[1m" : "";};		// "global state" is updated by these four functions
-	std::string set_i(bool i){is_i = i; return (i) ? "\33[3m" : "";};
-	std::string set_u(bool u){is_u = u; return (u) ? "\33[4m" : "";};
-	std::string set_r(bool r){is_r = r; return (r) ? "\33[7m" : "";};
-	std::string col_to_str(Color c){char buff[LEN]; sprintf(buff, "%d", c); return buff;};
+	std::string set_b(bool b);		// "global state" is updated by these four functions
+	std::string set_i(bool i);
+	std::string set_u(bool u);
+	std::string set_r(bool r);
+	std::string col_to_str(Color c);
 
 public:
-	TextAttr(){is_b = is_i = is_u = is_r = false; fg_c = bg_c = VT_DEFAULT;};
+	TextAttr();
 
-	std::string set_color(Color f, Color b){fg_c = f; bg_c = b; return (std::string)"\33[3" + col_to_str(f) + ";4" + col_to_str(b) + "m";};
-	std::string set_fg_color(Color f){return set_color(f, VT_DEFAULT);};
-	std::string set_attr(bool b, bool i, bool u, bool r){return (std::string)"\33[0m" + set_b(b) + set_i(i) + set_u(u) + set_r(r) + set_color(fg_c, bg_c);};
-	std::string set_bold(bool v){return set_attr(v, is_i, is_u, is_r);}
-	std::string set_ital(bool v){return set_attr(is_b, v, is_u, is_r);}
-	std::string set_unds(bool v){return set_attr(is_b, is_i, v, is_r);}
-	std::string set_revs(bool v){return set_attr(is_b, is_i, is_u, v);}
+	std::string set_color(Color f, Color b);
+	std::string set_fg_color(Color f);
+	std::string set_attr(bool b, bool i, bool u, bool r);
+	std::string set_bold(bool v);
+	std::string set_ital(bool v);
+	std::string set_unds(bool v);
+	std::string set_revs(bool v);
 };
-
+//------------------------------------------------------------------------------------------
 }	// namespace HMMPI
 
 #endif /* CONSOLECNTR_H_ */

@@ -31,11 +31,16 @@
 #include <iostream>
 #include <fstream>
 #include <sys/stat.h>
-#include <sys/unistd.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+	// TODO find some alternative - for RUNMPICHECK 
+#else
+	#include <sys/unistd.h>
+	#include <sys/socket.h>
+	#include <netdb.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
+#endif
 
 //------------------------------------------------------------------------------------------
 // KW_run derivatives
@@ -400,8 +405,8 @@ void KW_runOptProxy::Run()
 	const std::string modtype_cache = model->type;
 	model->type = "PROXY";
 
-	const std::string params_log_file = this->CWD + "/ParamsLog.txt";	// resulting solution vector is saved here
-	const std::string progress_file = this->CWD + "/ObjFunc_progress.txt";
+	const std::string params_log_file = HMMPI::getFullPath(this->CWD, "ParamsLog.txt");	// resulting solution vector is saved here
+	const std::string progress_file = HMMPI::getFullPath(this->CWD, "ObjFunc_progress.txt");
 
 	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
 		FILE *f = fopen(progress_file.c_str(), "w");
@@ -855,7 +860,7 @@ void KW_runPlot::Run()
 		delete [] POP;
 		delete [] FIT;
 
-		res.SaveToFile(this->CWD + "/ObjFuncPlot.txt");
+		res.SaveToFile(HMMPI::getFullPath(this->CWD, "ObjFuncPlot.txt"));
 		time2 = std::chrono::high_resolution_clock::now();
 		K->AppText(HMMPI::stringFormatArr("Время {0:%.3f} сек.\n\n", "CPU {0:%.3f} sec.\n\n", std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
 	}
@@ -875,7 +880,7 @@ KW_runOpt::KW_runOpt()
 void KW_runOpt::Run()
 {
 	CWD_holder::N = this->CWD;				// only used by CMA-ES
-	const std::string limits_log_file = this->CWD + "/LimitsLog.txt";			// resulting solution vector is saved here
+	const std::string limits_log_file = HMMPI::getFullPath(this->CWD, "LimitsLog.txt");			// resulting solution vector is saved here
 
 	Start_pre();
 	IMPORTKWD(RML, KW_RML, "RML");
@@ -961,7 +966,7 @@ KW_runCritGrad::KW_runCritGrad()
 //------------------------------------------------------------------------------------------
 void KW_runCritGrad::Run()
 {
-	const std::string limits_log_file = this->CWD + "/LimitsLog.txt";			// resulting solution vector is saved here
+	const std::string limits_log_file = HMMPI::getFullPath(this->CWD, "LimitsLog.txt");			// resulting solution vector is saved here
 
 	Start_pre();
 	IMPORTKWD(opt, KW_optimization, "OPTIMIZATION");
@@ -1045,10 +1050,11 @@ void KW_runGrad::Run()
 	std::vector<HMMPI::Mat> di_FI(p.size());	// dFI/dx_i
 	try
 	{
-		bool TEMP_DEBUG = true;		// TODO DEBUG
+		Hess = PM->ObjFuncHess_ACT(p);
+
+		const bool TEMP_DEBUG = true;		// TODO DEBUG
 		if (!TEMP_DEBUG)
 		{
-			Hess = PM->ObjFuncHess_ACT(p);
 			FI = PM->ObjFuncFisher_ACT(p);			// models which cannot calculate ObjFuncHess, ObjFuncFisher, produce an exception, for them Hess, FI = empty
 			for (size_t i = 0; i < p.size(); i++)
 				di_FI[i] = PM->ObjFuncFisher_dxi_ACT(p, i);
@@ -1061,7 +1067,7 @@ void KW_runGrad::Run()
 	if (K->MPI_rank == 0)	// writing the file with results
 	{
 		std::ofstream fileS;
-		fileS.open(K->InitCWD + "/ObjFuncSens.txt");
+		fileS.open(HMMPI::getFullPath(K->InitCWD, "ObjFuncSens.txt"));
 		fileS << HMMPI::stringFormatArr("f (objective function)\n{0:%-18.16g}\n", std::vector<double>{f});
 		fileS << HMMPI::stringFormatArr("\nones'*grad(f) via ObjFuncGradDir\n{0:%-18.16g}\n", std::vector<double>{graddir1});
 		fileS << HMMPI::stringFormatArr("\nones'*grad(f) via inner product\n{0:%-18.16g}\n", std::vector<double>{graddir2});
@@ -1159,7 +1165,7 @@ void KW_runJac::Run()
 	if (K->MPI_rank == 0)	// writing the file with results
 	{
 		std::ofstream fileS;
-		fileS.open(K->InitCWD + "/ObjFuncJacobian.txt");
+		fileS.open(HMMPI::getFullPath(K->InitCWD, "ObjFuncJacobian.txt"));
 		fileS << "eps = " << eps << "\n";
 
 		fileS << "Vector function\n";
@@ -1242,14 +1248,14 @@ void KW_runcalccovar::Run()
 			}
 		}
 
-	std::string fn_cov = CWD + "/" + wrcovar->cov_file;
-	std::string fn_count = CWD + "/" + wrcovar->count_file;
+	std::string fn_cov = HMMPI::getFullPath(CWD, wrcovar->cov_file);
+	std::string fn_count = HMMPI::getFullPath(CWD, wrcovar->count_file);
 	res.SaveProp3D(fn_cov, "COVARIANCE", undef->Ugrid, DIMS->Nz);
 	count.SaveProp3D(fn_count, "COV_COUNT", undef->Ugrid, DIMS->Nz);
-	K->AppText(std::string(HMMPI::MessageRE("(eng)\n", "Saved files:\n")) + fn_cov + "\n" + fn_count + "\n");
+	K->AppText(std::string(HMMPI::MessageRE("Сохранены файлы:\n", "Saved files:\n")) + fn_cov + "\n" + fn_count + "\n");
 
 	time2 = std::chrono::high_resolution_clock::now();
-	K->AppText(HMMPI::stringFormatArr("(eng) {0:%.3f}\n\n", "CPU {0:%.3f} sec.\n\n",
+	K->AppText(HMMPI::stringFormatArr("Время {0:%.3f} сек.\n\n", "CPU {0:%.3f} sec.\n\n",
 			std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count()));
 }
 //------------------------------------------------------------------------------------------
@@ -1320,8 +1326,8 @@ void KW_runcalcwellcovar::Run()
 
 	// writing the files
 
-	std::string fn_cov = CWD + "/" + wrcovar->cov_file;
-	std::string fn_count = CWD + "/" + wrcovar->count_file;
+	std::string fn_cov = HMMPI::getFullPath(CWD, wrcovar->cov_file);
+	std::string fn_count = HMMPI::getFullPath(CWD, wrcovar->count_file);
 
 	std::ofstream sw_cov, sw_count;
 	sw_cov.exceptions(std::ios_base::badbit | std::ios_base::failbit);
@@ -1371,6 +1377,9 @@ KW_runmpicheck::KW_runmpicheck()
 //------------------------------------------------------------------------------------------
 void KW_runmpicheck::Run()
 {
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+	// TODO find some alternative - for RUNMPICHECK
+#else
 	int msize = K->MPI_size;
 	int rank = K->MPI_rank;
 
@@ -1405,6 +1414,7 @@ void KW_runmpicheck::Run()
 			K->AppText((std::string)(RCVBUFF + i*BUFFSIZE) + "\n");
 		delete [] RCVBUFF;
 	}
+#endif
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

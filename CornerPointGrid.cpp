@@ -491,7 +491,7 @@ std::string CornGrid::fill_cell_height()	// fills "cell_height", returns a short
 
 	MPI_Allgatherv(cell_height_local.data(), cell_height_size_local, MPI_DOUBLE, cell_height.data(), counts.data(), displs.data(), MPI_DOUBLE, comm);
 
-	MPI_Allreduce(MPI_IN_PLACE, &count_empty, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+	MPI_Allreduce(MPI_IN_PLACE, &count_empty, 1, MPI_LONG_LONG, MPI_SUM, comm);
 
 	return stringFormatArr("Empty cells: {0:%zu} / {1:%zu}", std::vector<size_t>{count_empty, Nx*Ny*Nz});
 }
@@ -848,9 +848,9 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 	Bcast_string(msg, 0, comm);
 
 	// sync all the data loaded
-	MPI_Bcast(&Nx, 1, MPI_UNSIGNED_LONG, 0, comm);
-	MPI_Bcast(&Ny, 1, MPI_UNSIGNED_LONG, 0, comm);
-	MPI_Bcast(&Nz, 1, MPI_UNSIGNED_LONG, 0, comm);
+	MPI_Bcast(&Nx, 1, MPI_LONG_LONG, 0, comm);
+	MPI_Bcast(&Ny, 1, MPI_LONG_LONG, 0, comm);
+	MPI_Bcast(&Nz, 1, MPI_LONG_LONG, 0, comm);
 
 	Bcast_string(actnum_name, 0, comm);
 	MPI_Bcast(&actnum_min, 1, MPI_DOUBLE, 0, comm);
@@ -935,7 +935,7 @@ std::string CornGrid::LoadACTNUM(std::string fname)		// loads ACTNUM, should be 
 	// sync all the data loaded
 	Bcast_string(msg, 0, comm);
 	Bcast_vector(actnum, 0, comm);
-	MPI_Bcast(&actnum_count, 1, MPI_UNSIGNED_LONG, 0, comm);
+	MPI_Bcast(&actnum_count, 1, MPI_LONG_LONG, 0, comm);
 
 	if (actnum_count >= (size_t)INT_MAX)
 		throw Exception("Array size exceeds INT_MAX in CornGrid::LoadACTNUM");
@@ -1383,8 +1383,8 @@ void CornGrid::find_cell(const double x, const double y, const double z, int &i,
 		}
 	}
 
-	MPI_Bcast(&pbp_call_count, 1, MPI_UNSIGNED_LONG, 0, comm);
-	MPI_Bcast(&psspace_call_count, 1, MPI_UNSIGNED_LONG, 0, comm);
+	MPI_Bcast(&pbp_call_count, 1, MPI_LONG_LONG, 0, comm);
+	MPI_Bcast(&psspace_call_count, 1, MPI_LONG_LONG, 0, comm);
 
 	MPI_Bcast(&iserror, 1, MPI_BYTE, 0, comm);
 	MPI_Bcast(errmsg, BUFFSIZE, MPI_CHAR, 0, comm);

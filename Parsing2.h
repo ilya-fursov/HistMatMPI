@@ -723,7 +723,12 @@ public:
 
 	KW_eclsmry();
 	virtual void FinalAction() noexcept;	// reads the file
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+	_Check_return_ std::string Save();
+#else
 	std::string Save() __attribute__((warn_unused_result));			// save 'Data' to 'fname', making back-ups if necessary; to be called on all ranks; a message "ECLSMRY... saved to..." is returned
+#endif
 	const HMMPI::SimProxyFile &get_Data() const {return Data;};
 	HMMPI::SimProxyFile &get_Data() {return Data;};
 };

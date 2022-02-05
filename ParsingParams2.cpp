@@ -1100,16 +1100,16 @@ KW_integporo_config::KW_integporo_config()
 //------------------------------------------------------------------------------------------
 void KW_integporo_config::UpdateParams() noexcept
 {
-	file_mean = this->CWD + "/" + file_mean;
-	file_var = this->CWD + "/" + file_var;
-	file_out_templ = this->CWD + "/" + file_out_templ;
+	file_mean = HMMPI::getFullPath(this->CWD, file_mean);
+	file_var = HMMPI::getFullPath(this->CWD, file_var);
+	file_out_templ = HMMPI::getFullPath(this->CWD, file_out_templ);
 	if (n <= 1)
 		SilentError(HMMPI::MessageRE("n должно быть > 1", "n should be > 1"));
 	if (Nx < 1 || Ny < 1 || Nz < 1)
 		SilentError(HMMPI::MessageRE("Все размеры грида должны быть >= 1", "All grid dimensions should be >= 1"));
-	if (file_mean == this->CWD + "/" || !HMMPI::FileExists(file_mean))
+	if (file_mean == HMMPI::getFullPath(this->CWD, "") || !HMMPI::FileExists(file_mean))
 		SilentError((std::string)HMMPI::MessageRE("Не найден файл: ", "File not found: ") + "'" + file_mean + "'");
-	if (file_var == this->CWD + "/" || !HMMPI::FileExists(file_var))
+	if (file_var == HMMPI::getFullPath(this->CWD, "") || !HMMPI::FileExists(file_var))
 		SilentError((std::string)HMMPI::MessageRE("Не найден файл: ", "File not found: ") + "'" + file_var + "'");
 	if (file_out_templ.find("%d") == std::string::npos)
 		SilentError(HMMPI::MessageRE("file_out_templ должен содержать '%d'", "file_out_templ should contain '%d'"));
@@ -1148,7 +1148,7 @@ void KW_incfiles::UpdateParams() noexcept
 	int successful = 0;		// counts successful loads for report
 	for (size_t c = 0; c < count; c++)
 	{
-		std::string fread = this->CWD + "/" + file[c];
+		std::string fread = HMMPI::getFullPath(this->CWD, file[c]);
 		std::string buffer = "";
 
 		std::ifstream fR;
@@ -1310,7 +1310,7 @@ void KW_templates::UpdateParams() noexcept
 	int count = 0;							// counts file loads for report
 	for (size_t c = 0; c < orig_file.size(); c++)
 	{
-		std::string fread = this->CWD + "/" + orig_file[c];
+		std::string fread = HMMPI::getFullPath(this->CWD, orig_file[c]);
 		std::string buffer = "";
 
 		std::ifstream fR;
@@ -1365,7 +1365,7 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 
 	std::string DataFile = HMMPI::stringTagPrintf(work_file[data_file_ind], par, count, tags_left);			// substitute params ($RANK) in template data-file
 	std::string DataFile_nopath = HMMPI::getFile(DataFile);
-	std::string path_DataFile = this->CWD + "/" + HMMPI::getCWD(DataFile);
+	std::string path_DataFile = HMMPI::getFullPath(this->CWD, HMMPI::getCWD(DataFile));
 	if (path_DataFile == "")
 		path_DataFile = ".";
 	par.SetModPath(DataFile_nopath.substr(0, DataFile_nopath.find_last_of(".")), path_DataFile);			// set MOD (without file extension) and PATH
@@ -1408,7 +1408,7 @@ std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
 			int countfn = 0;
 			count = 0;
 
-			sw.open(this->CWD + "/" + work_file_subst[i]);
+			sw.open(HMMPI::getFullPath(this->CWD, work_file_subst[i]));
 			if (mode[i] == ">")
 			{
 				std::string BufferSubst = HMMPI::ReplaceArr(Buffer[i], orig_file, work_file_subst, &countfn);
@@ -1986,7 +1986,7 @@ void KW_eclsmry::FinalAction() noexcept
 
 	try
 	{
-		std::string msg = Data.LoadFromBinary(this->CWD + "/" + fname);
+		std::string msg = Data.LoadFromBinary(HMMPI::getFullPath(this->CWD, fname));
 		Data.Xtol = Xtol;
 		Data.set_par_tran(dynamic_cast<KW_parameters*>(K->GetKW_item("PARAMETERS")));
 		K->AppText(msg);
@@ -1999,7 +1999,7 @@ void KW_eclsmry::FinalAction() noexcept
 //------------------------------------------------------------------------------------------
 std::string KW_eclsmry::Save()
 {
-	std::string fn = this->CWD + "/" + fname, msg;
+	std::string fn = HMMPI::getFullPath(this->CWD, fname), msg;
 	msg = copy_file_exists(fn, backup);
 	Data.SaveToBinary(fn);			// to be called on all ranks
 

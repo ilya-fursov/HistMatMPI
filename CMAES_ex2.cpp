@@ -12,7 +12,8 @@
 #include <cstring>
 #include <vector>
 #include <mpi.h>
-#include <sys/stat.h>
+//#include <sys/stat.h>
+#include <filesystem>
 
 //------------------------------------------------------------------------------------------
 std::vector<double> OptCMAES::RunOpt(PhysModel *pm, std::vector<double> x0, const OptContext *ctx)
@@ -35,12 +36,13 @@ std::vector<double> OptCMAES::RunOpt(PhysModel *pm, std::vector<double> x0, cons
 	{
 		#ifdef WRITE_RESAMPLES
 			std::ofstream sw;
-			sw.open(CWD_holder::N + "/" + resamples_file);
+			sw.open(HMMPI::getFullPath(CWD_holder::N, resamples_file));
 			sw << "resamples  \taccept. mdls\talpha\n";
 			sw.close();
 		#endif
 
-		mkdir(PhysModelHM::uncert_dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO);
+		// mkdir(PhysModelHM::uncert_dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO);		deprecated 19.01.2022
+		std::filesystem::create_directory(PhysModelHM::uncert_dir);
 	}
 
 	double *x = optimize(PM_MPI, 0, 2, maxResample, "cmaes_initials.par", K, of);
@@ -149,7 +151,7 @@ double *optimize(PhysModMPI *PM, int nrestarts, double incpopsize, const long ma
 		  {
 			  if (RNK == 0)
 			  {
-				  std::string fn = kw->InitCWD + "/" + resamples_file;
+				  std::string fn = HMMPI::getFullPath(kw->InitCWD, resamples_file);
 				  std::ofstream sw;
 				  sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
 				  sw.open(fn, std::ios_base::app);

@@ -90,25 +90,21 @@ public:
 	operator std::string();
 };
 //------------------------------------------------------------------------------------------
-// some classes for exception handling
+// some concrete classes for exception handling
 //------------------------------------------------------------------------------------------
-class Exception : public std::exception
+class Exception : public ExceptionBase
 {
-protected:
-	std::string msg;
 public:
-	Exception() : msg(""){};
+	Exception() : ExceptionBase("") {};
 	Exception(std::string s);						// #ifdef ERROR_TO_FILE, each rank also writes message to ERROR file
 	Exception(std::string rus, std::string eng);	// #ifdef ERROR_TO_FILE, each rank also writes message to ERROR file
-	~Exception() noexcept {};
-	const char *what() const noexcept {return msg.c_str();};
 };
 //------------------------------------------------------------------------------------------
 class EObjFunc : public Exception		// a more severe error within objective function calculation
 {
 public:
-	EObjFunc(std::string e) : Exception(e){};
-	EObjFunc(std::string rus, std::string eng) : Exception(rus, eng){};
+	EObjFunc(std::string e) : Exception(e) {};
+	EObjFunc(std::string rus, std::string eng) : Exception(rus, eng) {};
 };
 //------------------------------------------------------------------------------------------
 // class for managing communicators within ModelFactory
@@ -142,8 +138,9 @@ std::string EraseSubstr(std::string s, const std::string &substr);			// erases a
 std::vector<std::string> ParseEclChar(const std::string &s);							// gets array of tokens {a1, a2, a3,..} from a string "'a1'  'a2'  'a3' ..." (CHAR entries in eclipse formatted output)
 void ParseEclSmallHdr(const std::string &s, std::string &a, int &b, std::string &c);	// gets {a, b, c} from a string "'a' b 'c'"
 
-std::string getCWD(std::string fullname);			// get 'path' from 'path+file'
-std::string getFile(std::string fullname);			// get 'file' from 'path+file'
+std::string getCWD(std::string fullpath);			// get 'path' from 'path+file'
+std::string getFile(std::string fullpath);			// get 'file' from 'path+file'
+std::string getFullPath(std::string path, std::string file);		// combines 'path' and 'file'
 //------------------------------------------------------------------------------------------
 // Class for accumulating the strings (lines) and then generating a formatted output for print.
 // Handles the sub-string (item) width for different rows, and omits the rows from the middle if necessary
@@ -224,8 +221,8 @@ public:
 //------------------------------------------------------------------------------------------
 // some other utilities
 //------------------------------------------------------------------------------------------
-bool MPI_size_consistent();		// checks consistency of type sizes: 'size_t' -- MPI_UNSIGNED_LONG
-								// 'char' -- MPI_CHAR, 'bool' -- MPI_BYTE
+std::string MPI_size_consistent();		// checks consistency of type sizes: 'size_t' -- MPI_LONG_LONG, 'char' -- MPI_CHAR, 'bool' -- MPI_BYTE
+										// on errors returns the message, on success returns ""
 void MPI_BarrierSleepy(MPI_Comm comm);		// A (less responsive) barrier which does not consume much CPU
 void MPI_count_displ(MPI_Comm comm, int M, std::vector<int> &counts, std::vector<int> &displs);		// fills 'counts' and 'displs' needed for MPI_Gatherv/MPI_Scatterv for distributing the vector of size M on "comm"
 																									// all inputs and outputs are sync on "comm"

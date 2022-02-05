@@ -110,7 +110,7 @@ void PhysModelHM::WriteModel(int i)
 								 "Incorrect number of kriging coefficients (COEFFS) in PhysModelHM::WriteModel"));
 
 	Grid2D krig = aux.Kriging(pts, params, COEFFS, K_type);
-	krig.SaveProp3D(file->path + "/" + file->base_name + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
+	krig.SaveProp3D(HMMPI::getFullPath(file->path, file->base_name) + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
 					DIMS->krig_file + ".inc", DIMS->krig_prop, 0, DIMS->Nz);
 
 	grid = std::vector<double>(DIMS->Nx*DIMS->Ny);
@@ -126,7 +126,7 @@ void PhysModelHM::WriteSWOF(int i)
 	DECLKWD(DIMS, KW_griddims, "GRIDDIMS");
 
 	std::vector<double> par = swof->VarParams(params_all, index_arr(0, 0), index_arr(0, 1));
-	std::string fn = file->path + "/" + file->base_name + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
+	std::string fn = HMMPI::getFullPath(file->path, file->base_name) + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
 				DIMS->swof_file + ".inc";
 	swof->WriteSWOF(fn, par);
 }
@@ -141,7 +141,7 @@ void PhysModelHM::WriteSGOF(int i)
 	if (gas->on == "ON")
 	{
 		std::vector<double> par = sgof->VarParams(params_all, index_arr(1, 0), index_arr(1, 1));
-		std::string fn = file->path + "/" + file->base_name + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
+		std::string fn = HMMPI::getFullPath(file->path, file->base_name) + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
 					DIMS->sgof_file + ".inc";
 		sgof->WriteSWOF(fn, par);
 	}
@@ -185,7 +185,7 @@ void PhysModelHM::WriteINC(int i)
 			}
 
 			// writing
-			std::string fwrite = file->path + "/" + file->base_name + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
+			std::string fwrite = HMMPI::getFullPath(file->path, file->base_name) + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{i}) +
 							incfiles->mod[c] + ".inc";
 			std::ofstream sW;
 			sW.exceptions(std::ios_base::badbit | std::ios_base::failbit);
@@ -919,8 +919,8 @@ PhysModelHM::PhysModelHM(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) 
 	f1 = f2 = f3 = f4 = f5 = 0;
 
 	ignore_small_errors = true;
-	uncert_dir = this->CWD + "/uncert";
-	log_file = this->CWD + "/ObjFuncLog.txt";
+	uncert_dir = HMMPI::getFullPath(this->CWD, "uncert");
+	log_file = HMMPI::getFullPath(this->CWD, "ObjFuncLog.txt");
 	RegEntry::CWD = CWD;
 
 	if (wghts->w5 > 0)
@@ -1280,7 +1280,7 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 
 			std::ofstream sw;
 			sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
-			std::string mod_name = file->path + "/" + file->base_name + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{f_ind});
+			std::string mod_name = HMMPI::getFullPath(file->path, file->base_name) + HMMPI::stringFormatArr("{0:%d}", std::vector<int>{f_ind});
 			try
 			{
 				if (RNK == 0)
@@ -1748,15 +1748,15 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 						KW_undef *undef = dynamic_cast<KW_undef*>(K->GetKW_item("UNDEF"));
 						for (size_t t = 0; t < len; t++)
 						{
-							std::string fn = this->CWD + HMMPI::stringFormatArr("/dA_{0:%d}.txt", std::vector<int>{(int)t+1});
-							std::string fn_input = this->CWD + HMMPI::stringFormatArr("/dA_input_{0:%d}.txt", std::vector<int>{(int)t+1});
+							std::string fn = HMMPI::getFullPath(this->CWD, HMMPI::stringFormatArr("dA_{0:%d}.txt", std::vector<int>{(int)t+1}));
+							std::string fn_input = HMMPI::getFullPath(this->CWD, HMMPI::stringFormatArr("dA_input_{0:%d}.txt", std::vector<int>{(int)t+1}));
 							std::string prop = HMMPI::stringFormatArr("dA_{0:%d}", std::vector<int>{(int)t+1});
 							coeff_maps[t + cVar + RsVar + 1].SaveProp3D(fn, prop, undef->Ugrid, DIMS->Nz);
 							Attr[t].SaveProp3D(fn_input, prop, undef->Ugrid, DIMS->Nz);
 						}
 						for (size_t c = 0; c < cVar + RsVar; c++)
 						{
-							std::string fn = this->CWD + HMMPI::stringFormatArr("/coeff_{0:%d}.txt", std::vector<int>{(int)c+1});
+							std::string fn = HMMPI::getFullPath(this->CWD, HMMPI::stringFormatArr("coeff_{0:%d}.txt", std::vector<int>{(int)c+1}));
 							std::string prop = HMMPI::stringFormatArr("COEF_{0:%d}", std::vector<int>{(int)c+1});
 							coeff_maps[c + 1].SaveProp3D(fn, prop, undef->Ugrid, DIMS->Nz);
 						}
@@ -1957,7 +1957,7 @@ void PhysModelHM::Constraints(HMMPI::Vector2<double> &matrC, std::vector<double>
 	sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
 	try
 	{
-		sw.open(CWD + "/" + lin_constr_file);
+		sw.open(HMMPI::getFullPath(CWD, lin_constr_file));
 		for (size_t i = 0; i < count; i++)
 		{
 			for (size_t j = 0; j < dim; j++)
@@ -2046,7 +2046,7 @@ void PhysModelHM::PerturbSeis(double w5)
 #ifdef WRITE_PET_DATA
 		for (size_t c = 0; c < count; c++)
 		{
-			std::string fn = HMMPI::stringFormatArr(CWD + "/pet_seis_{0:%d}.txt", std::vector<int>{(int)c});
+			std::string fn = HMMPI::stringFormatArr(HMMPI::getFullPath(CWD, "pet_seis_{0:%d}.txt"), std::vector<int>{(int)c});
 			pet_seis[c].SaveProp3D(fn, HMMPI::stringFormatArr("ATTR_{0:%d}", std::vector<int>{(int)c}), undef->Ugrid, DIMS->Nz);
 		}
 #endif
@@ -2425,7 +2425,7 @@ void PMEclipse::perturb_well()
 	  	  	  	  	  	  	  	  	  "Chi-2 statistical check for perturbed well data: {0:%g}\n", chi2));
 }
 //---------------------------------------------------------------------------
-PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Sim_small_interface(k, kw, c), K(k), CWD(cwd), log_file(cwd + "/ObjFuncLog.txt"), modelled_data_size(0), cov_is_diag(false), VCL(0)
+PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Sim_small_interface(k, kw, c), K(k), CWD(cwd), log_file(HMMPI::getFullPath(cwd, "ObjFuncLog.txt")), modelled_data_size(0), cov_is_diag(false), VCL(0)
 {
 	DECLKWD(mod, KW_model, "MODEL");
 	DECLKWD(datesW, KW_dates, "DATES");
@@ -2611,7 +2611,7 @@ double PMEclipse::ObjFunc(const std::vector<double> &params)
 				simcmd->RunCmd(comm);
 
 				// 2. Get modelled data
-				std::string model_name = (*tmap)["PATH"]->ToString() + "/" + (*tmap)["MOD"]->ToString();
+				std::string model_name = HMMPI::getFullPath((*tmap)["PATH"]->ToString(), (*tmap)["MOD"]->ToString());
 				std::string msg_vect_file = "", msg_vect_stdout = "";		// ultimate "vectors" messages
 				std::string msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full;		// work messages; the full versions are for file output
 
@@ -2819,7 +2819,7 @@ void PMEclipse::PerturbData()
 	std::vector<double> dat(textsmry->pet_dat.Serialize(), textsmry->pet_dat.Serialize() + size);
 	if (K->MPI_rank == 0)											// save perturbed data
 	{
-		std::ofstream sw(CWD + "/TextSMRY_RML.txt", std::ios::out);
+		std::ofstream sw(HMMPI::getFullPath(CWD, "TextSMRY_RML.txt"), std::ios::out);
 		write_smry(sw, HMMPI::Vector2<double>(), textsmry->pet_dat, std::vector<double>(), true, true);		// write only history
 		sw.close();
 	}

@@ -34,7 +34,7 @@
 #ifndef _LAPACKE_UTILS_H_
 #define _LAPACKE_UTILS_H_
 
-#include "lapacke.h"
+#include "lapacke_orig.h"
 
 #ifdef __cplusplus
 extern "C" {

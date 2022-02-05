@@ -40,6 +40,20 @@
 namespace HMMPI
 {
 
+//------------------------------------------------------------------------------------------
+// base class for exceptions
+//------------------------------------------------------------------------------------------
+class ExceptionBase : public std::exception
+{
+protected:
+	std::string msg;
+
+public:
+	ExceptionBase(std::string s) : msg(s) {};
+	virtual ~ExceptionBase() noexcept {};
+	const char* what() const noexcept { return msg.c_str(); };
+};
+
 //---------------------------------------------------------------------------
 // descendants of ManagedObject created (and committed) within ModelFactory will be automatically destroyed
 //---------------------------------------------------------------------------
@@ -132,7 +146,6 @@ public:
 	void MsgToFile(const std::string &msg) const;													// output to TEST_CACHE file
 };
 //------------------------------------------------------------------------------------------
-class Exception;
 template <class Caller, class InType, class OutType>
 const OutType &Cache<Caller, InType, OutType>::Get(const Caller *obj, const InType &x) const
 {
@@ -141,7 +154,7 @@ const OutType &Cache<Caller, InType, OutType>::Get(const Caller *obj, const InTy
 	if (!cache_valid)
 	{
 		if (!F)
-			throw Exception("Calling empty target in Cache::Get");
+			throw ExceptionBase("Calling empty target in Cache::Get");
 
 		data = F(obj, x);
 		last_x = x;

@@ -417,7 +417,7 @@ public:
 	virtual void div(const Mat &m1, int start, Mat &m2) const;
 	virtual void chol_mult(const std::vector<double> &vec1, int start, std::vector<double> &vec2) const;
 	DiagBlockNum(std::vector<double> v) : d(std::move(v)){};
-	virtual int size() const {return d.size();};
+	virtual int size() const {return (int) d.size();};
 };
 //------------------------------------------------------------------------------------------
 // block = dense matrix
@@ -433,7 +433,7 @@ public:
 	virtual void div(const Mat &m1, int start, Mat &m2) const;
 	virtual void chol_mult(const std::vector<double> &vec1, int start, std::vector<double> &vec2) const;
 	DiagBlockMat(Mat m);
-	virtual int size() const {return M.ICount();};
+	virtual int size() const {return (int) M.ICount();};
 };
 //------------------------------------------------------------------------------------------
 // class for block-diagonal matrix
@@ -582,7 +582,7 @@ public:
 };
 //------------------------------------------------------------------------------------------
 /* Note on using BLAS & LAPACK
- * required header files: lapacke.h, lapacke_config.h, lapacke_mangling.h, lapacke_utils.h
+ * required header files: lapacke.h, lapacke_orig.h, lapacke_config.h, lapacke_mangling.h, lapacke_utils.h
  * project should point (-l) to libraries: blas, lapack, lapacke
  * library path (-L) should point to directory with libblas.dll, liblapack.dll, liblapacke.dll
  * dll's (mingw & lapack) should be put to some directory, then add that directory to PATH in cygwin

@@ -1317,7 +1317,7 @@ std::vector<std::vector<double>> SimProxyFile::get_internal_parameters(const KW_
 {
 	// 1. Check that ECLSMRY parameters list is consistent with keyword PARAMETERS
 	size_t par_names_size = par_names.size();
-	MPI_Bcast(&par_names_size, 1, MPI_UNSIGNED_LONG, 0, comm);		// par_names_size is sync
+	MPI_Bcast(&par_names_size, 1, MPI_LONG_LONG, 0, comm);		// par_names_size is sync
 	if (par_names_size != par->name.size())
 		throw Exception(stringFormatArr(MessageRE("Количество параметров в файле ECLSMRY ({0:%zu}) не совпадает с PARAMETERS ({1:%zu})",
 												  "Number of parameters in ECLSMRY file ({0:%zu}) does not match PARAMETERS ({1:%zu})"), std::vector<size_t>{par_names_size, par->name.size()}));

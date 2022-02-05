@@ -120,6 +120,7 @@
 #include <stdio.h>  /* sprintf(), NULL? */
 #include "Abstract.h"
 #include "CMAES_interface.h" /* <time.h> via cmaes.h */
+#include "Utils.h"
 
 const double PI = acos(-1.0);
 //const double eps_tab[] = {0.500000000000203, 0.186682308850837, 0.0689716096388554, 0.0254240233991358, 0.00936375510240143,
@@ -214,7 +215,7 @@ static void * new_void( int n, size_t size);
 static char *
 getTimeStr(void) {
   time_t tm = time(NULL);
-  MPI_Bcast(&tm, 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&tm, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
   static char s[33];
 
   /* get time */
@@ -372,7 +373,7 @@ cmaes_resume_distribution(cmaes_t *t, char *filename)
   double d;
 
   MPI_Barrier(MPI_COMM_WORLD);
-  FILE *fp = fopen((CWD_holder::N + "/" + filename).c_str(), "r");
+  FILE *fp = fopen(HMMPI::getFullPath(CWD_holder::N, filename).c_str(), "r");
   if(fp == NULL) {
     ERRORMESSAGE("cmaes_resume_distribution(): could not open '",
                  filename, "'",0);
@@ -1018,7 +1019,7 @@ void cmaes_WriteToFileAW(cmaes_t *t, const char *key, const char *name,
 
   if (rank == 0)
   {
-	  fp = fopen((CWD_holder::N + "/" + name).c_str(), appendwrite);
+	  fp = fopen(HMMPI::getFullPath(CWD_holder::N, name).c_str(), appendwrite);
   	  if(fp == NULL)
   		  error = true;
   }
@@ -1328,7 +1329,7 @@ void cmaes_WriteToFilePtr(cmaes_t *t, const char *key, FILE *fp)
       if (strncmp(key, "all", 3) == 0)
         {
           time_t ti = time(NULL);
-          //MPI_Bcast(&ti, 1, MPI_LONG, 0, MPI_COMM_WORLD);		commented out to avoid deadlock
+          //MPI_Bcast(&ti, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);		commented out to avoid deadlock
 
           fprintf(fp, "\n# --------- %s\n", asctime(localtime(&ti)));
           fprintf(fp, " N %d\n", N);
@@ -1671,7 +1672,7 @@ void cmaes_ReadSignals(cmaes_t *t, char const *filename)
     filename = s;
 
   MPI_Barrier(MPI_COMM_WORLD);
-  fp = fopen((CWD_holder::N + "/" + filename).c_str(), "r");
+  fp = fopen(HMMPI::getFullPath(CWD_holder::N, filename).c_str(), "r");
   if(fp == NULL) {
     return;
   }
@@ -1829,22 +1830,22 @@ void cmaes_ReadFromFilePtr( cmaes_t *t, FILE *fp)
   if (t->writetime == 0)
   {
     t->firstwritetime = time(NULL);
-    MPI_Bcast(&(t->firstwritetime), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&(t->firstwritetime), 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
   }
   if (t->printtime == 0)
   {
     t->firstprinttime = time(NULL);
-    MPI_Bcast(&(t->firstprinttime), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&(t->firstprinttime), 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
   }
 
   if (flgprinted)
   {
     t->printtime = time(NULL);
-    MPI_Bcast(&(t->printtime), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&(t->printtime), 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
   }
   if (flgwritten) {
     t->writetime = time(NULL);
-    MPI_Bcast(&(t->writetime), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&(t->writetime), 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 
     if (t->gen-countiterlastwritten > maxdiffitertowrite)
       ++maxdiffitertowrite; /* smooth prolongation of writing gaps/intervals */
@@ -2335,7 +2336,7 @@ timings_start(timings_t *t) {
   MPI_Bcast(&(t->lastclock), 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
 
   t->lasttime = time(NULL);
-  MPI_Bcast(&(t->lasttime), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&(t->lasttime), 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 
   t->lastdiff = 0;
   t->tictoczwischensumme = 0;
@@ -2357,7 +2358,7 @@ timings_update(timings_t *t) {
   t->lastclock = clock(); /* measures at most 2147 seconds, where 1s = 1e6 CLOCKS_PER_SEC */
   MPI_Bcast(&(t->lastclock), 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
   t->lasttime = time(NULL);		// time_t = long
-  MPI_Bcast(&(t->lasttime), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&(t->lasttime), 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 
   diffc = (double)(t->lastclock - lc) / CLOCKS_PER_SEC; /* is presumably in [-21??, 21??] */
   difft = difftime(t->lasttime, lt);                    /* is presumably an integer */
@@ -2433,7 +2434,7 @@ random_init( random_t *t, long unsigned inseed)
     inseed = (long unsigned)abs(100*(long int)time(NULL)+(long int)clock());
   }
   long res = random_Start(t, inseed);
-  MPI_Bcast(&res, 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&res, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
   return res;
 }
 
@@ -2682,7 +2683,7 @@ readpara_ReadFromFile(readpara_t *t, const char * filename)
     filename = ss;
 
   MPI_Barrier(MPI_COMM_WORLD);
-  fp = fopen((CWD_holder::N + "/" + filename).c_str(), "r");
+  fp = fopen(HMMPI::getFullPath(CWD_holder::N, filename).c_str(), "r");
 
   if(fp == NULL) {
     ERRORMESSAGE("cmaes_ReadFromFile(): could not open '", filename, "'",0);
@@ -2742,7 +2743,7 @@ readpara_WriteToFile(readpara_t *t, const char *filenamedest,
   int ipara, i;
   size_t len;
   time_t ti = time(NULL);
-  MPI_Bcast(&ti, 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&ti, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 
   int rank;
   bool error = false;
@@ -2751,7 +2752,7 @@ readpara_WriteToFile(readpara_t *t, const char *filenamedest,
 
   if (rank == 0)
   {
-	  fp = fopen((CWD_holder::N + "/" + filenamedest).c_str(), "a");
+	  fp = fopen(HMMPI::getFullPath(CWD_holder::N, filenamedest).c_str(), "a");
 	  if(fp == NULL)
 		  error = true;
   }
@@ -3057,7 +3058,7 @@ cmaes_FATAL(char const *s1, char const *s2, char const *s3,
             char const *s4)
 {
   time_t t = time(NULL);
-  MPI_Bcast(&t, 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&t, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 
   ERRORMESSAGE( s1, s2, s3, s4);
   ERRORMESSAGE("*** Exiting cmaes_t ***",0,0,0);
@@ -3085,7 +3086,7 @@ void ERRORMESSAGE( char const *s1, char const *s2,
       sprintf(szBuf, "%f:%f", gen, gen*lambda);
   */
   time_t t = time(NULL);
-  MPI_Bcast(&t, 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&t, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 
   int rank;
   bool error = false;
@@ -3094,7 +3095,7 @@ void ERRORMESSAGE( char const *s1, char const *s2,
 
   if (rank == 0)
   {
-	  fp = fopen((CWD_holder::N + "/errcmaes.err").c_str(), "a");
+	  fp = fopen(HMMPI::getFullPath(CWD_holder::N, "errcmaes.err").c_str(), "a");
 	  if (!fp)
 		  error = true;
   }
@@ -3157,7 +3158,7 @@ double **ReadLimits(const char *fname, int dim)
 	}
 
 	MPI_Barrier(MPI_COMM_WORLD);
-	fp = fopen((CWD_holder::N + "/" + fname).c_str(), "r");
+	fp = fopen(HMMPI::getFullPath(CWD_holder::N, fname).c_str(), "r");
     if (fp == NULL)
 	{
         return res;

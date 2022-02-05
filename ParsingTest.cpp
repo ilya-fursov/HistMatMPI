@@ -50,7 +50,7 @@ void KW_runsoboltest::Run()
 
 		K->AppText((std::string)HMMPI::MessageRE("(eng)", "Saving Sobol sequence to file ") + stest->fname + " ...\n");
 
-		std::string fn = this->CWD + "/" + stest->fname;
+		std::string fn = HMMPI::getFullPath(this->CWD, stest->fname);
 		FILE *sw = fopen(fn.c_str(), "w");
 		if (!sw)
 			throw HMMPI::Exception("(eng)", "Cannot open file for writing");
@@ -493,6 +493,26 @@ void KW_rundebug::Run()
 	for (size_t i = 0; i < vec1.size(); i++)
 		std::cout << "RANK-" << K->MPI_rank << ",v[" << i << "]=" << vec1[i] << "\n";
 
+
+
+
+	int mpival_ulong = 0, mpival_char = 0, mpival_byte = 0, mpival_long = 0, mpival_longlong = 0;
+	MPI_Type_size(MPI_UNSIGNED_LONG, &mpival_ulong);
+	MPI_Type_size(MPI_CHAR, &mpival_char);
+	MPI_Type_size(MPI_BYTE, &mpival_byte);
+	MPI_Type_size(MPI_LONG, &mpival_long);
+	MPI_Type_size(MPI_LONG_LONG, &mpival_longlong);
+
+	char msg[HMMPI::BUFFSIZE];
+	sprintf(msg, "MPI_LONG_LONG    : %d\tsize_t : %zu\n"
+		"MPI_CHAR         : %d\tchar   : %zu\n"
+		"MPI_BYTE         : %d\tbool   : %zu\n"
+		"MPI_UNSIGNED_LONG: %d\tclock_t: %zu\n"
+		"MPI_LONG_LONG    : %d\ttime_t : %zu\n"
+		"MPI_LONG         : %d\n",
+		mpival_longlong, sizeof(size_t), mpival_char, sizeof(char), mpival_byte, sizeof(bool), mpival_ulong, sizeof(clock_t), mpival_longlong, sizeof(time_t), mpival_long);
+
+	std::cout << msg << "\n";
 
 
 }

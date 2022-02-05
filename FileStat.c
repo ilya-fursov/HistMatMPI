@@ -21,4 +21,4 @@ int FileModTime(const char *file, time_t *time)
 	return ret;
 }
 
-#define __cplusplus 201103L
+#define __cplusplus 201703L
