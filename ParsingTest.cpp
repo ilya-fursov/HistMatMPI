@@ -7,7 +7,7 @@
 
 #include "Abstract.h"
 #include "MathUtils.h"
-#include "lapacke.h"
+#include "lapacke_select.h"
 #include "mpi.h"
 #include "Vectors.h"
 #include "MonteCarlo.h"

@@ -582,8 +582,8 @@ public:
 };
 //------------------------------------------------------------------------------------------
 /* Note on using BLAS & LAPACK
- * required header files: lapacke.h, lapacke_orig.h, lapacke_config.h, lapacke_mangling.h, lapacke_utils.h
- * project should point (-l) to libraries: blas, lapack, lapacke
+ * required header files: lapacke_select.h
+ * project should link (-l) the libraries: blas, lapack, lapacke
  * library path (-L) should point to directory with libblas.dll, liblapack.dll, liblapacke.dll
  * dll's (mingw & lapack) should be put to some directory, then add that directory to PATH in cygwin
  */
@@ -709,11 +709,11 @@ template <class T>
 void VecAssign(std::vector<T> &vec, const std::vector<int> &ind, const std::vector<T> &rhs)
 {
 	if (ind.size() != rhs.size())
-		throw Exception("Не совпадают длины ind и rhs в VecAssign<T>", "Sizes of ind and rhs do not match in VecAssign<T>");
+		throw Exception("РќРµ СЃРѕРІРїР°РґР°СЋС‚ РґР»РёРЅС‹ ind Рё rhs РІ VecAssign<T>", "Sizes of ind and rhs do not match in VecAssign<T>");
 	for (size_t i = 0; i < ind.size(); i++)
 	{
 		if (ind[i] < 0 || ind[i] >= (int)vec.size())
-			throw Exception("Индекс ind[i] выходит за допустимый диапазон в VecAssign<T>", "Index ind[i] is out of range in VecAssign<T>");
+			throw Exception("Р�РЅРґРµРєСЃ ind[i] РІС‹С…РѕРґРёС‚ Р·Р° РґРѕРїСѓСЃС‚РёРјС‹Р№ РґРёР°РїР°Р·РѕРЅ РІ VecAssign<T>", "Index ind[i] is out of range in VecAssign<T>");
 		vec[ind[i]] = rhs[i];
 	}
 }

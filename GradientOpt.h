@@ -106,8 +106,9 @@ public:
 };
 //---------------------------------------------------------------------------
 // SUNIter - Newton/FixedPoint/Picard method from SUNDIALS
-// in the code, 'int' is used in place of 'sunindextype'
+// in the code, 'int' is used in place of 'sunindextype'		TODO they have different size -> potential problems?
 // 'double' is used in place of 'realtype'
+// Currently, "SUNContext" is created without any MPI communicator
 //---------------------------------------------------------------------------
 static_assert(sizeof(double) == sizeof(realtype), "'realtype' should be 'double'");
 //---------------------------------------------------------------------------

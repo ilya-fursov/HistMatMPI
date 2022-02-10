@@ -7,7 +7,7 @@
 
 #include "MonteCarlo.h"
 #include "GradientOpt.h"
-#include "lapacke.h"
+#include "lapacke_select.h"
 #include "mpi.h"
 #include <chrono>
 #include <cmath>

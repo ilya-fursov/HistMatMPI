@@ -15,7 +15,7 @@
 #include "Parsing.h"
 #include "Parsing2.h"
 #include "ConcretePhysModels.h"
-#include "lapacke.h"
+#include "lapacke_select.h"
 
 //------------------------------------------------------------------------------------------
 // in this file all sorts of "parameter" keywords are implemented

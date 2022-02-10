@@ -13,7 +13,7 @@
 #include "GradientOpt.h"
 #include "CMAES_interface.h"
 #include "PhysModels.h"
-#include "lapacke.h"
+#include "lapacke_select.h"
 #include <cmath>
 #include <cassert>
 #include <limits>
@@ -455,8 +455,13 @@ void SUNIter::check_flag(const void *flagvalue, const char *funcname, int opt)
 //---------------------------------------------------------------------------
 std::vector<double> SUNIter::Solve(std::vector<double> x)
 {
+	int flag;
+	SUNContext sunctx = 0;
 	try
 	{
+		flag = SUNContext_Create(NULL, &sunctx);
+		check_flag(&flag, "SUNContext_Create", 1);
+
 		if (!Func)
 			throw HMMPI::Exception("Func is not callable in SUNIter::Solve");
 		if (!Jac)
@@ -466,7 +471,7 @@ std::vector<double> SUNIter::Solve(std::vector<double> x)
 		void *kin;
 		SUNMatrix J;
 		SUNLinearSolver LS;
-		int dim = x.size(), flag, glob_strat;
+		int dim = x.size(), glob_strat;
 
 		if (maxJacIters < 0)
 			throw HMMPI::Exception("maxJacIters should be >= 0 in SUNIter::Solve");
@@ -482,15 +487,15 @@ std::vector<double> SUNIter::Solve(std::vector<double> x)
 		else
 			throw HMMPI::Exception("Incorrect type " + Type + " in SUNIter::Solve");
 
-		u = N_VNew_Serial(dim);
+		u = N_VNew_Serial(dim, sunctx);
 		check_flag((void *)u, "N_VNew_Serial", 0);
 		memcpy(N_VGetArrayPointer(u), x.data(), dim*sizeof(double));
 
-		scale = N_VNew_Serial(dim);
+		scale = N_VNew_Serial(dim, sunctx);
 		check_flag((void *)scale, "N_VNew_Serial", 0);
 		N_VConst_Serial(1, scale); 								// no scaling
 
-		kin = KINCreate();
+		kin = KINCreate(sunctx);
 		check_flag((void *)kin, "KINCreate", 0);
 
 		flag = KINSetUserData(kin, this);
@@ -514,17 +519,17 @@ std::vector<double> SUNIter::Solve(std::vector<double> x)
 		flag = KINInit(kin, func, u);
 		check_flag(&flag, "KINInit", 1);
 
-		J = SUNDenseMatrix(dim, dim);							// Create dense SUNMatrix
+		J = SUNDenseMatrix(dim, dim, sunctx);					// Create dense SUNMatrix
 		check_flag((void *)J, "SUNDenseMatrix", 0);
 
-		LS = SUNDenseLinearSolver(u, J);						// Create dense SUNLinearSolver object
-		check_flag((void *)LS, "SUNDenseLinearSolver", 0);
+		LS = SUNLinSol_Dense(u, J, sunctx);						// Create dense SUNLinearSolver object
+		check_flag((void *)LS, "SUNLinSol_Dense", 0);
 
-		flag = KINDlsSetLinearSolver(kin, LS, J);				// Attach the matrix and linear solver to KINSOL
-		check_flag(&flag, "KINDlsSetLinearSolver", 1);
+		flag = KINSetLinearSolver(kin, LS, J);					// Attach the matrix and linear solver to KINSOL
+		check_flag(&flag, "KINSetLinearSolver", 1);
 
-		flag = KINDlsSetJacFn(kin, df);
-		check_flag(&flag, "KINDlsSetJacFn", 1);
+		flag = KINSetJacFn(kin, df);
+		check_flag(&flag, "KINSetJacFn", 1);
 
 		flag = KINSol(kin, u, glob_strat, scale, scale);
 		check_flag(&flag, "KINSol", 1);
@@ -540,21 +545,34 @@ std::vector<double> SUNIter::Solve(std::vector<double> x)
 		check_flag(&flag, "KINGetNumNonlinSolvIters", 1);
 		iter = niters;
 
-		flag = KINDlsGetNumJacEvals(kin, &jac_evals);
-		check_flag(&flag, "KINDlsGetNumJacEvals", 1);
+		flag = KINGetNumJacEvals(kin, &jac_evals);
+		check_flag(&flag, "KINGetNumJacEvals", 1);
 
 		N_VDestroy_Serial(u);									// Free memory
 		N_VDestroy_Serial(scale);
 		KINFree(&kin);
-		SUNLinSolFree(LS);
+
+		flag = SUNLinSolFree(LS);
+		check_flag(&flag, "SUNLinSolFree", 1);
+
 		SUNMatDestroy(J);
 
 		Func = std::function<std::vector<double>(const std::vector<double>&)>();		// erasing function
 		Jac = std::function<HMMPI::Mat(const std::vector<double>&)>();					// erasing Jacobian
+
+		if (sunctx != 0)
+		{
+			flag = SUNContext_Free(&sunctx);
+			check_flag(&flag, "SUNContext_Free", 1);
+		}
+
 		return res;
 	}
 	catch (const std::exception &e)
 	{
+		if (sunctx != 0)
+			SUNContext_Free(&sunctx);				// TODO other objects should also be freed
+
 		std::string msg0 = e.what() + exc_msg;
 		exc_msg = "";
 		throw HMMPI::Exception(msg0);

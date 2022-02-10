@@ -1,7 +1,7 @@
 #include "Abstract.h"
 #include "MathUtils.h"
 #include "MonteCarlo.h"
-#include "lapacke.h"
+#include "lapacke_select.h"
 #include "sobol.hpp"
 #include <cstring>
 #include <iostream>
