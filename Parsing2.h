@@ -192,6 +192,35 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
+class KW_runtimelinalg : public KW_run			// timing BLAS and LAPACK procedures for different matrices
+{												// in MPI setting, all ranks do the same (but with different seeds)
+private:
+	std::chrono::high_resolution_clock::time_point time1, time2;
+
+protected:
+	HMMPI::Rand *rand;
+
+	HMMPI::Mat form_mat(size_t dim);			// dim*dim matrix, with elements in [-1, 1]
+	std::vector<double> form_vec(size_t dim);	// dim-vector, with elements in [-1, 1]
+
+	// the "run" procedures below run on all ranks, with a barrier in the end;
+	// after all have finished, the time "t" (sync) is returned
+	std::vector<double> run_dgemv(const HMMPI::Mat &A, const std::vector<double> &x, double &t);	// runs dgemv test on all ranks, returns A*x (different for each rank)
+	std::vector<double> run_dgelss(const HMMPI::Mat &A, const std::vector<double> &b, double &t);	// runs dgelss test on all ranks, returns A^(-1)*x (different for each rank)
+	void run_dgemm(const HMMPI::Mat &A, const HMMPI::Mat &B, double &t);							// runs dgemm test on all ranks
+
+	void print_header(int dim);							// prints the header depending on TIMELINALG_CONFIG settings
+	void print_iter(int k, int seed, double t_dgemv, double t_dgelss, double t_dgemm, double diff);	// prints the k-th iteration results
+	void print_mean(double ta_dgemv, double ta_dgelss, double ta_dgemm);							// prints mean times
+
+	std::vector<double> run_iter(int k, int dim);		// runs test iteration 'k' (k = 0, 1, 2,...) for dimension 'dim'; prints time for all tests
+														// also prints min/max norms (involving dgemv, dgelss) for all ranks;
+														// returns time for all tests (for subsequent averaging)
+public:
+	KW_runtimelinalg();
+	virtual void Run();
+};
+//------------------------------------------------------------------------------------------
 class KW_runsoboltest : public KW_run
 {
 public:
@@ -321,6 +350,24 @@ public:
 	KW_multiple_seq();
 	virtual void FinalAction() noexcept;
 	std::string msg() const;
+};
+//------------------------------------------------------------------------------------------
+class KW_timelinalg_config : public KW_params
+{
+protected:
+	virtual void UpdateParams() noexcept;
+
+public:
+	int D0;				// (>= 2) initial matrix dimension
+	int Dincfactor;		// (>= 2) dimension increase factor
+	int Ndims;			// (>= 1) test this many different dimensions
+	int Nk;				// (>= 1) for each dimension run Nk tests
+	int seed_0;			// seed for rank-0, test-0 (for other ranks and tests: seed_r_t = seed_0 + rank + test); 0 means take seed = time(NULL)
+	std::string dgelss;	// perform this test? y/n
+	std::string dgemm;	// perform this test? y/n
+
+	KW_timelinalg_config();
+	virtual void FinalAction() noexcept;
 };
 //------------------------------------------------------------------------------------------
 class KW_simcmd : public KW_multparams

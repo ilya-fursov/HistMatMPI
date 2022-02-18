@@ -22,12 +22,14 @@ namespace HMMPI
 //------------------------------------------------------------------------------------------
 // Rand
 //------------------------------------------------------------------------------------------
-Rand::Rand(unsigned int s, double a, double b, double mu, double sigma) : seed(s)
-{
-	if (seed == 0)
-		seed = std::chrono::system_clock::now().time_since_epoch().count();
+Rand::Rand(unsigned int s, double a, double b, double mu, double sigma, bool SyncSeed) : seed(s)	// seed,
+{																									// parameters for uniform distribution, parameters for normal distribution
+	if (seed == 0)																					// if seed == 0, it will be initialized by time
+		seed = std::chrono::system_clock::now().time_since_epoch().count();							// if SyncSeed == true on RANK-0, seed gets sync over MPI_COMM_WORLD
 
-	MPI_Bcast(&seed, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&SyncSeed, 1, MPI_BYTE, 0, MPI_COMM_WORLD);
+	if (SyncSeed)
+		MPI_Bcast(&seed, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	gen = std::default_random_engine(seed);
 	uni = std::uniform_real_distribution<double>(a, b);

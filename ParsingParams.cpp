@@ -1831,6 +1831,203 @@ void KW_runIntegPoro::Run()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+HMMPI::Mat KW_runtimelinalg::form_mat(size_t dim)			// dim*dim matrix, with elements in [-1, 1]
+{
+	assert(rand != nullptr);
+	return rand->RandU(dim, dim);
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> KW_runtimelinalg::form_vec(size_t dim)	// dim-vector, with elements in [-1, 1]
+{
+	assert(rand != nullptr);
+	return rand->RandU(dim, 1).ToVector();
+}
+//------------------------------------------------------------------------------------------
+// the "run" procedures below run on all ranks, with a barrier in the end;
+// after all have finished, the time "t" (sync) is returned
+std::vector<double> KW_runtimelinalg::run_dgemv(const HMMPI::Mat &A, const std::vector<double> &x, double &t)	// runs dgemv test on all ranks, returns A*x (different for each rank)
+{
+	MPI_Barrier(MPI_COMM_WORLD);
+	time1 = std::chrono::high_resolution_clock::now();
+
+	std::vector<double> res = A*x;
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	time2 = std::chrono::high_resolution_clock::now();
+	t = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
+	MPI_Bcast(&t, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> KW_runtimelinalg::run_dgelss(const HMMPI::Mat &A, const std::vector<double> &b, double &t)	// runs dgelss test on all ranks, returns A^(-1)*x (different for each rank)
+{
+	MPI_Barrier(MPI_COMM_WORLD);
+	time1 = std::chrono::high_resolution_clock::now();
+
+	HMMPI::SolverDGELSS solv;
+	std::vector<double> res = solv.Solve(A, b).ToVector();
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	time2 = std::chrono::high_resolution_clock::now();
+	t = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
+	MPI_Bcast(&t, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+void KW_runtimelinalg::run_dgemm(const HMMPI::Mat &A, const HMMPI::Mat &B, double &t)					// runs dgemm test on all ranks
+{
+	MPI_Barrier(MPI_COMM_WORLD);
+	time1 = std::chrono::high_resolution_clock::now();
+
+	HMMPI::Mat res = A*B;
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	time2 = std::chrono::high_resolution_clock::now();
+	t = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
+	MPI_Bcast(&t, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+}
+//------------------------------------------------------------------------------------------
+void KW_runtimelinalg::print_header(int dim)											// prints the header depending on TIMELINALG_CONFIG settings
+{
+	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");
+	char buff[HMMPI::BUFFSIZE];
+
+	std::vector<std::string> v = {"DGEMV"};
+	if (cfg->dgelss == "Y")
+		v.push_back("DGELSS");
+	if (cfg->dgemm == "Y")
+		v.push_back("DGEMM");
+
+	std::string s = HMMPI::ToString(v, "%-10s", "\t");
+	s.pop_back();		// final '\n'
+	sprintf(buff, "D%5d\t%s\t%-23s\t%-s\n", dim, s.c_str(), "norm2 range", "seed");
+	K->AppText(buff);
+}
+//------------------------------------------------------------------------------------------
+void KW_runtimelinalg::print_iter(int k, int seed, double t_dgemv, double t_dgelss, double t_dgemm, double diff)	// prints the k-th iteration results
+{
+	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");
+	char buff[HMMPI::BUFFSIZE];
+
+	double diff0 = 0, diff1 = 0;		// min and max
+	int seed0 = 0, seed1 = 0;			// min and max
+	MPI_Reduce(&diff, &diff0, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&diff, &diff1, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&seed, &seed0, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&seed, &seed1, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
+
+	std::vector<double> v = {t_dgemv};
+	if (cfg->dgelss == "Y")
+		v.push_back(t_dgelss);
+	if (cfg->dgemm == "Y")
+		v.push_back(t_dgemm);
+
+	std::string s = HMMPI::ToString(v, "%-10.5e", "\t");
+	s.pop_back();		// final '\n'
+	sprintf(buff, "k =%3d\t%s\t%-10.5g - %-10.5g\t%d - %d\n", k, s.c_str(), diff0, diff1, seed0, seed1);
+	K->AppText(buff);
+}
+//------------------------------------------------------------------------------------------
+void KW_runtimelinalg::print_mean(double ta_dgemv, double ta_dgelss, double ta_dgemm)								// prints mean times
+{
+	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");
+	char buff[HMMPI::BUFFSIZE];
+
+	std::vector<double> v = {ta_dgemv};
+	if (cfg->dgelss == "Y")
+		v.push_back(ta_dgelss);
+	if (cfg->dgemm == "Y")
+		v.push_back(ta_dgemm);
+
+	std::string s = HMMPI::ToString(v, "%-10.5e", "\t");
+	s.pop_back();		// final '\n'
+	sprintf(buff, "%-6s\t%s\n", "mean", s.c_str());
+	K->AppText(buff);
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> KW_runtimelinalg::run_iter(int k, int dim)		// runs test iteration 'k' (k = 0, 1, 2,...) for dimension 'dim'; prints time for all tests
+{																	// also prints min/max norms (involving dgemv, dgelss) for all ranks;
+	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");		// returns time for all tests (for subsequent averaging)
+
+	HMMPI::Mat A, M;
+	std::vector<double> b, x, x1;
+	double t, norm = 0;
+	std::vector<double> res(3, 0.0);
+
+	assert(rand == nullptr);
+	rand = new HMMPI::Rand(cfg->seed_0 + k, -1, 1, 0, 1, false);
+
+	A = form_mat(dim);		// each rank has its own stuff
+	M = form_mat(dim);
+	x = form_vec(dim);
+
+	b = run_dgemv(A, x, t);
+	res[0] = t;
+
+	if (cfg->dgelss == "Y")
+	{
+		x1 = run_dgelss(A, b, t);
+		res[1] = t;
+		norm = (HMMPI::Mat(x) - HMMPI::Mat(x1)).Norm2();		// each rank has different stuff
+	}
+
+	if (cfg->dgemm == "Y")
+	{
+		run_dgemm(A, M, t);
+		res[2] = t;
+	}
+
+	print_iter(k, cfg->seed_0 + k, res[0], res[1], res[2], norm);
+
+	delete rand;
+	rand = nullptr;
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+KW_runtimelinalg::KW_runtimelinalg() : rand(nullptr)
+{
+	name = "RUNTIMELINALG";
+}
+//------------------------------------------------------------------------------------------
+void KW_runtimelinalg::Run()
+{
+	Start_pre();
+	IMPORTKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");
+	Finish_pre();
+
+	int dim = cfg->D0;
+	const int MaxDim = 100000;		// max allowable dimension
+
+	for (int i = 0; i < cfg->Ndims; i++)
+	{
+		if (dim > MaxDim)
+			dim = MaxDim;
+
+		print_header(dim);
+		std::vector<double> meant(3, 0.0);
+
+		for (int k = 0; k < cfg->Nk; k++)
+		{
+			std::vector<double> ta = run_iter(k, dim);
+
+			assert(ta.size() == meant.size());
+			for (size_t j = 0; j < meant.size(); j++)
+				meant[j] += ta[j];
+		}
+		for (auto &d : meant)
+			d /= cfg->Nk;		// find the average
+
+		print_mean(meant[0], meant[1], meant[2]);
+		K->AppText("\n");
+
+		dim *= cfg->Dincfactor;
+	}
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_runMCMC::KW_runMCMC()
 {
 	name = "RUNMCMC";

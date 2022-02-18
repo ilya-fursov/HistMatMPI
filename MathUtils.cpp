@@ -1582,6 +1582,7 @@ Mat SolverDGELSS::Solve(Mat A, Mat b) const
     double rcond = -1;			// negative rcond -> machine precision will be used instead; TODO: change if necessary!
 
 	int info = LAPACKE_dgelss(LAPACK_ROW_MAJOR, icount, jcount, nrhs, pA, lda, pb, ldb, S, rcond, &rank);
+
 	if (info != 0)
 	{
 		delete [] pA;

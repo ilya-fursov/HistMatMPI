@@ -220,6 +220,51 @@ std::string KW_multiple_seq::msg() const
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+void KW_timelinalg_config::UpdateParams() noexcept
+{
+	if (D0 < 2)
+		SilentError(HMMPI::MessageRE("D0 должно быть >= 2", "D0 should be >= 2"));
+	if (Dincfactor < 2)
+		SilentError(HMMPI::MessageRE("Dincfactor должен быть >= 2", "Dincfactor should be >= 2"));
+	if (Ndims < 1)
+		SilentError(HMMPI::MessageRE("Ndims должно быть >= 1", "Ndims should be >= 1"));
+	if (Nk < 1)
+		SilentError(HMMPI::MessageRE("Nk должно быть >= 1", "Nk should be >= 1"));
+}
+//------------------------------------------------------------------------------------------
+KW_timelinalg_config::KW_timelinalg_config()
+{
+	name = "TIMELINALG_CONFIG";
+
+	DEFPAR(D0, 32);				// (>= 2) initial matrix dimension
+	DEFPAR(Dincfactor, 2);		// (>= 2) dimension increase factor
+	DEFPAR(Ndims, 4);			// (>= 1) test this many different dimensions
+	DEFPAR(Nk, 3);				// (>= 1) for each dimension run Nk tests
+	DEFPAR(seed_0, 0);			// seed for rank-0, test-0 (for other ranks and tests: seed_r_t = seed_0 + rank + test); 0 means take seed = time(NULL)
+	DEFPAR(dgelss, "Y");		// perform this test? y/n
+	DEFPAR(dgemm, "Y");  		// perform this test? y/n
+
+	FinalizeParams();
+	EXPECTED[5] = std::vector<std::string>{"Y", "N"};
+	EXPECTED[6] = std::vector<std::string>{"Y", "N"};
+}
+//------------------------------------------------------------------------------------------
+void KW_timelinalg_config::FinalAction() noexcept
+{
+	if (seed_0 == 0)
+	{
+		seed_0 = time(NULL);
+	}
+
+	int rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Bcast(&seed_0, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	seed_0 += rank;
+
+	K->AppText(HMMPI::stringFormatArr("Используется сид {0:%d}\n", "Using seed {0:%d}\n", seed_0));
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_simcmd::KW_simcmd()
 {
 	name = "SIMCMD";

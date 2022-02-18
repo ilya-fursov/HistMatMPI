@@ -44,27 +44,45 @@
 // RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
 // ... code ...
 // RANK0_SYNCERR_END(MPI_COMM_WORLD);
-#define RANK0_SYNCERR_BEGIN(comm) 	{ 													\
-										char errmsg[500];								\
-										errmsg[0] = 0;									\
-										int rank;										\
-										MPI_Comm_rank(comm, &rank);						\
-										if (rank == 0)									\
-										{												\
-											try											\
-											{											\
+#define RANK0_SYNCERR_BEGIN(comm) 	{ 															\
+										char errmsg_syncerr[500];								\
+										errmsg_syncerr[0] = 0;									\
+										int rank_syncerr;										\
+										MPI_Comm_rank(comm, &rank_syncerr);						\
+										if (rank_syncerr == 0)									\
+										{														\
+											try													\
+											{													\
 												// the body
-#define RANK0_SYNCERR_END(comm)				} 											\
-											catch (const std::exception &e)				\
-											{											\
-												sprintf(errmsg, "%.495s", e.what());	\
-											}											\
-										}												\
-										MPI_Bcast(errmsg, 500, MPI_CHAR, 0, comm);		\
-										if (errmsg[0] != 0)								\
-											throw HMMPI::Exception(errmsg);				\
+#define RANK0_SYNCERR_END(comm)				} 													\
+											catch (const std::exception &e)						\
+											{													\
+												sprintf(errmsg_syncerr, "%.495s", e.what());	\
+											}													\
+										}														\
+										MPI_Bcast(errmsg_syncerr, 500, MPI_CHAR, 0, comm);		\
+										if (errmsg_syncerr[0] != 0)								\
+											throw HMMPI::Exception(errmsg_syncerr);				\
 									}
 
+// A pair of macro brackets for a critical section
+// Example use:
+// CRITICAL_BEGIN(MPI_COMM_WORLD);
+// ... code ...
+// CRITICAL_END(MPI_COMM_WORLD);
+#define CRITICAL_BEGIN(comm)	{																\
+									int rank_critical, size_critical;							\
+									MPI_Comm_rank(comm, &rank_critical);						\
+									MPI_Comm_size(comm, &size_critical);						\
+									for (int i_critical = 0; i_critical < size_critical; i_critical++)	\
+									{															\
+										if (rank_critical == i_critical)						\
+										{														\
+											// the body
+#define CRITICAL_END(comm)				}														\
+										MPI_Barrier(comm);										\
+									}															\
+								}
 
 extern "C" int FileModTime(const char *file, time_t *time);		// C function, sets "time" to "file" modification time (seconds); returns "0" if all ok
 

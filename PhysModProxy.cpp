@@ -2351,7 +2351,7 @@ HMMPI::Mat KrigStart::DistMatr(const std::vector<std::vector<double>> &X0, int i
 		for (int j = J0; j < j2; j++)
 		{
 			HMMPI::Mat diff = HMMPI::Mat(X0[i]) - HMMPI::Mat(X0[j]);
-			res(i-i1, j-j1) = sqrt(InnerProd(diff, diff));
+			res(i-i1, j-j1) = diff.Norm2();				// was: sqrt(InnerProd(diff, diff));
 			if (symmfill)
 				res(j-j1, i-i1) = res(i-i1, j-j1);
 		}

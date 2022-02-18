@@ -168,7 +168,7 @@ public:
 	double Max(int &i, int &j) const;		// returns the max element and its index (i, j)
 	double Min(int &i, int &j) const;		// returns the min element and its index (i, j)
 	double Norm1() const;					// 1-norm of a vector (matrix gets extended to the vector)
-	double Norm2() const;					// 2-norm of a vector (matrix gets extended to the vector)
+	double Norm2() const;					// 2-norm of a vector (matrix gets extended to the vector), Manual | BLAS depending on 'op_switch'
 	double NormInf() const;					// inf-norm of a vector (matrix gets extended to the vector)
 	void Func(const std::function<double (double)> &f);					// apply function f: R -> R to all matrix elements, i.e. Mat(i, j) = f(Mat(i, j))
 	void FuncInd(const std::function<double (int, int, double)> &f);	// apply function f: (N, N, R) -> R to all matrix elements, i.e. Mat(i, j) = f(i, j, Mat(i, j))

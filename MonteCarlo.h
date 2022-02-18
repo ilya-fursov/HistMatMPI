@@ -21,7 +21,8 @@ namespace HMMPI
 {
 //------------------------------------------------------------------------------------------
 // class for random number generation
-// the seed is sync over MPI_COMM_WORLD
+// the seed is EITHER sync internally over MPI_COMM_WORLD
+// 			   OR not sync
 //
 // THERE IS also a similar class HMMPI::RandNormal in MathUtils.h
 //------------------------------------------------------------------------------------------
@@ -31,16 +32,17 @@ protected:
 	std::default_random_engine gen;					// generator
 	std::uniform_real_distribution<double> uni;		// uniform distribution
 	std::normal_distribution<double> norm;			// normal distribution
-	unsigned int seed;								// sync over MPI_COMM_WORLD
+	unsigned int seed;								// sync/not-sync over MPI_COMM_WORLD
 public:
-	Rand(unsigned int s = 0, double a = 0, double b = 1, double mu = 0, double sigma = 1);	// seed, parameters for uniform distribution, parameters for normal distribution
-																							// if seed == 0, it will be initialized by time (on RANK-0); seed is sync over MPI_COMM_WORLD
+	Rand(unsigned int s = 0, double a = 0, double b = 1, double mu = 0, double sigma = 1, bool SyncSeed = true);	// seed, parameters for uniform distribution, parameters for normal distribution
+																							// if seed == 0, it will be initialized by time
+																							// if SyncSeed == true on RANK-0, seed gets sync over MPI_COMM_WORLD
 						// the four functions below don't use MPI
 	double RandU();		// uniform random number
 	double RandN();		// normal random number
 	Mat RandU(int I0, int J0);		// I0 x J0 matrix with uniform random numbers
 	Mat RandN(int I0, int J0);		// I0 x J0 matrix with normal random numbers
-	unsigned int Seed(){return seed;};		// sync over MPI_COMM_WORLD
+	unsigned int Seed(){return seed;};
 };
 //------------------------------------------------------------------------------------------
 // class for making leapforg integration;

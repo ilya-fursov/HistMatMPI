@@ -514,13 +514,20 @@ double Mat::Norm1() const
 	return res;
 }
 //------------------------------------------------------------------------------------------
-double Mat::Norm2() const
+double Mat::Norm2() const	// 2-norm of a vector (matrix gets extended to the vector), Manual | BLAS depending on 'op_switch'
 {
-	double res = 0;
-	for (const auto& d : data)
-		res += d * d;
+	if (op_switch == 1)
+	{
+		double res = 0;
+		for (const auto& d : data)
+			res += d * d;
 
-	return sqrt(res);
+		return sqrt(res);
+	}
+	else if (op_switch == 2)
+		return cblas_dnrm2(data.size(), data.data(), 1);
+	else
+		throw Exception("Bad op_switch in Mat::Norm2()");
 }
 //------------------------------------------------------------------------------------------
 double Mat::NormInf() const
