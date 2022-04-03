@@ -206,15 +206,17 @@ protected:
 	// the "run" procedures below run on all ranks, with a barrier in the end;
 	// after all have finished, the time "t" (sync) is returned
 	std::vector<double> run_dgemv(const HMMPI::Mat &A, const std::vector<double> &x, double &t);	// runs dgemv test on all ranks, returns A*x (different for each rank)
+	std::vector<double> run_dgemm_vec_right(const HMMPI::Mat &A, const std::vector<double> &x, double &t);	// calculates and returns A*x, using dgemm
+	std::vector<double> run_dgemm_vec_left(const HMMPI::Mat &A, const std::vector<double> &x, double &t);	// calculates and returns A*x, as (x'*A')', using dgemm
 	std::vector<double> run_dgelss(const HMMPI::Mat &A, const std::vector<double> &b, double &t);	// runs dgelss test on all ranks, returns A^(-1)*x (different for each rank)
 	void run_dgemm(const HMMPI::Mat &A, const HMMPI::Mat &B, double &t);							// runs dgemm test on all ranks
 
 	void print_header(int dim);							// prints the header depending on TIMELINALG_CONFIG settings
-	void print_iter(int k, int seed, double t_dgemv, double t_dgelss, double t_dgemm, double diff);	// prints the k-th iteration results
-	void print_mean(double ta_dgemv, double ta_dgelss, double ta_dgemm);							// prints mean times
+	void print_iter(int k, int seed, double t_dgemv, double t_dgemm_vl, double t_dgemm_vr, double t_dgelss, double t_dgemm, double diff, double diff_VL, double diff_VR);	// prints the k-th iteration results
+	void print_mean(double ta_dgemv, double ta_dgemm_vl, double ta_dgemm_vr, double ta_dgelss, double ta_dgemm);				// prints mean times
 
 	std::vector<double> run_iter(int k, int dim);		// runs test iteration 'k' (k = 0, 1, 2,...) for dimension 'dim'; prints time for all tests
-														// also prints min/max norms (involving dgemv, dgelss) for all ranks;
+														// also prints min/max norms (involving dgemv, dgelss, dgemm_vl, dgemm_vr) for all ranks;
 														// returns time for all tests (for subsequent averaging)
 public:
 	KW_runtimelinalg();

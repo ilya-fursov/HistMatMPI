@@ -1860,6 +1860,36 @@ std::vector<double> KW_runtimelinalg::run_dgemv(const HMMPI::Mat &A, const std::
 	return res;
 }
 //------------------------------------------------------------------------------------------
+std::vector<double> KW_runtimelinalg::run_dgemm_vec_right(const HMMPI::Mat &A, const std::vector<double> &x, double &t)	// calculates and returns A*x, using dgemm
+{
+	MPI_Barrier(MPI_COMM_WORLD);
+	time1 = std::chrono::high_resolution_clock::now();
+
+	std::vector<double> res = A.MultvecR(x);
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	time2 = std::chrono::high_resolution_clock::now();
+	t = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
+	MPI_Bcast(&t, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> KW_runtimelinalg::run_dgemm_vec_left(const HMMPI::Mat &A, const std::vector<double> &x, double &t)	// calculates and returns A*x, as (x'*A')', using dgemm
+{
+	MPI_Barrier(MPI_COMM_WORLD);
+	time1 = std::chrono::high_resolution_clock::now();
+
+    std::vector<double> res = A.MultvecL(x);
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	time2 = std::chrono::high_resolution_clock::now();
+	t = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
+	MPI_Bcast(&t, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
 std::vector<double> KW_runtimelinalg::run_dgelss(const HMMPI::Mat &A, const std::vector<double> &b, double &t)	// runs dgelss test on all ranks, returns A^(-1)*x (different for each rank)
 {
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -1894,7 +1924,7 @@ void KW_runtimelinalg::print_header(int dim)											// prints the header depe
 	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");
 	char buff[HMMPI::BUFFSIZE];
 
-	std::vector<std::string> v = {"DGEMV"};
+	std::vector<std::string> v = {"DGEMV", "DGEMM_VL", "DGEMM_VR"};
 	if (cfg->dgelss == "Y")
 		v.push_back("DGELSS");
 	if (cfg->dgemm == "Y")
@@ -1902,23 +1932,31 @@ void KW_runtimelinalg::print_header(int dim)											// prints the header depe
 
 	std::string s = HMMPI::ToString(v, "%-10s", "\t");
 	s.pop_back();		// final '\n'
-	sprintf(buff, "D%5d\t%s\t%-23s\t%-s\n", dim, s.c_str(), "norm2 range", "seed");
+	sprintf(buff, "D%5d\t%s\t%-23s\t%-23s\t%-23s\t%-s\n", dim, s.c_str(), "norm2 range", "norm2 range (VL)", "norm2 range (VR)", "seed");
 	K->AppText(buff);
 }
 //------------------------------------------------------------------------------------------
-void KW_runtimelinalg::print_iter(int k, int seed, double t_dgemv, double t_dgelss, double t_dgemm, double diff)	// prints the k-th iteration results
+void KW_runtimelinalg::print_iter(int k, int seed, double t_dgemv, double t_dgemm_vl, double t_dgemm_vr, double t_dgelss, double t_dgemm, double diff, double diff_VL, double diff_VR)	// prints the k-th iteration results
 {
 	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");
 	char buff[HMMPI::BUFFSIZE];
 
 	double diff0 = 0, diff1 = 0;		// min and max
+	double diff0_VL = 0, diff1_VL = 0;	// min and max
+	double diff0_VR = 0, diff1_VR = 0;	// min and max
 	int seed0 = 0, seed1 = 0;			// min and max
+
 	MPI_Reduce(&diff, &diff0, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
 	MPI_Reduce(&diff, &diff1, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&diff_VL, &diff0_VL, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&diff_VL, &diff1_VL, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&diff_VR, &diff0_VR, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&diff_VR, &diff1_VR, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
 	MPI_Reduce(&seed, &seed0, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
 	MPI_Reduce(&seed, &seed1, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
 
-	std::vector<double> v = {t_dgemv};
+	std::vector<double> v = {t_dgemv, t_dgemm_vl, t_dgemm_vr};
 	if (cfg->dgelss == "Y")
 		v.push_back(t_dgelss);
 	if (cfg->dgemm == "Y")
@@ -1926,16 +1964,16 @@ void KW_runtimelinalg::print_iter(int k, int seed, double t_dgemv, double t_dgel
 
 	std::string s = HMMPI::ToString(v, "%-10.5e", "\t");
 	s.pop_back();		// final '\n'
-	sprintf(buff, "k =%3d\t%s\t%-10.5g - %-10.5g\t%d - %d\n", k, s.c_str(), diff0, diff1, seed0, seed1);
+	sprintf(buff, "k =%3d\t%s\t%-10.5g - %-10.5g\t%-10.5g - %-10.5g\t%-10.5g - %-10.5g\t%d - %d\n", k, s.c_str(), diff0, diff1, diff0_VL, diff1_VL, diff0_VR, diff1_VR, seed0, seed1);
 	K->AppText(buff);
 }
 //------------------------------------------------------------------------------------------
-void KW_runtimelinalg::print_mean(double ta_dgemv, double ta_dgelss, double ta_dgemm)								// prints mean times
+void KW_runtimelinalg::print_mean(double ta_dgemv, double ta_dgemm_vl, double ta_dgemm_vr, double ta_dgelss, double ta_dgemm)						// prints mean times
 {
 	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");
 	char buff[HMMPI::BUFFSIZE];
 
-	std::vector<double> v = {ta_dgemv};
+	std::vector<double> v = {ta_dgemv, ta_dgemm_vl, ta_dgemm_vr};
 	if (cfg->dgelss == "Y")
 		v.push_back(ta_dgelss);
 	if (cfg->dgemm == "Y")
@@ -1948,13 +1986,13 @@ void KW_runtimelinalg::print_mean(double ta_dgemv, double ta_dgelss, double ta_d
 }
 //------------------------------------------------------------------------------------------
 std::vector<double> KW_runtimelinalg::run_iter(int k, int dim)		// runs test iteration 'k' (k = 0, 1, 2,...) for dimension 'dim'; prints time for all tests
-{																	// also prints min/max norms (involving dgemv, dgelss) for all ranks;
+{																	// also prints min/max norms (involving dgemv, dgelss, dgemm_vl, dgemm_vr) for all ranks;
 	DECLKWD(cfg, KW_timelinalg_config, "TIMELINALG_CONFIG");		// returns time for all tests (for subsequent averaging)
 
 	HMMPI::Mat A, M;
-	std::vector<double> b, x, x1;
-	double t, norm = 0;
-	std::vector<double> res(3, 0.0);
+	std::vector<double> b, bL, bR, x, x1;
+	double t, norm = 0, norm_vl, norm_vr;
+	std::vector<double> res(5, 0.0);
 
 	assert(rand == nullptr);
 	rand = new HMMPI::Rand(cfg->seed_0 + k, -1, 1, 0, 1, false);
@@ -1966,20 +2004,28 @@ std::vector<double> KW_runtimelinalg::run_iter(int k, int dim)		// runs test ite
 	b = run_dgemv(A, x, t);
 	res[0] = t;
 
+	bL = run_dgemm_vec_left(A, x, t);
+	norm_vl = (HMMPI::Mat(b) - HMMPI::Mat(bL)).Norm2();			// each rank has different stuff
+	res[1] = t;
+
+	bR = run_dgemm_vec_right(A, x, t);
+	norm_vr = (HMMPI::Mat(b) - HMMPI::Mat(bR)).Norm2();			// each rank has different stuff
+	res[2] = t;
+
 	if (cfg->dgelss == "Y")
 	{
 		x1 = run_dgelss(A, b, t);
-		res[1] = t;
+		res[3] = t;
 		norm = (HMMPI::Mat(x) - HMMPI::Mat(x1)).Norm2();		// each rank has different stuff
 	}
 
 	if (cfg->dgemm == "Y")
 	{
 		run_dgemm(A, M, t);
-		res[2] = t;
+		res[4] = t;
 	}
 
-	print_iter(k, cfg->seed_0 + k, res[0], res[1], res[2], norm);
+	print_iter(k, cfg->seed_0 + k, res[0], res[1], res[2], res[3], res[4], norm, norm_vl, norm_vr);
 
 	delete rand;
 	rand = nullptr;
@@ -2007,7 +2053,7 @@ void KW_runtimelinalg::Run()
 			dim = MaxDim;
 
 		print_header(dim);
-		std::vector<double> meant(3, 0.0);
+		std::vector<double> meant(5, 0.0);
 
 		for (int k = 0; k < cfg->Nk; k++)
 		{
@@ -2020,7 +2066,7 @@ void KW_runtimelinalg::Run()
 		for (auto &d : meant)
 			d /= cfg->Nk;		// find the average
 
-		print_mean(meant[0], meant[1], meant[2]);
+		print_mean(meant[0], meant[1], meant[2], meant[3], meant[4]);
 		K->AppText("\n");
 
 		dim *= cfg->Dincfactor;

@@ -768,6 +768,32 @@ std::vector<double> Mat::operator*(const std::vector<double>& v) const		// *this
 		throw Exception("Bad op_switch in Mat::operator*(vector)");
 }
 //------------------------------------------------------------------------------------------
+std::vector<double> Mat::MultvecR(const std::vector<double> &v) const		// *this * v, using BLAS dgemm
+{
+	const int dim = v.size();
+	if (icount != (size_t)dim || jcount != (size_t)dim || dim <= 0)
+		throw Exception("Inconsistent dimensions in Mat::MultvecR");
+
+	std::vector<double> res(dim);
+	double* pres = res.data();
+
+	cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, 1, dim, 1.0, data.data(), dim, v.data(), 1, 0.0, pres, 1);
+	return res;
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> Mat::MultvecL(const std::vector<double> &v) const		// *this * v, using BLAS dgemm; left multiplication with transposition is employed, i.e. (x'*A')'
+{
+	const int dim = v.size();
+	if (icount != (size_t)dim || jcount != (size_t)dim || dim <= 0)
+		throw Exception("Inconsistent dimensions in Mat::MultvecL");
+
+	std::vector<double> res(dim);
+	double* pres = res.data();
+
+	cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, 1, dim, dim, 1.0, v.data(), dim, data.data(), dim, 0.0, pres, dim);
+	return res;
+}
+//------------------------------------------------------------------------------------------
 Mat Mat::Autocorr() const
 {
 	if (icount <= 1 || jcount != 1)

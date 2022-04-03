@@ -55,6 +55,7 @@ namespace ManualMath
 	double InnerProd(const std::vector<double> &a, const std::vector<double> &b);				// scalar product (a, b), manual
 }
 double InnerProd(const std::vector<double> &a, const std::vector<double> &b);					// scalar product (a, b), BLAS
+
 std::vector<double> Vec_x_ay(std::vector<double> x, const std::vector<double> &y, double a);	// x + ay
 std::vector<double> Vec_ax(std::vector<double> x, double a);									// ax
 
@@ -184,6 +185,8 @@ public:
 	void operator-=(const Mat &m);			// *this -= m
 	Mat operator*(const Mat &m) const;		// *this * m, using Manual | BLAS depending on 'op_switch'
 	std::vector<double> operator*(const std::vector<double> &v) const;		// *this * v, using Manual | BLAS depending on 'op_switch'
+	std::vector<double> MultvecR(const std::vector<double> &v) const;		// *this * v, using BLAS dgemm
+	std::vector<double> MultvecL(const std::vector<double> &v) const;		// *this * v, using BLAS dgemm; left multiplication with transposition is employed, i.e. (x'*A')'
 	Mat Autocorr() const;					// calculates vector of the same size as input, its values at [k] = sample autocorrelations at lag k (*this should be a vector)
 	int Ess(double &res) const;				// calculates effective sample size (res) using initial monotone sequence estimator (*this should be a vector); returns lag at which the estimator stopped
 	Mat Chol() const;						// Cholesky decomposition, uses some simple handwritten code; the lower triangular part is referenced (and returned)
