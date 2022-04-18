@@ -1181,14 +1181,16 @@ std::vector<std::vector<NNC>> CornGrid::get_same_layer_NNC(std::string &out_msg)
 	return res;
 }
 //------------------------------------------------------------------------------------------
-std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array, with values = 0 or 1, where 1 is for the cells which don't have active adjacent cell below
-{														// the result is significant on comm-rank-0
-	assert(grid_loaded);
+std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array, with values =0 or >0, where >0 is for the cells that don't have an active adjacent cell below, in which case
+{														// the value is the gap size (sum of heights) between the current cell and the nearest active cell below;
+	assert(grid_loaded);								// the result is significant on comm-rank-0
 	assert(actnum_loaded);
 	assert(cell_coord_filled);
 	assert(cell_height.size() > 0);
+	assert(cell_center.size() > 0);
+	assert(cell_center.size() == cell_height.size()*3);
 
-	std::vector<double> res;
+	std::vector<double> res;							// NOTE: it's assumed there is no empty space between the cells!
 	if (rank == 0)
 	{
 		res = std::vector<double>(Nx*Ny*Nz, 0.0);
@@ -1197,10 +1199,10 @@ std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array
 			for (size_t i = 0; i < Nx; i++)			// consider cell (i, j, k)
 				for (size_t k = 0; k < Nz; k++)
 				{
-					const size_t ind = Nx*Ny*k + Nx*j + i;
-
-					if (actnum[ind] == 0)			// inactive cells are not suitable candidates
-						continue;
+					const size_t ind = Nx*Ny*k + Nx*j + i;													//
+																											//	 active		 inactive	 active
+					if (actnum[ind] == 0)			// inactive cells are not suitable candidates			//		k	-----	k1	----	k2
+						continue;																			//
 
 					size_t k1 = k + 1;				// find the next non-empty cell below
 					while (k1 < Nz && cell_height[Nx*Ny*k1 + Nx*j + i] <= min_cell_height)
@@ -1213,10 +1215,33 @@ std::vector<double> CornGrid::MarkPinchBottoms() const	// returns Nx*Ny*Nz array
 					}
 
 					// now, k1 is the next non-empty cell
-					if (actnum[Nx*Ny*k1 + Nx*j + i] == 0)		// NOTE: it's assumed there is no empty space between the cells!
-						res[ind] = 1;
+					if (actnum[Nx*Ny*k1 + Nx*j + i] == 0)		// case when 'k1' is inactive: more processing
+					{
+						size_t k2 = k1 + 1;			// find the next non-empty ACTIVE cell below
+						while (k2 < Nz && (cell_height[Nx*Ny*k2 + Nx*j + i] <= min_cell_height || actnum[Nx*Ny*k2 + Nx*j + i] == 0))
+							k2++;
 
-					k = k1 - 1;						// -1 because of the "for" increment
+						if (k2 >= Nz)				// non-empty ACTIVE cell not found
+						{
+							k = k2;
+							continue;
+						}
+
+						// now, k and k2 are two active cells separated by a bunch of inactive cells; find the gap size |k - k2|:
+						const size_t ind2 = Nx*Ny*k2 + Nx*j + i;
+						const double dx = cell_center[3*ind2] - cell_center[3*ind];
+						const double dy = cell_center[3*ind2+1] - cell_center[3*ind+1];
+						const double dz = cell_center[3*ind2+2] - cell_center[3*ind+2];
+						double dist = sqrt(dx*dx + dy*dy + dz*dz) - cell_height[ind]/2 - cell_height[ind2]/2;	// distance between the cell centers minus half the cell thicknesses
+						if (dist < 0)
+							dist = 0;
+
+						res[ind] = dist;
+
+						k = k2 - 1;					// -1 because of the "for" increment
+					}
+					else										// case when 'k1' is active: keep going
+						k = k1 - 1;								// -1 because of the "for" increment
 				}
 	}
 

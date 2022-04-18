@@ -153,7 +153,8 @@ public:
 															// the result is significant on comm-rank-0
 													// TODO this function was not thoroughly tested
 
-	std::vector<double> MarkPinchBottoms() const;	// returns Nx*Ny*Nz array, with values = 0 or 1, where 1 is for the cells which don't have active adjacent cell below
+	std::vector<double> MarkPinchBottoms() const;	// returns Nx*Ny*Nz array, with values =0 or >0, where >0 is for the cells that don't have an active adjacent cell below, in which case
+													// the value is the gap size (sum of heights) between the current cell and the nearest active cell below;
 													// the result is significant on comm-rank-0
 	std::vector<double> ord_krig_final_mult(const Vector2<int> &pts, double R, double r, double rz, double chirad, const HMMPI::Func1D_corr *corr, const Mat &invK_Ys) const;
 													// performs (in parallel) the final multiplication needed by ordinary kriging:
