@@ -654,12 +654,12 @@ public:
 	std::vector<HMMPI::SimSMRY::pair> vecs;	// vector of pairs, e.g. <FIELD, FWCT>
 
 	std::vector<std::string> WGname;	// well/group name
-	std::vector<std::string> vect;		// quantity, e.g. WBHP
+	std::vector<std::string> vect;		// property, e.g. WBHP
 	std::vector<double> sigma;			// std
-	std::vector<double> R;		  		// correlation radius (in time)
+	std::vector<double> R;		  		// correlation radius (in time, days); for func == "CONST", R means the 'big number' A, e.g. 1e4
 	std::vector<std::string> func;		// correlation function
 
-	std::vector<HMMPI::Func1D_corr*> corr;	// correlation function
+	std::vector<const HMMPI::Func1D_corr*> corr;	// correlation function objects
 
 	KW_eclvectors();
 	~KW_eclvectors();

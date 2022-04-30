@@ -245,24 +245,28 @@ public:
 //---------------------------------------------------------------------------
 class VectCorrEntry		// covariance for a single Eclipse vector
 {
+protected:
+	void FillConstCorr(double *C) const;	// fills the 'CONST' covariance C of size sz*sz, using the big eigenvalue 'R0' and eigenvector 1/sigma
+											// i.e. C - the covariance that damps the const vectors
 public:
 	const double R_threshold = 0.01;		// when R0 <= R_threshold, correlation matrix will not be calculated, but "unity operator" will be used instead
 	size_t sz;		// total defined historic vals with non-zero sigma in this well vector
-	double *C;		// correlation from variogram, sz x sz, full covariance is {sigma}'*C*{sigma}; C = 0 if R0 <= R_threshold, which means "using unity C"
-	double *L;		// Choleski(C), sz x sz; L = 0 if R0 <= R_threshold
+	double *C;		// correlation from variogram, sz x sz, full covariance is {sigma}'*C*{sigma}; C = nullptr if R0 <= R_threshold, which means "using unity C"
+	double *L;		// Choleski(C), sz x sz; L = nullptr if R0 <= R_threshold
 	std::vector<double> sigma;	// sz
 	std::vector<int> indvalid;	// 0 for unused data points, 1 for used data points
 	double R0;		// correlation radius - stored for reference
 
 	VectCorrEntry();
 	~VectCorrEntry();
-	void FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, HMMPI::Func1D_corr *func);	// ind - vector index in ECLVECTORS, tm - zero-based time (days), R - variogram range in days, func - 1D corr. function
-					// C, L, sigma, sz, count are filled
+	void FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, const HMMPI::Func1D_corr *func);	// ind - vector index in ECLVECTORS, tm - zero-based time (days), R - variogram range in days, func - 1D corr. function
+					// if func == CorrDummyConst, then R is the 'big number' used for the correlation matrix eigenvalue
+					// sz, C, L, sigma, indvalid, R0 are filled
 	void Linv_v(const std::vector<double> &v, std::vector<double> &dest) const;
 	void L_v(const std::vector<double> &v, std::vector<double> &dest) const;
 	double Perturbation(std::vector<double> &dest, HMMPI::RandNormal *rn, double sigma1) const;			// dest = sigma1*S*L*xi, returns (Linv*Sinv/sigma1*dest)^2 for Chi-2
-	void v2vector(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind);				// вектор №ind в smry принимает значения из v, нулевые сигмы пропускаются
-	void v2vector_add(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind) const;	// к вектору №ind в smry прибавляются значения из v, нулевые сигмы пропускаются
+	void v2vector(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind);				// вектор #ind в smry принимает значения из v, нулевые сигмы пропускаются
+	void v2vector_add(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind) const;	// к вектору #ind в smry прибавляются значения из v, нулевые сигмы пропускаются
 	double ObjFunc(const HMMPI::Vector2<double> &smryMod, const HMMPI::Vector2<double> &smryHist, size_t ind, const HMMPI::Vector2<double> *smrySens = 0);		// (m-h)'*Cinv*(m-h), or if smrySens != 0, (m-h)'*Cinv*Sens
 };
 //---------------------------------------------------------------------------
@@ -275,7 +279,7 @@ public:
 	std::vector<double> of1;				// objective function for each vector
 
 	VectCorrList();
-	void LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D_corr*> F);
+	void LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<const HMMPI::Func1D_corr*> F);
 	double PerturbData(HMMPI::Vector2<double> &smry, HMMPI::RandNormal *rn, double sigma1);	// возмущения добавляются к истории smry, здесь надо использовать textsmry->pet_dat
 																				// возвращает noise'*C*noise для критерия хи-2
 																				// sigma1 - сомножитель для сигм, идущий из w1

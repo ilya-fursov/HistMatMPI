@@ -42,7 +42,7 @@ public:
 	size_t ICount() const {return icount;};
 	size_t JCount() const {return jcount;};
 	size_t Length() const {return icount*jcount;};
-	const T *Serialize() const;				// returns underlying native array
+	const T *Serialize() const;				// returns the underlying native array
 	virtual void Deserialize(const T *v);	// inverse operation to above; current "icount", "jcount" are used for size
 	static void Copy(const Vector2<T> &Src, size_t i1, size_t i2, size_t j1, size_t j2,
 					      Vector2<T> &Dest, size_t x1, size_t x2, size_t y1, size_t y2);
@@ -134,7 +134,7 @@ const T &Vector2<T>::operator()(size_t i, size_t j) const
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-const T *Vector2<T>::Serialize() const
+const T *Vector2<T>::Serialize() const		// returns the underlying native array
 {
 	return data.data();
 }

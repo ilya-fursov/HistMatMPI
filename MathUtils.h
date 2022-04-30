@@ -289,6 +289,14 @@ public:
 	void SetNugget(double n){nugget = n;};
 };
 //------------------------------------------------------------------------------------------
+class CorrDummyConst : public Func1D_corr	// Dummy placeholder class
+{
+public:
+	virtual double f(double x, bool smooth_at_nugget = false) const;
+	virtual double df(double x) const;
+	virtual double d2f(double x) const;
+};
+//------------------------------------------------------------------------------------------
 class CorrGauss : public Func1D_corr		// Gaussian correlation
 {
 public:
@@ -386,7 +394,7 @@ public:
 class Func1D_corr_factory
 {
 public:
-	static Func1D_corr *New(std::string type);		// produces 1D correlation function according to type: GAUSS, SPHER, EXP, VARGAUSS, MATERN
+	static Func1D_corr *New(std::string type);		// produces 1D correlation function according to type: GAUSS, SPHER, EXP, VARGAUSS, MATERN, CONST
 													// in the end, *** delete *** the returned pointer
 };
 //------------------------------------------------------------------------------------------

@@ -529,6 +529,23 @@ double Func1D_corr::lim_d3f(double y) const			// [3*f''/y - 3*f'/(y^2) - f''']/(
 	}
 }
 //------------------------------------------------------------------------------------------
+// CorrDummyConst
+//------------------------------------------------------------------------------------------
+double CorrDummyConst::f(double x, bool smooth_at_nugget) const
+{
+	throw Exception("Illegal call to CorrDummyConst::f");
+}
+//------------------------------------------------------------------------------------------
+double CorrDummyConst::df(double x) const
+{
+	throw Exception("Illegal call to CorrDummyConst::df");
+}
+//------------------------------------------------------------------------------------------
+double CorrDummyConst::d2f(double x) const
+{
+	throw Exception("Illegal call to CorrDummyConst::d2f");
+}
+//------------------------------------------------------------------------------------------
 // CorrGauss
 //------------------------------------------------------------------------------------------
 double CorrGauss::f(double x, bool smooth_at_nugget) const
@@ -954,8 +971,8 @@ double CorrMatern::GetNu() const
 //------------------------------------------------------------------------------------------
 // Func1D_corr_factory
 //------------------------------------------------------------------------------------------
-Func1D_corr *Func1D_corr_factory::New(std::string type)
-{
+Func1D_corr *Func1D_corr_factory::New(std::string type)		// produces 1D correlation function according to type: GAUSS, SPHER, EXP, VARGAUSS, MATERN, CONST
+{															// in the end, *** delete *** the returned pointer
 	if (type == "GAUSS")
 		return new CorrGauss();
 	else if (type == "SPHER")
@@ -966,6 +983,8 @@ Func1D_corr *Func1D_corr_factory::New(std::string type)
 		return new VarGauss();
 	else if (type == "MATERN")
 		return new CorrMatern();
+	else if (type == "CONST")
+		return new CorrDummyConst();
 	else
 		throw Exception(stringFormatArr("Неопознанный тип функции {0:%s}", "Unrecognized function type {0:%s}", type));
 }

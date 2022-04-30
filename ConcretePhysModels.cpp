@@ -1106,7 +1106,10 @@ PhysModelHM::~PhysModelHM()
 			VCL = 0;
 		}
 		else if (VCL->ownerCount < 0)
-			throw HMMPI::Exception("VCL->ownerCount < 0");
+		{
+			K->AppText("ERROR: VCL->ownerCount < 0 in PhysModelHM::~PhysModelHM()\n");
+			K->TotalErrors++;
+		}
 	}
 
 	if (RLS != 0)
@@ -1118,7 +1121,10 @@ PhysModelHM::~PhysModelHM()
 			RLS = 0;
 		}
 		else if (RLS->ownerCount < 0)
-			throw HMMPI::Exception("RLS->ownerCount < 0");
+		{
+			K->AppText("ERROR: RLS->ownerCount < 0 in PhysModelHM::~PhysModelHM()\n");
+			K->TotalErrors++;
+		}
 	}
 
 #ifdef TESTCTOR
@@ -2512,7 +2518,10 @@ PMEclipse::~PMEclipse()
 			VCL = 0;
 		}
 		else if (VCL->ownerCount < 0)
-			throw HMMPI::Exception("VCL->ownerCount < 0");
+		{
+			K->AppText("ERROR: VCL->ownerCount < 0 in PMEclipse::~PMEclipse()\n");
+			K->TotalErrors++;
+		}
 	}
 
 #ifdef TESTCTOR

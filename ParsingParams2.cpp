@@ -1570,7 +1570,7 @@ KW_eclvectors::KW_eclvectors()
 
 	FinalizeParams();
 
-	EXPECTED[4] = std::vector<std::string>{"SPHER", "EXP", "GAUSS", "MATERN"};
+	EXPECTED[4] = std::vector<std::string>{"SPHER", "EXP", "GAUSS", "MATERN", "CONST"};
 }
 //------------------------------------------------------------------------------------------
 KW_eclvectors::~KW_eclvectors()
@@ -1579,14 +1579,17 @@ KW_eclvectors::~KW_eclvectors()
 		delete i;
 }
 //------------------------------------------------------------------------------------------
-void KW_eclvectors::UpdateParams() noexcept
+void KW_eclvectors::UpdateParams() noexcept			// process "WGname", "vect", set default R's differently, fill "corr", "vecs"
 {
 	DECLKWD(textsmry, KW_textsmry, "TEXTSMRY");
 
 	int count = 0;			// counts 'R' replacements
 	size_t L = R.size();
-	corr = std::vector<HMMPI::Func1D_corr*>(L);
+	corr = std::vector<const HMMPI::Func1D_corr*>(L);
 	vecs = std::vector<HMMPI::SimSMRY::pair>(L);
+
+	std::string warn = "";			// warning message
+	char buff[HMMPI::BUFFSIZE];
 
 	for (size_t i = 0; i < L; i++)
 	{
@@ -1602,6 +1605,15 @@ void KW_eclvectors::UpdateParams() noexcept
 		}
 
 		corr[i] = HMMPI::Func1D_corr_factory::New(func[i]);
+
+		if (func[i] == "CONST" && R[i] < 100)		// make a warning if the 'big number' is small
+		{
+			sprintf(buff, "%s %s (R = %g)", vecs[i].first.c_str(), vecs[i].second.c_str(), R[i]);
+			if (warn == "")
+				warn = buff;
+			else
+				warn += (std::string)", " + buff;
+		}
 	}
 
 	HMMPI::SimSMRY::pair dup;
@@ -1613,6 +1625,13 @@ void KW_eclvectors::UpdateParams() noexcept
 										  "Since R <= 0 is not allowed, it was replaced by 0.01 in {0:%d} line(s)\n", count));
 	if (textsmry->GetState() == "")
 		textsmry->SetState(HMMPI::MessageRE("TEXTSMRY должно быть перезагружено после чтения ECLVECTORS\n", "TEXTSMRY should be reloaded after reading ECLVECTORS\n"));
+
+	if (warn != "")
+	{
+		K->AppText(std::string(HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: Для векторов с корреляцией типа 'CONST' задано довольно маленькое 'большое число R': " + warn + "\n",
+												"WARNING: For vectors with 'CONST' correlation type, the 'big number R' specified is rather small: " + warn + "\n")));
+		K->TotalWarnings++;
+	}
 }
 //------------------------------------------------------------------------------------------
 std::string KW_eclvectors::SigmaInfo(const std::string &wgname, const std::string &keyword) const

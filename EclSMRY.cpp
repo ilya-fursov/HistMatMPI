@@ -636,7 +636,7 @@ std::string tNavSMRY::T_sec_obj::ToString() const			// for debug output
 //--------------------------------------------------------------------------------------------------
 void tNavSMRY::ecl_prop_transform_check() const
 {
-	for (const auto x : ecl_prop_transform)
+	for (const auto &x : ecl_prop_transform)
 	{
 		if ((x.flag == 1 && x.args.size() == 0)||(x.flag != 1 && x.args.size() != 0))
 			throw Exception("In 'ecl_prop_transform' found an element with inconsistent 'flag' and 'args'");
@@ -1100,7 +1100,7 @@ void tNavSMRY::dump_all(std::string fname) const
 	fprintf(f, "ecl_prop_ind:\t%s\n", HMMPI::ToString(ecl_prop_ind, "%d").c_str());
 
 	fprintf(f, "ecl_prop_transform (%zu):\n", ecl_prop_transform.size());
-	for (const auto x : ecl_prop_transform)
+	for (const auto &x : ecl_prop_transform)
 	{
 		fprintf(f, "%s -> flag = %d, wght_flag = %d, wght_offset = %d ('%s')\n", x.name.c_str(), x.flag, x.wght_flag, x.wght_offset, x.wght_prop.c_str());
 		for (size_t i = 0; i < x.offsets.size(); i++)

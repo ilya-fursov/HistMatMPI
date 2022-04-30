@@ -13,8 +13,10 @@
 #include <limits>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include "mpi.h"
 #include "Tracking.h"
+#include "lapacke_select.h"
 
 double LinRegress::eps;
 KW_regressConstr *RegEntryConstr::regcon;
@@ -1721,6 +1723,34 @@ const RegEntryConstr *RegListSpat::GetReg(int r) const
 //------------------------------------------------------------------------------------------
 // VectCorrEntry
 //---------------------------------------------------------------------------
+void VectCorrEntry::FillConstCorr(double *C) const			// fills the 'CONST' covariance C of size sz*sz, using the big eigenvalue 'R0' and eigenvector 1/sigma
+{															// i.e. C - the covariance that damps the const vectors
+	std::vector<double> B(sz*sz, 0.0);
+	std::vector<double> tau(sz);
+
+	assert(sigma.size() == sz);
+	for (size_t i = 0; i < sz; i++)
+		B[i*sz + i] = 1;					// diagonal
+	for (size_t i = 0; i < sz; i++)
+		B[i*sz] = 1/sigma[i];				// 1st column
+
+	int info = LAPACKE_dgeqrf(LAPACK_ROW_MAJOR, sz, sz, B.data(), sz, tau.data());
+	if (info != 0)
+		throw HMMPI::Exception(HMMPI::stringFormatArr("DGEQRF завершилась с info {0:%d}", "DGEQRF exited with info {0:%d}", info));
+
+	info = LAPACKE_dorgqr(LAPACK_ROW_MAJOR, sz, sz, sz, B.data(), sz, tau.data());
+	if (info != 0)
+		throw HMMPI::Exception(HMMPI::stringFormatArr("DORGQR завершилась с info {0:%d}", "DORGQR exited with info {0:%d}", info));
+
+	std::vector<double> D(sz, 1.0);			// diagonal of eigenvalues
+	D[0] = R0;
+
+	HMMPI::Mat V(B, sz, sz);				// the orthogonal matrix, 1st column should be proportional to 1/sigma
+
+	V = (V%D)*V.Tr();
+	memcpy(C, V.Serialize(), sz*sz*sizeof(double));
+}
+//---------------------------------------------------------------------------
 VectCorrEntry::VectCorrEntry()
 {
 	sz = 0;
@@ -1736,28 +1766,26 @@ VectCorrEntry::~VectCorrEntry()
 		delete [] L;
 }
 //---------------------------------------------------------------------------
-void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, HMMPI::Func1D_corr *func)
-{
-	R0 = R;
-
-	size_t dcount = tm.size();
+void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, double R, const HMMPI::Func1D_corr *func)
+{										// ind - vector index in ECLVECTORS, tm - zero-based time (days), R - variogram range in days, func - 1D corr. function
+	R0 = R;								// if func == CorrDummyConst, then R is the 'big number' used for the correlation matrix eigenvalue
+										// sz, C, L, sigma, indvalid, R0 are filled
+	const size_t dcount = tm.size();
 	if (dcount != textsmry.ICount())
 		throw HMMPI::Exception("Длина списка дат и соответствующий размер textsmry не совпадают в VectCorrEntry::FillData",
-						"Dates array length and the corresponding dimension of textsmry do not match in VectCorrEntry::FillData");
+							   "Dates array length and the corresponding dimension of textsmry do not match in VectCorrEntry::FillData");
 
-	size_t vcount = textsmry.JCount()/2;
+	const size_t vcount = textsmry.JCount()/2;
 	if (ind >= vcount)
 		throw HMMPI::Exception("Индекс ind вне допустимого диапазона в VectCorrEntry::FillData",
-						"Index ind out of range in VectCorrEntry::FillData");
+							   "Index ind out of range in VectCorrEntry::FillData");
 
 	// count valid data points
 	sz = 0;
 	std::vector<double> tvalid;
 	sigma = std::vector<double>();
-	indvalid = std::vector<int>(dcount);
+	indvalid = std::vector<int>(dcount, 0);
 	for (size_t i = 0; i < dcount; i++)
-	{
-		indvalid[i] = 0;
 		if (!HMMPI::IsNaN(textsmry(i, ind)) && textsmry(i, ind + vcount) != 0)
 		{
 			indvalid[i] = 1;
@@ -1765,11 +1793,10 @@ void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry,
 			sigma.push_back(textsmry(i, ind + vcount));
 			sz++;
 		}
-	}
 
 	if (sz != 0)
 	{
-		size_t count = sz * sz;
+		const size_t count = sz * sz;
 		delete [] C;
 		delete [] L;
 		if (R0 <= R_threshold)
@@ -1777,17 +1804,22 @@ void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry,
 			C = L = nullptr;			// diagonal covariance
 		}
 		else
-		{
+		{								// full covariance matrix
 			C = new double[count];
-			L = new double[count];
-			for (size_t i = 0; i < sz; i++)
-				for (size_t j = 0; j <= i; j++)
-				{
-					double dt = fabs(tvalid[i] - tvalid[j]) / R;
-					C[i*sz + j] = func->f(dt);
-					C[j*sz + i] = C[i*sz + j];
-				}
+			if (dynamic_cast<const HMMPI::CorrDummyConst*>(func) == nullptr)	// all covariances except "CONST"
+			{
+				for (size_t i = 0; i < sz; i++)
+					for (size_t j = 0; j <= i; j++)
+					{
+						double dt = fabs(tvalid[i] - tvalid[j]) / R;
+						C[i*sz + j] = func->f(dt);
+						C[j*sz + i] = C[i*sz + j];
+					}
+			}
+			else
+				FillConstCorr(C);												// "CONST" covariance
 
+			L = new double[count];
 			HMMPI::CholDecomp(C, L, sz);
 
 #ifdef WRITE_WELLCOVAR_FILES
@@ -1795,29 +1827,25 @@ void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry,
 			MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 			if (rank == 0)
 			{
-				std::ofstream fileC, fileL;
-				fileC.open(HMMPI::stringFormatArr("correl_Cov_vec{0:%d}.txt", std::vector<int>{(int)ind}));	// 12.04.2017 removed RegEntry::CWD
-				fileL.open(HMMPI::stringFormatArr("correl_L_vec{0:%d}.txt", std::vector<int>{(int)ind}));
-				fileC << "Correlation matrix" << std::endl;
-				fileL << "Choleski decomposition" << std::endl;
-				for (size_t i = 0; i < sz; i++)
-				{
-					for (size_t j = 0; j < sz; j++)
-					{
-						if (j < sz-1)
-						{
-							fileC << C[i*sz + j] << "\t";
-							fileL << L[i*sz + j] << "\t";
-						}
-						else
-						{
-							fileC << C[i*sz + j] << "\n";
-							fileL << L[i*sz + j] << "\n";
-						}
-					}
-				}
-				fileC.close();
-				fileL.close();
+				const std::string dirname = "covariance_vecs";
+				std::filesystem::create_directory(dirname);
+				char fnC[HMMPI::BUFFSIZE], fnL[HMMPI::BUFFSIZE];
+				sprintf(fnC, "%s/Cov_vec_%zu.txt", dirname.c_str(), ind);
+				sprintf(fnL, "%s/L_vec_%zu.txt", dirname.c_str(), ind);
+
+				FILE *fileC = fopen(fnC, "w");
+				if (fileC == NULL)
+					throw HMMPI::Exception((std::string)"Failed to open file '" + fnC + "' for writing");
+				fprintf(fileC, "Correlation matrix\n");
+				HMMPI::Mat(std::vector<double>(C, C+count), sz, sz).SaveASCII(fileC);
+				fclose(fileC);
+
+				FILE *fileL = fopen(fnL, "w");
+				if (fileL == NULL)
+					throw HMMPI::Exception((std::string)"Failed to open file '" + fnL + "' for writing");
+				fprintf(fileL, "Choleski decomposition\n");
+				HMMPI::Mat(std::vector<double>(L, L+count), sz, sz).SaveASCII(fileL);
+				fclose(fileL);
 			}
 #endif
 		}
@@ -1888,7 +1916,7 @@ double VectCorrEntry::Perturbation(std::vector<double> &dest, HMMPI::RandNormal 
 	return sum;
 }
 //---------------------------------------------------------------------------
-void VectCorrEntry::v2vector(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind)
+void VectCorrEntry::v2vector(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind)	// вектор #ind в smry принимает значения из v, нулевые сигмы пропускаются
 {
 	size_t vcount = smry.JCount()/2;
 	size_t dcount = smry.ICount();
@@ -1908,7 +1936,7 @@ void VectCorrEntry::v2vector(const std::vector<double> &v, HMMPI::Vector2<double
 		}
 }
 //---------------------------------------------------------------------------
-void VectCorrEntry::v2vector_add(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind) const
+void VectCorrEntry::v2vector_add(const std::vector<double> &v, HMMPI::Vector2<double> &smry, size_t ind) const	// к вектору #ind в smry прибавляются значения из v, нулевые сигмы пропускаются
 {
 	size_t vcount = smry.JCount()/2;
 	size_t dcount = smry.ICount();
@@ -1966,12 +1994,12 @@ VectCorrList::VectCorrList()
 	ownerCount = 0;
 }
 //---------------------------------------------------------------------------
-void VectCorrList::LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<HMMPI::Func1D_corr*> F)
+void VectCorrList::LoadData(const HMMPI::Vector2<double> &textsmry, const std::vector<double> &tm, const std::vector<double> &R, std::vector<const HMMPI::Func1D_corr*> F)
 {
 	size_t vcount = textsmry.JCount()/2;
 	if (vcount != R.size())
 		throw HMMPI::Exception("Размер вектора рангов корреляций R не совпадает с числом векторов в VectCorrList::LoadData",
-						"The size of the correlation range vector R does not match the number of vectors in VectCorrList::LoadData");
+							   "The size of the correlation range vector R does not match the number of vectors in VectCorrList::LoadData");
 	if (vcount != F.size())
 		throw HMMPI::Exception("Size of array 'F' and number of vectors do not match in VectCorrList::LoadData");
 
