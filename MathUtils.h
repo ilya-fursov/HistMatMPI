@@ -214,6 +214,24 @@ public:
 	friend Mat operator/(Mat A, Mat b);		// A^(-1) * b - i.e. solution of A*x = b, uses Gaussian elimination, with pivoting; 'b' may contain multiple right hand sides
 };
 //------------------------------------------------------------------------------------------
+// rank-3 tensor with manual T*vec operation - mostly for timing and debug purposes
+// data is stored contiguously
+// indexing (i, j, k): i - fastest, k - slowest
+class Tensor3
+{
+protected:
+	std::vector<double> data;
+	size_t N0, N1, N2;			// dimensions
+	size_t N0N1;				// stride for 'k'
+
+public:
+	Tensor3(size_t n0, size_t n1, size_t n2, const std::vector<double> &v);	// initialize tensor using its shape and data array
+
+	double &operator()(size_t i, size_t j, size_t k);				// element (i, j, k)
+	const double &operator()(size_t i, size_t j, size_t k) const;	// const element (i, j, k)
+	Mat MultVec(const std::vector<double> &v, size_t mode);			// multiplication by vector 'v', contraction mode = 'mode'
+};
+//------------------------------------------------------------------------------------------
 // a bit legacy class for Standard Normal r.v. generation; no MPI;
 // uses rand(); initialize the seed with srand() elsewhere
 //

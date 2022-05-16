@@ -1373,5 +1373,77 @@ Mat operator/(Mat A, Mat b)
 	return res;
 }
 //------------------------------------------------------------------------------------------
+// Tensor3
+//------------------------------------------------------------------------------------------
+Tensor3::Tensor3(size_t n0, size_t n1, size_t n2, const std::vector<double> &v) : N0(n0), N1(n1), N2(n2), N0N1(n0*n1), data(v)	// initialize tensor using its shape and data array
+{
+	if (data.size() != n0*n1*n2)
+		throw Exception("Size mismatch in Tensor3::Tensor3");
+}
+//------------------------------------------------------------------------------------------
+double &Tensor3::operator()(size_t i, size_t j, size_t k)				// element (i, j, k)
+{
+	return data[i + j*N0 + k*N0N1];
+}
+//------------------------------------------------------------------------------------------
+const double &Tensor3::operator()(size_t i, size_t j, size_t k) const	// const element (i, j, k)
+{
+	return data[i + j*N0 + k*N0N1];
+}
+//------------------------------------------------------------------------------------------
+Mat Tensor3::MultVec(const std::vector<double> &v, size_t mode)			// multiplication by vector 'v', contraction mode = 'mode'
+{
+	if (mode == 0)
+	{
+		if (v.size() != N0)
+			throw Exception("Wrong vector size in Tensor3::MultVec");
+		Mat res(N1, N2, 0.0);
+		for (size_t i = 0; i < N1; i++)
+			for (size_t j = 0; j < N2; j++)
+			{
+				double sum = 0;
+				for (size_t m = 0; m < N0; m++)
+					sum += data[m + i*N0 + j*N0N1] * v[m];
+				res(i, j) = sum;
+			}
+
+		return res;
+	}
+	else if (mode == 1)
+	{
+		if (v.size() != N1)
+			throw Exception("Wrong vector size in Tensor3::MultVec");
+		Mat res(N0, N2, 0.0);
+		for (size_t i = 0; i < N0; i++)
+			for (size_t j = 0; j < N2; j++)
+			{
+				double sum = 0;
+				for (size_t m = 0; m < N1; m++)
+					sum += data[i + m*N0 + j*N0N1] * v[m];
+				res(i, j) = sum;
+			}
+
+		return res;
+	}
+	else if (mode == 2)
+	{
+		if (v.size() != N2)
+			throw Exception("Wrong vector size in Tensor3::MultVec");
+		Mat res(N0, N1, 0.0);
+		for (size_t i = 0; i < N0; i++)
+			for (size_t j = 0; j < N1; j++)
+			{
+				double sum = 0;
+				for (size_t m = 0; m < N2; m++)
+					sum += data[i + j*N0 + m*N0N1] * v[m];
+				res(i, j) = sum;
+			}
+
+		return res;
+	}
+	else
+		throw Exception("Wrong 'mode' in Tensor3::MultVec");
+}
+//------------------------------------------------------------------------------------------
 
 }		// namespace HMMPI
