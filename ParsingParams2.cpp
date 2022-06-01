@@ -243,10 +243,16 @@ KW_timelinalg_config::KW_timelinalg_config()
 	DEFPAR(seed_0, 0);			// seed for rank-0, test-0 (for other ranks and tests: seed_r_t = seed_0 + rank + test); 0 means take seed = time(NULL)
 	DEFPAR(dgelss, "Y");		// perform this test? y/n
 	DEFPAR(dgemm, "Y");  		// perform this test? y/n
+	DEFPAR(ttv1, "Y");			// perform this test? (tensor times vector, mode=1), y/n
+	DEFPAR(ttv2, "Y");			// perform this test? (tensor times vector, mode=2), y/n
+	DEFPAR(ttv3, "Y");			// perform this test? (tensor times vector, mode=3), y/n
 
 	FinalizeParams();
 	EXPECTED[5] = std::vector<std::string>{"Y", "N"};
 	EXPECTED[6] = std::vector<std::string>{"Y", "N"};
+	EXPECTED[7] = std::vector<std::string>{"Y", "N"};
+	EXPECTED[8] = std::vector<std::string>{"Y", "N"};
+	EXPECTED[9] = std::vector<std::string>{"Y", "N"};
 }
 //------------------------------------------------------------------------------------------
 void KW_timelinalg_config::FinalAction() noexcept
@@ -2099,9 +2105,9 @@ KW_pilot::KW_pilot()
 //------------------------------------------------------------------------------------------
 void ParamsInterface::count_active() noexcept
 {
-	act_ind = std::vector<int>();
-	tot_ind = std::vector<int>(act.size(), -1);
-	int n = 0; 		// counts active params
+	act_ind = std::vector<size_t>();
+	tot_ind = std::vector<size_t>(act.size(), (size_t)-1);
+	size_t n = 0; 		// counts active params
 	for (size_t i = 0; i < act.size(); i++)
 		if (act[i] == "A")
 		{
@@ -2177,7 +2183,7 @@ std::vector<std::vector<double>> ParamsInterface::NormalSequence(int n, unsigned
 	{
 		std::vector<double> v = init;				// new point
 		for (size_t j = 0; j < init.size(); j++)	// propose + accept/reject each coordinate
-			if (tot_ind[j] != -1)	// only update the active coords
+			if (tot_ind[j] != (size_t)-1)	// only update the active coords
 			{
 				bool accepted = false;
 				while (!accepted)
@@ -2223,8 +2229,8 @@ void ParamsInterface::Push_point(double Init, double Min, double Max, std::strin
 
 	if (AN == "A")
 	{
-		act_ind.push_back(int(act.size()) - 1);
-		tot_ind.push_back(int(act_ind.size()) - 1);
+		act_ind.push_back(act.size() - 1);
+		tot_ind.push_back(act_ind.size() - 1);
 	}
 	else
 		tot_ind.push_back(-1);
@@ -2242,7 +2248,7 @@ ParamsInterface *ParamsInterface::ActToSpherical(const HMMPI::SpherCoord &sc, do
 	const int sph_dim = res->init.size();
 	res->act = std::vector<std::string>(sph_dim, "A");
 
-	res->act_ind = std::vector<int>(sph_dim);
+	res->act_ind = std::vector<size_t>(sph_dim);
 	std::iota(res->act_ind.begin(), res->act_ind.end(), 0);
 	res->tot_ind = res->act_ind;
 
@@ -3777,6 +3783,26 @@ KW_LinSolver::~KW_LinSolver()
 {
 	for (auto &s : vecsol)
 		delete s;
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_TTV_config::KW_TTV_config()
+{
+	name = "TTV_CONFIG";
+
+	DEFPAR(slicing, "SMALL");
+	DEFPAR(loopfusion, "NONE");
+
+	FinalizeParams();
+	EXPECTED[0] = std::vector<std::string>{"SMALL", "LARGE"};
+	EXPECTED[1] = std::vector<std::string>{"NONE", "OUTER", "ALL"};
+}
+//------------------------------------------------------------------------------------------
+void KW_TTV_config::UpdateParams() noexcept
+{
+	if (slicing == "LARGE" && loopfusion == "OUTER")
+		SilentError(HMMPI::MessageRE("Вариант LARGE - OUTER не поддерживается",
+									 "LARGE - OUTER combination is not supported"));
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

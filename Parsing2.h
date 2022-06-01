@@ -192,16 +192,20 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
-class KW_runtimelinalg : public KW_run			// timing BLAS and LAPACK procedures for different matrices
+class KW_runtimelinalg : public KW_run			// timing BLAS, LAPACK, TTV procedures for different matrices
 {												// in MPI setting, all ranks do the same (but with different seeds)
 private:
 	std::chrono::high_resolution_clock::time_point time1, time2;
+	const int TD1 = 1;		// tensor dimensions will be (TD1*dim, TD2*dim, TD3*dim)
+	const int TD2 = 2;
+	const int TD3 = 3;
 
 protected:
 	HMMPI::Rand *rand;
 
-	HMMPI::Mat form_mat(size_t dim);			// dim*dim matrix, with elements in [-1, 1]
-	std::vector<double> form_vec(size_t dim);	// dim-vector, with elements in [-1, 1]
+	std::vector<double> form_vec(size_t dim);		// dim-vector, with elements in [-1, 1]
+	HMMPI::Mat form_mat(size_t dim);				// dim*dim matrix, with elements in [-1, 1]
+	HMMPI::TensorTTV form_tens3(size_t dim);		// (TD1*dim, TD2*dim, TD3*dim) tensor, with elements in [-1, 1]
 
 	// the "run" procedures below run on all ranks, with a barrier in the end;
 	// after all have finished, the time "t" (sync) is returned
@@ -210,13 +214,18 @@ protected:
 	std::vector<double> run_dgemm_vec_left(const HMMPI::Mat &A, const std::vector<double> &x, double &t);	// calculates and returns A*x, as (x'*A')', using dgemm
 	std::vector<double> run_dgelss(const HMMPI::Mat &A, const std::vector<double> &b, double &t);	// runs dgelss test on all ranks, returns A^(-1)*x (different for each rank)
 	void run_dgemm(const HMMPI::Mat &A, const HMMPI::Mat &B, double &t);							// runs dgemm test on all ranks
+	HMMPI::Mat run_ttv_tlib(const HMMPI::TensorTTV &T, const std::vector<double> &b, size_t mode, double &t);		// runs and returns tlib T*b on all ranks
+	HMMPI::Mat run_ttv_manual(const HMMPI::Tensor3 &T, const std::vector<double> &b, size_t mode, double &t);		// runs and returns manual T*b on all ranks
 
 	void print_header(int dim);							// prints the header depending on TIMELINALG_CONFIG settings
-	void print_iter(int k, int seed, double t_dgemv, double t_dgemm_vl, double t_dgemm_vr, double t_dgelss, double t_dgemm, double diff, double diff_VL, double diff_VR);	// prints the k-th iteration results
-	void print_mean(double ta_dgemv, double ta_dgemm_vl, double ta_dgemm_vr, double ta_dgelss, double ta_dgemm);				// prints mean times
+	void print_iter(int k, int seed, double t_dgemv, double t_dgemm_vl, double t_dgemm_vr, double t_dgelss, double t_dgemm,
+									 double t_ttv1, double t_ttv2, double t_ttv3,
+									 double t_ttv1man, double t_ttv2man, double t_ttv3man, double diff_norm2);			// prints the k-th iteration results
+	void print_mean(double ta_dgemv, double ta_dgemm_vl, double ta_dgemm_vr, double ta_dgelss, double ta_dgemm,
+									 double ta_ttv1, double ta_ttv2, double ta_ttv3, double ta_ttv1man, double ta_ttv2man, double ta_ttv3man);	// prints mean times
 
 	std::vector<double> run_iter(int k, int dim);		// runs test iteration 'k' (k = 0, 1, 2,...) for dimension 'dim'; prints time for all tests
-														// also prints min/max norms (involving dgemv, dgelss, dgemm_vl, dgemm_vr) for all ranks;
+														// also prints 2-norms: first taking their max over the monitored quantities, and then taking min/max over ranks, printing these min and max;
 														// returns time for all tests (for subsequent averaging)
 public:
 	KW_runtimelinalg();
@@ -365,8 +374,13 @@ public:
 	int Ndims;			// (>= 1) test this many different dimensions
 	int Nk;				// (>= 1) for each dimension run Nk tests
 	int seed_0;			// seed for rank-0, test-0 (for other ranks and tests: seed_r_t = seed_0 + rank + test); 0 means take seed = time(NULL)
+
 	std::string dgelss;	// perform this test? y/n
 	std::string dgemm;	// perform this test? y/n
+
+	std::string ttv1;	// perform this test? (tensor times vector, mode=1), y/n
+	std::string ttv2;	// perform this test? (tensor times vector, mode=2), y/n
+	std::string ttv3;	// perform this test? (tensor times vector, mode=3), y/n
 
 	KW_timelinalg_config();
 	virtual void FinalAction() noexcept;
@@ -827,8 +841,8 @@ private:
 	using HMMPI::BoundConstr::RandU;
 
 protected:									//								values:				vector size:
-	std::vector<int> act_ind;				// indices of active params		[0, full-dim)		act-dim
-	std::vector<int> tot_ind;				// indices of full-dim params	[-1, act-dim)  		full-dim
+	std::vector<size_t> act_ind;			// indices of active params		[0, full-dim)		act-dim
+	std::vector<size_t> tot_ind;			// indices of full-dim params	[-1, act-dim)  		full-dim
 
 	virtual void count_active() noexcept;	// fills 'act_ind', 'tot_ind' from 'act'
 public:
@@ -839,8 +853,8 @@ public:
 	virtual std::vector<double> actmin() const;						// min & max - INTERNAL ACTIVE parameters
 	virtual std::vector<double> actmax() const;
 	virtual std::vector<double> get_init_act() const;				// internal active values for "init"
-	virtual const std::vector<int> &get_act_ind() const {return act_ind;};
-	virtual const std::vector<int> &get_tot_ind() const {return tot_ind;};
+	virtual const std::vector<size_t> &get_act_ind() const {return act_ind;};
+	virtual const std::vector<size_t> &get_tot_ind() const {return tot_ind;};
 	virtual std::string msg() const;								// message listing "init" values
 	virtual std::vector<double> SobolDP(long long int &seed) const;	// generates Sobol design point (internal representation) in [min, max]; inactive params are set to 'init'
 																	// note: 'seed' is incremented with each call
@@ -969,7 +983,7 @@ public:
 class KW_prior : public KW_multparams
 {
 protected:
-	std::vector<int> inds_in_params;		// indices of "names" within the PARAMETERS, filled by UpdateParams()
+	std::vector<size_t> inds_in_params;		// indices of "names" within the PARAMETERS, filled by UpdateParams()
 
 	virtual void UpdateParams() noexcept;	// count non-weak prior parameters, check validity
 public:
@@ -1229,6 +1243,16 @@ public:
 	KW_LinSolver();
 	virtual void UpdateParams() noexcept;	// creates Solver objects in 'vecsol'
 	virtual ~KW_LinSolver();				// clears 'vecsol'
+};
+//------------------------------------------------------------------------------------------
+class KW_TTV_config : public KW_params		// options for Tensor * Vector multiplication
+{
+public:
+	std::string slicing;		// SMALL, LARGE
+	std::string loopfusion;		// NONE, OUTER, ALL
+
+	KW_TTV_config();
+	virtual void UpdateParams() noexcept;
 };
 //------------------------------------------------------------------------------------------
 class KW_MCMC_config : public KW_params	// settings for MCMC samplers

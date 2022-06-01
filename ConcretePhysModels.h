@@ -255,7 +255,7 @@ protected:
 	std::vector<double> tt;					// historical data; 'tt' should exactly correspond to time in "out_t"
 	std::vector<double> c_hist;
 	std::vector<double> sigma;				// zero sigmas are ignored when calculating the objective function, and in CorrBlocks(), Std(), Data(), modelled_data
-	std::vector<int> nonzero_sigma_ind;		// indices of non-zero sigmas, [0, ModelledDataSize) -> [0, sigma.size)
+	std::vector<size_t> nonzero_sigma_ind;	// indices of non-zero sigmas, [0, ModelledDataSize) -> [0, sigma.size)
 
 public:
 	PMConc(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c);			// all data are taken from keywords of "k"; "kw" is used only to handle prerequisites

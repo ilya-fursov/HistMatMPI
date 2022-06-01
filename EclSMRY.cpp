@@ -380,14 +380,14 @@ Mat SimSMRY::ExtractSummary(const std::vector<Date> &dates1, std::vector<pair> v
 		for (auto &v : vecs1)									// "msg_dat_short", "msg_vec_short" and their full versions return info about not-found dates and vectors
 			v.second += suff;									// 'N' is the StringListing parameter used for the short message versions.
 
-	std::vector<int> inddates = GetSubvecInd(dates, dates1);
-	std::vector<int> indvecs = GetSubvecInd(vecs, vecs1);
+	std::vector<size_t> inddates = GetSubvecInd(dates, dates1);
+	std::vector<size_t> indvecs = GetSubvecInd(vecs, vecs1);
 
 	// generate "msgs"
 	StringListing stldates("\t"), stlvecs("\t");
 	int count_d = 0, count_v = 0;
 	for (size_t i = 0; i < inddates.size(); i++)
-		if (inddates[i] == -1)
+		if (inddates[i] == (size_t)-1)
 		{
 			stldates.AddLine(std::vector<std::string>{dates1[i].ToString()});
 			count_d++;
@@ -400,7 +400,7 @@ Mat SimSMRY::ExtractSummary(const std::vector<Date> &dates1, std::vector<pair> v
 	}
 
 	for (size_t i = 0; i < indvecs.size(); i++)
-		if (indvecs[i] == -1)
+		if (indvecs[i] == (size_t)-1)
 		{
 			stlvecs.AddLine(std::vector<std::string>{vecs1[i].first, vecs1[i].second});
 			count_v++;
@@ -512,7 +512,7 @@ void EclSMRY::readUNSMRY(std::string modname)
 		file = NULL;
 
 		// fill 'dates'
-		std::vector<int> date_ind = HMMPI::GetSubvecInd(vecs, date_vec);		// find indices of DAY, MONTH, YEAR inside 'vecs'
+		std::vector<size_t> date_ind = HMMPI::GetSubvecInd(vecs, date_vec);		// find indices of DAY, MONTH, YEAR inside 'vecs'
 		if (std::find(date_ind.begin(), date_ind.end(), -1) != date_ind.end())
 			throw Exception("В файле " + modname + ".SMSPEC не найдены ключевые слова DAY, MONTH, YEAR; возможно, в секции SUMMARY дата-файла Эклипса не задано 'DATE'",
 							"Keywords DAY, MONTH, YEAR were not found in " + modname + ".SMSPEC file; SUMMARY section of Eclipse data-file may be missing 'DATE'");
@@ -521,7 +521,7 @@ void EclSMRY::readUNSMRY(std::string modname)
 		assert(Data.size() % vecs.size() == 0);
 		dates.resize(Data.size() / vecs.size());				// size = number of time steps
 
-		std::vector<int> date_seq(dates.size());				// [0, 1, 2,...]
+		std::vector<size_t> date_seq(dates.size());				// [0, 1, 2,...]
 		std::iota(date_seq.begin(), date_seq.end(), 0);
 		std::vector<double> date_dbl = Reorder(Data, dates.size(), vecs.size(), date_seq, date_ind);		// all dates put into a single array
 		for (size_t t = 0; t < dates.size(); t++)
@@ -765,7 +765,7 @@ void tNavSMRY::read_meta(std::string modname)	// reads "modname_well.meta"; fill
 			ecl_prop_ind.push_back(tnav_prop_map[p.second]);
 		}
 
-	std::vector<int> perm_ind = SortPermutation(ecl_prop_ind.begin(), ecl_prop_ind.end());
+	std::vector<size_t> perm_ind = SortPermutation(ecl_prop_ind.begin(), ecl_prop_ind.end());
 	ecl_prop_transform = Reorder(ecl_prop_transform, perm_ind);
 	ecl_prop_ind = Reorder(ecl_prop_ind, perm_ind);
 
@@ -1322,7 +1322,7 @@ std::vector<std::vector<double>> SimProxyFile::get_internal_parameters(const KW_
 		throw Exception(stringFormatArr(MessageRE("Количество параметров в файле ECLSMRY ({0:%zu}) не совпадает с PARAMETERS ({1:%zu})",
 												  "Number of parameters in ECLSMRY file ({0:%zu}) does not match PARAMETERS ({1:%zu})"), std::vector<size_t>{par_names_size, par->name.size()}));
 
-	std::vector<int> par_ind = GetSubvecIndSorted(par_names, par->name);
+	std::vector<size_t> par_ind = GetSubvecIndSorted(par_names, par->name);
 	HMMPI::Bcast_vector(par_ind, 0, comm);							// par_ind is sync
 	std::vector<std::string> not_found = SubvecNotFound(par->name, par_ind);		// not_found is sync
 	if (not_found.size() > 0)
@@ -1367,7 +1367,7 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 			if (pname.size() == 0)
 				throw Exception("Попытка добавить модель с пустым списком параметров", "Attempt to add a model with empty parameters list");
 
-			std::vector<int> perm_param = SortPermutation(pname.begin(), pname.end());		// permutation indices
+			std::vector<size_t> perm_param = SortPermutation(pname.begin(), pname.end());		// permutation indices
 			std::vector<std::string> pname_sorted = Reorder(pname, perm_param);				// sorted array of new params names
 			std::vector<double> pval_sorted = Reorder(pval, perm_param);					// corresp. params vals
 			std::vector<std::string> bv_sorted = Reorder(backval, perm_param);				// corresp. back vals
@@ -1379,17 +1379,17 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 			if (FindDuplicate(pname_sorted, dup))
 				throw Exception((std::string)"Adding a model with duplicate parameter " + dup + " in SimProxyFile::AddModel");
 
-			std::vector<int> par_subind = GetSubvecIndSorted(par_names, pname_sorted);		// resulting indices may contain "-1", as par_names <= pname_sorted
+			std::vector<size_t> par_subind = GetSubvecIndSorted(par_names, pname_sorted);		// resulting indices may contain "-1", as par_names <= pname_sorted
 
-			int dim = pval_sorted.size();											// new dimension
-			assert(par_subind.size() == (size_t)dim);
+			size_t dim = pval_sorted.size();										// new dimension
+			assert(par_subind.size() == dim);
 			std::vector<std::vector<double>> params_new(params.size() + 1);			// new array of parameter values: added one model
 			for (size_t i = 0; i < params.size(); i++)								// transfer the previous params values
 			{
 				params_new[i] = std::vector<double>(dim);
-				for (int j = 0; j < dim; j++)							// go through new params
+				for (size_t j = 0; j < dim; j++)						// go through new params
 				{
-					if (par_subind[j] != -1)
+					if (par_subind[j] != (size_t)-1)
 						params_new[i][j] = params[i][par_subind[j]];	// take from old param value
 					else
 					{
@@ -1420,8 +1420,8 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 			if (smry->vecs.size() == 0)
 				throw Exception("Попытка добавить модель с пустым списком векторов", "Attempt to add a model with empty vectors list");
 
-			std::vector<int> perm_dates = SortPermutation(smry->dates.begin(), smry->dates.end());
-			std::vector<int> perm_vecs = SortPermutation(smry->vecs.begin(), smry->vecs.end());
+			std::vector<size_t> perm_dates = SortPermutation(smry->dates.begin(), smry->dates.end());
+			std::vector<size_t> perm_vecs = SortPermutation(smry->vecs.begin(), smry->vecs.end());
 			std::vector<Date> dates_sorted = Reorder(smry->dates, perm_dates);
 			std::vector<SimSMRY::pair> vecs_sorted = Reorder(smry->vecs, perm_vecs);
 			std::vector<double> data_sorted = Reorder(smry->Data, smry->dates.size(), smry->vecs.size(), perm_dates, perm_vecs);
@@ -1476,7 +1476,7 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 	{
 		size_t par_size = params.size();
 		std::vector<std::vector<double>> params_int(par_size);
-		std::vector<int> ind = GetSubvecIndSorted(par_names, pname);
+		std::vector<size_t> ind = GetSubvecIndSorted(par_names, pname);
 		assert(pname.size() == ind.size() && pname.size() == par_names.size());
 		for (size_t i = 0; i < par_size; i++)
 		{
@@ -1485,7 +1485,7 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 		}
 
 		Mat dist = KrigStart::DistMatr(params_int, 0, par_size-1, par_size-1, par_size);
-		int i1, j1;
+		size_t i1, j1;
 		Xmin = dist.Min(i1, j1);
 		Xavg = dist.Sum()/dist.ICount();
 
@@ -1710,7 +1710,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 	if (!plain_order)
 	{
 		HMMPI::Mat DMinternal = KrigStart::DistMatr(int_params, 0, int_params.size(), 0, int_params.size());	// distance matrix based on internal parameters
-		std::vector<int> ord_models = KrigStart::IndSignificant(DMinternal, int_params.size());		// the order is: sparse to dense
+		std::vector<size_t> ord_models = KrigStart::IndSignificant(DMinternal, int_params.size());	// the order is: sparse to dense
 		assert(ord_models.size() == int_params.size());
 		std::reverse(ord_models.begin(), ord_models.end());											// now the order will be from dense to sparse
 		int_params = HMMPI::Reorder(int_params, ord_models);

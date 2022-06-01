@@ -18,6 +18,7 @@
 #ifndef TLIB_DETAIL_POLICIES_H
 #define TLIB_DETAIL_POLICIES_H
 
+#define USE_OPENBLAS
 
 namespace tlib::execution
 {

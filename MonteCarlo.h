@@ -40,8 +40,8 @@ public:
 						// the four functions below don't use MPI
 	double RandU();		// uniform random number
 	double RandN();		// normal random number
-	Mat RandU(int I0, int J0);		// I0 x J0 matrix with uniform random numbers
-	Mat RandN(int I0, int J0);		// I0 x J0 matrix with normal random numbers
+	Mat RandU(size_t I0, size_t J0);		// I0 x J0 matrix with uniform random numbers
+	Mat RandN(size_t I0, size_t J0);		// I0 x J0 matrix with normal random numbers
 	unsigned int Seed(){return seed;};
 };
 //------------------------------------------------------------------------------------------

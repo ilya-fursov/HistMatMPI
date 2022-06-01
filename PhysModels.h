@@ -42,8 +42,8 @@ protected:
 
 										// philosophy: "init", "act_ind", "tot_ind", "con" should be sync between ranks of MPI_COMM_WORLD
 	std::vector<double> init;			// (total) vector of initial parameters - used in ObjFuncXXX_ACT; its size = ParamsDim
-	std::vector<int> act_ind;			// indices of active params within full-dim params; 0 <= act_ind[i] < ParamsDim; size = dimension of active parameters
-	std::vector<int> tot_ind;			// indices of full-dim params within active params; 0 <= tot_ind[i] < dimension of active parameters, or tot_ind[i] = -1; size = ParamsDim
+	std::vector<size_t> act_ind;		// indices of active params within full-dim params; 0 <= act_ind[i] < ParamsDim; size = dimension of active parameters
+	std::vector<size_t> tot_ind;		// indices of full-dim params within active params; 0 <= tot_ind[i] < dimension of active parameters, or tot_ind[i] = -1; size = ParamsDim
 	const HMMPI::BoundConstr *con;		// object for checking constraints, see CheckLimits()
 	std::vector<double> modelled_data;	// vector of modelled data (ordered in some way); this is supposed to be filled, if possible, by ObjFunc()
 	mutable std::string limits_msg;		// message optionally created by CheckLimits()
@@ -53,7 +53,7 @@ public:
 	HMMPI::Mat DataSens;				// sensitivity matrix of modelled data, indexed as (ind_data, fulldim_ind_param); this is supposed to be filled, if possible, by ObjFuncGrad()
 
 	PhysModel(MPI_Comm c = MPI_COMM_SELF);
-	PhysModel(std::vector<double> in, std::vector<int> act, std::vector<int> tot, const HMMPI::BoundConstr *c);
+	PhysModel(std::vector<double> in, std::vector<size_t> act, std::vector<size_t> tot, const HMMPI::BoundConstr *c);
 	PhysModel(Parser_1 *K, KW_item *kw, MPI_Comm c);		// easy constructor; all data are taken from K->LIMITS/PARAMETERS; "kw" is used only to handle prerequisites
 	virtual ~PhysModel();
 										// philosophy: input (and hence output) for these two functions should be the same on all ranks of MPI_COMM_WORLD
@@ -375,7 +375,7 @@ class Proxy_train_interface
 {
 public:
 	virtual ~Proxy_train_interface(){};
-	virtual std::vector<int> PointsSubset(const std::vector<std::vector<double>> &X0, int count) const = 0;
+	virtual std::vector<size_t> PointsSubset(const std::vector<std::vector<double>> &X0, size_t count) const = 0;
 	virtual std::string AddData(std::vector<std::vector<double>> X0, ValCont *VC, int Nfval_pts) = 0;		// returns message: number of design points, eff. rank of matrix
 	virtual void SetDumpFlag(int f) = 0;
 	virtual int GetDumpFlag() const = 0;
@@ -440,7 +440,7 @@ public:
 	virtual const HMMPI::Mat &cov_prior() const {return Cpr;};
 	virtual void correct_of_grad(const std::vector<double> &params, double &y, std::vector<double> &grad) const;	// subtracts the prior component from the 'full posterior' y, grad; needed for training PROXY inside POSTERIOR based on POSTERIOR data
 
-	virtual std::vector<int> PointsSubset(const std::vector<std::vector<double>> &X0, int count) const;		// these functions delegate to PM which should be PM_Proxy
+	virtual std::vector<size_t> PointsSubset(const std::vector<std::vector<double>> &X0, size_t count) const;		// these functions delegate to PM which should be PM_Proxy
 	virtual std::string AddData(std::vector<std::vector<double>> X0, ValCont *VC, int Nfval_pts);
 	virtual void SetDumpFlag(int f);
 	virtual int GetDumpFlag() const;
@@ -514,7 +514,7 @@ private:												// these items are used by write_proxy_vals_begin/end()
 	bool first_call = true;
 
 	void write_proxy_vals_begin(const std::vector<std::vector<double>> &X0);		// output o.f. & data values of proxy before and after update; see "dump_flag"
-	void write_proxy_vals_end(const std::vector<std::vector<double>> &X0, const std::vector<int> &inds);
+	void write_proxy_vals_end(const std::vector<std::vector<double>> &X0, const std::vector<size_t> &inds);
 
 protected:
 	const char dump_X[100] = "proxy_dump_X_%d_pr%d.txt";
@@ -556,10 +556,10 @@ public:
 	virtual bool is_proxy() const {return true;};
 	virtual bool CheckLimits(const std::vector<double> &params) const;		// if PM != 0, then PM->CheckLimits; no Bcast
 	virtual int ParamsDim() const noexcept {return PM->ParamsDim();};
-	virtual std::vector<int> PointsSubset(const std::vector<std::vector<double>> &X0, int count) const;		// selects 'count' points from X0 - these points are then to be added to starts[*].X_0;
-																											// selection is based on starts[*].X_0 + X0
-																											// the SYNC vector of selected indices (for 'X0') is returned
-																											// selection works independently of possible differences in "starts"
+	virtual std::vector<size_t> PointsSubset(const std::vector<std::vector<double>> &X0, size_t count) const;	// selects 'count' points from X0 - these points are then to be added to starts[*].X_0;
+																												// selection is based on starts[*].X_0 + X0
+																												// the SYNC vector of selected indices (for 'X0') is returned
+																												// selection works independently of possible differences in "starts"
 	virtual std::string AddData(std::vector<std::vector<double>> X0, ValCont *VC, int Nfval_pts);	// adds new data (points X0 and values/gradients VC) and trains proxy; returns the message about the total number of points
 																							// Nfval_pts shows how many points with func. vals should be selected (however, all points with grads are taken)
 																							// if proxy (X_0) is empty, all points with func. vals are taken
@@ -569,7 +569,7 @@ public:
 	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
 	virtual std::vector<double> ObjFuncHess_l(const std::vector<double> &params, int l);			// calculates l-th column of Hessian
 	virtual std::vector<int> Data_ind() const {throw HMMPI::Exception("Illegal call to PM_Proxy::Data_ind");};
-	std::string Train(std::vector<std::vector<double>> pop, std::vector<int> grad_ind, int Nfval_pts);	// trains the proxy (i.e. adds to the existing proxy state) based on design points pop[len][full_dim], and PM->ObjFuncMPI_ACT("pop") calculated in parallel via MPI
+	std::string Train(std::vector<std::vector<double>> pop, std::vector<size_t> grad_ind, int Nfval_pts);	// trains the proxy (i.e. adds to the existing proxy state) based on design points pop[len][full_dim], and PM->ObjFuncMPI_ACT("pop") calculated in parallel via MPI
 														// 'pop' is only referenced on comm-RANKS-0; underlying PM should have comm == "MPI_COMM_SELF" (i.e. all PM->comm-RANKS == 0)
 														// If train_from_dump != -1, 'pop' is not used, X & y are taken from appropriate files (reading the same number of lines as in the original "pop"); currently gradients are not read from the files
 														// "grad_ind" (comm-RANKS-0) are indices in [0, len) for points where gradients will be estimated and added to the proxy; these training points are always taken from "pop" ("pop" may be from the file)
@@ -792,7 +792,7 @@ protected:
 	std::vector<std::vector<double>> X_0, X_1;	// full-dim points for func. values and for gradients; they are gradually accumulated as the proxy is trained
 	std::vector<double> pscale;			// [fulldim] scaling of parameters influence; default = 1.0; pscale_i < 1.0 means x_i has less influence, which can be implemented as:
 										// (a) increasing correlation radius for x_i by 1/pscale_i, (b) damping i-component of some gradients by pscale_i (TODO)
-	std::vector<int> grad_inds;			// vector of size <= FULLDIM; gradient components with indices "grad_inds[i]" take part in proxy training;
+	std::vector<size_t> grad_inds;		// vector of size <= FULLDIM; gradient components with indices "grad_inds[i]" take part in proxy training;
 										// 0 <= grad_inds[i] < FULLDIM; "grad_inds" should be monotonically increasing
 
 	//HMMPI::Mat CM;	// "correlation" (func. vals) part of kriging matrix - is obtained from "kc"
@@ -821,9 +821,9 @@ public:
 	KrigStart(const KrigStart &p);						// 'index' is not copied
 	const KrigStart &operator=(const KrigStart &p);		// 'index' is not copied
 
-	std::vector<int> PointsSubsetKS(const std::vector<std::vector<double>> &x0, int count, bool &all_taken) const;	// selects 'count' points from 'x0', returning their indices; IndSignificant() is used;
-																													// the distance matrix which guides the selection comes from X_0 + x0
-																													// if X_0 is empty, full x0 indices are taken (in which case all_taken = true)
+	std::vector<size_t> PointsSubsetKS(const std::vector<std::vector<double>> &x0, size_t count, bool &all_taken) const;	// selects 'count' points from 'x0', returning their indices; IndSignificant() is used;
+																															// the distance matrix which guides the selection comes from X_0 + x0
+																															// if X_0 is empty, full x0 indices are taken (in which case all_taken = true)
 	void AddPoints(std::vector<std::vector<double>> X0, std::vector<std::vector<double>> X1);		// adds 'X0' to X_0, adds 'X1' to X_1, updates 'D', 'DG', 'DGG';
 	void RecalcPoints();								// (after adding X0, X1) makes appropriate matrix calculations
 	void ObjFuncCommon(std::vector<double> params);					// calculates C0
@@ -832,7 +832,7 @@ public:
 
 	static HMMPI::Mat DistMatr(const std::vector<std::vector<double>> &X0, int i1, int i2, int j1, int j2);		// creates (i2-i1)x(j2-j1) distance matrix for distances X0[i1,i2) -- X0[j1,j2)
 	static HMMPI::Mat RHS_dist_matr(std::vector<std::vector<double>> &Xarr, const std::vector<double> &params);	// distance "vector" for RHS of kriging system; its elements are distances from Xarr[i] to 'params'; Xarr can be X_0, X_1
-	static std::vector<int> IndSignificant(const HMMPI::Mat &DM, int count, int start = 0);		// selects (at most) "count" points which are reasonably separated according to symmetric distance matrix "DM" (sort of SEQUENTIAL DESIGN)
+	static std::vector<size_t> IndSignificant(const HMMPI::Mat &DM, size_t count, size_t start = 0);	// selects (at most) "count" points which are reasonably separated according to symmetric distance matrix "DM" (sort of SEQUENTIAL DESIGN)
 													// selection starts from index "start";
 													// each point is selected such that its sum of 1/distance^3 to the points [0, start) and the points already selected is minimum;
 													// returns array of indices of these points -- these indices are 'local', so 'start' should be added to apply them to the full "DM"
@@ -843,7 +843,7 @@ public:
 	const std::vector<std::vector<double>> &get_X_1() const {return X_1;};
 	const std::vector<double> &get_pscale() const {return pscale;};
 	void set_pscale(const std::vector<double> &ps) {pscale = ps;};
-	const std::vector<int> &get_grad_inds() const {return grad_inds;};
+	const std::vector<size_t> &get_grad_inds() const {return grad_inds;};
 	const HMMPI::Solver *get_sol() const {return sol;};
 	const std::vector<std::vector<int>> &get_multi_ind() const {return multi_ind;};
 	void reset_kc_cache() const {kc.reset_cache();};
@@ -927,7 +927,7 @@ public:
 	virtual ~ValCont();
 	virtual int vals_count() const = 0;							// <sync> number of design points with func. values (to distinguish from gradients)
 	virtual int total_count() const = 0;						// <sync> total number of design points (func. values + gradients)
-	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<int> &inds) const = 0;	// distributes the stored values/gradients to the given proxies; 'inds' shows which design points (with func. values) should be taken
+	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<size_t> &inds) const = 0;	// distributes the stored values/gradients to the given proxies; 'inds' shows which design points (with func. values) should be taken
 };
 //---------------------------------------------------------------------------
 // works for single proxy
@@ -946,7 +946,7 @@ public:
 														// This CTOR does not fill "Grad"
 	virtual int vals_count() const;
 	virtual int total_count() const;
-	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<int> &inds) const;
+	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<size_t> &inds) const;
 	void Add(const ValContDouble &b);			// appends data from "b" to 'this'; MPI layout should be the same
 };
 //---------------------------------------------------------------------------
@@ -984,7 +984,7 @@ public:
 																											// This CTOR does not fill 'Vecs'
 	virtual int vals_count() const;
 	virtual int total_count() const;
-	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<int> &inds) const;		// 'dep' should be consistent with local (current rank's) 'Vecs' and 'Grads'
+	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<size_t> &inds) const;		// 'dep' should be consistent with local (current rank's) 'Vecs' and 'Grads'
 	void Add(const ValContVecDouble &b);				// appends data from "b" to 'this'; MPI layout should be the same
 };
 //---------------------------------------------------------------------------
@@ -1005,7 +1005,7 @@ public:
 											// "data_ind", "v" are referenced on c-RANKS-0 only;
 	virtual int vals_count() const;					// number of design points with func. values (to distinguish from gradients)
 	virtual int total_count() const;				// total number of design points (func. values + gradients)
-	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<int> &inds) const;		// 'dep' should be consistent with local (current rank's) 'Vecs'
+	virtual void DistrValues(std::vector<KrigEnd> &dep, const std::vector<size_t> &inds) const;		// 'dep' should be consistent with local (current rank's) 'Vecs'
 };																									// 'inds' is ignored: all points are taken
 //---------------------------------------------------------------------------
 // VectorModel - abstract class for mapping vector -> vector (involving only active parameters)
@@ -1088,7 +1088,7 @@ class VM_Ham_eq2_eps : public VM_Ham_eq2
 {
 protected:
 	void calc_eps(const std::vector<double> &xfull) const;					// calculates 'eps' from i0-constraint; 'xfull' dimension is ACTDIM
-	std::vector<int> indices_no_i0() const;									// [0,.. i0-1, i0+1,.. ACTDIM), indices vector of dimension ACTDIM-1
+	std::vector<size_t> indices_no_i0() const;								// [0,.. i0-1, i0+1,.. ACTDIM), indices vector of dimension ACTDIM-1
 
 public:
 	int i0;										// index within ACTDIM

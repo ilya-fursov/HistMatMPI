@@ -32,7 +32,7 @@ std::string TextAttr::set_r(bool r)
 std::string TextAttr::col_to_str(Color c) 
 { 
 	char buff[LEN]; 
-	sprintf(buff, "%d", c); 
+	sprintf(buff, "%d", (int)c);
 	return buff; 
 }
 //------------------------------------------------------------------------------------------

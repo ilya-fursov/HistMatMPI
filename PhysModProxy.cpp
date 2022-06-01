@@ -62,7 +62,7 @@ void PM_Proxy::write_proxy_vals_begin(const std::vector<std::vector<double>> &X0
 	}
 }
 //---------------------------------------------------------------------------
-void PM_Proxy::write_proxy_vals_end(const std::vector<std::vector<double>> &X0, const std::vector<int> &inds)
+void PM_Proxy::write_proxy_vals_end(const std::vector<std::vector<double>> &X0, const std::vector<size_t> &inds)
 {
 	MPI_Barrier(comm);
 	if (!first_call)
@@ -279,14 +279,14 @@ std::string PM_Proxy::proc_msg() const			// sync message showing: (1) effective 
 {												// for derived PROXY classes, proc_msg() is different
 	assert(starts.size() == 1);
 	std::vector<double> ps = starts[0].get_pscale();
-	std::vector<int> gi = starts[0].get_grad_inds();
+	std::vector<size_t> gi = starts[0].get_grad_inds();
 	HMMPI::Bcast_vector(ps, 0, comm);
 	HMMPI::Bcast_vector(gi, 0, comm);
 
 	std::string msg = (std::string)HMMPI::MessageRE("Эффективный ранг матрицы кригинга: ", "Effective rank of kriging matrix: ") + mat_eff_rank;
 	msg += "pscale = " + HMMPI::ToString(ps, "%.4g", ", ");
 	msg.pop_back();		// pop '\n'
-	msg += "; grad_inds = " + (gi.size() == 0 ? "''\n" : HMMPI::ToString(gi, "%d", ", "));
+	msg += "; grad_inds = " + (gi.size() == 0 ? "''\n" : HMMPI::ToString(gi, "%zu", ", "));
 	return msg;
 }
 //---------------------------------------------------------------------------
@@ -308,10 +308,10 @@ bool PM_Proxy::CheckLimits(const std::vector<double> &params) const
 	}
 }
 //---------------------------------------------------------------------------
-std::vector<int> PM_Proxy::PointsSubset(const std::vector<std::vector<double>> &X0, int count) const		// selects 'count' points from X0 - these points are then to be added to starts[*].X_0;
-{																											// selection is based on starts[*].X_0 + X0
-	std::vector<int> res;																					// the SYNC vector of selected indices (for 'X0') is returned
-	int rank;																								// selection works independently of possible differences in "starts"
+std::vector<size_t> PM_Proxy::PointsSubset(const std::vector<std::vector<double>> &X0, size_t count) const		// selects 'count' points from X0 - these points are then to be added to starts[*].X_0;
+{																												// selection is based on starts[*].X_0 + X0
+	std::vector<size_t> res;																						// the SYNC vector of selected indices (for 'X0') is returned
+	int rank;																									// selection works independently of possible differences in "starts"
 	MPI_Comm_rank(comm, &rank);
 
 	int err = 0;							// 0 - inner check ok; 1 - ERROR
@@ -368,7 +368,7 @@ std::string PM_Proxy::AddData(std::vector<std::vector<double>> X0, ValCont *VC, 
 
 	std::vector<std::vector<double>> x_0(X0.begin(), X0.begin() + vals_count);		// points for func. values
 	std::vector<std::vector<double>> x_1(X0.begin() + vals_count, X0.end());		// points for func. gradients
-	std::vector<int> inds = PointsSubset(x_0, Nfval_pts);
+	std::vector<size_t> inds = PointsSubset(x_0, Nfval_pts);
 	HMMPI::Bcast_vector(inds, 0, comm);
 
 	x_0 = HMMPI::Reorder(x_0, inds);
@@ -444,16 +444,16 @@ std::vector<double> PM_Proxy::ObjFuncHess_l(const std::vector<double> &params, i
 // "grad_ind" (comm-RANKS-0) are indices in [0, len) for points where gradients will be estimated and added to the proxy; these training points are always taken from "pop" ("pop" may be from the file)
 // Nfval_pts is the same as in AddData()
 // the returned message is [whether proxy was trained from dump] plus "Number of design points on starts..." from AddData()
-std::string PM_Proxy::Train(std::vector<std::vector<double>> pop, std::vector<int> grad_ind, int Nfval_pts)
+std::string PM_Proxy::Train(std::vector<std::vector<double>> pop, std::vector<size_t> grad_ind, int Nfval_pts)
 {
 	MPI_Barrier(comm);
 	std::string msg = "";
 	ValCont *VC;
 
-	int dup;
+	size_t dup;
 	std::sort(grad_ind.begin(), grad_ind.end());
 	if (HMMPI::FindDuplicate(grad_ind, dup))
-		throw HMMPI::Exception(HMMPI::stringFormatArr("Duplicate index {0:%d} for a gradient training point in PM_Proxy::Train", std::vector<int>{dup}));
+		throw HMMPI::Exception(HMMPI::stringFormatArr("Duplicate index {0:%zu} for a gradient training point in PM_Proxy::Train", std::vector<size_t>{dup}));
 
 	int rank = -1, size = 0;
 	MPI_Comm_rank(comm, &rank);
@@ -488,7 +488,7 @@ std::string PM_Proxy::Train(std::vector<std::vector<double>> pop, std::vector<in
 		}
 	}
 
-	if (grad_ind.size() > 0 && (grad_ind[0] < 0 || *--grad_ind.end() >= VC->vals_count()))
+	if (grad_ind.size() > 0 && (*--grad_ind.end() >= (size_t)VC->vals_count()))
 		throw HMMPI::Exception("'grad_ind' values out of range in PM_Proxy::Train");
 
 	// II. Adding the gradients
@@ -534,7 +534,7 @@ std::string PM_Proxy::Train(std::vector<std::vector<double>> pop, std::vector<in
 
 		int smry_len = data_ind[size];
 		if ((size_t)smry_len != PM->ModelledDataSize())
-			throw HMMPI::Exception(HMMPI::stringFormatArr("smry_len ({0:%ld}) != PM->ModelledDataSize ({1:%ld}) in PM_Proxy::Train", std::vector<size_t>{(size_t)smry_len, PM->ModelledDataSize()}));
+			throw HMMPI::Exception(HMMPI::stringFormatArr("smry_len ({0:%zu}) != PM->ModelledDataSize ({1:%zu}) in PM_Proxy::Train", std::vector<size_t>{(size_t)smry_len, PM->ModelledDataSize()}));
 
 		dynamic_cast<ValContVecDouble*>(VC)->Add(ValContVecDouble(comm, data_ind, grads_M));
 	}
@@ -1315,7 +1315,7 @@ std::string PM_SimProxy::proc_msg() const					// sync message showing (1) the nu
 	assert(parts.size() == starts.size()*size);
 	assert(dp_block_color.size() == starts.size());
 
-	char buff[HMMPI::BUFFSIZE], buff1[HMMPI::BUFFSIZE];
+	char buff[HMMPI::BUFFSIZE + 5], buff1[HMMPI::BUFFSIZE];
 	for (size_t i = 0; i < starts.size(); i++)
 	{
 		sprintf(buff1, "%zu(%d,%2d) -%4d", i, dp_block_color[i].first, dp_block_color[i].second, start_Nends[i]);	// start(block,color) - data_pts
@@ -1381,7 +1381,7 @@ void KrigCorr::CalculateDerivatives(const std::vector<double> &par) const				// 
 			dynamic_cast<HMMPI::CorrMatern*>(func)->SetNu(Nu);
 
 		HMMPI::Func1D_corr *func_var = 0;
-		if (tot_ind[2] != -1)						// "nu" is active
+		if (tot_ind[2] != (size_t)-1)				// "nu" is active
 			func_var = func->Copy();
 
 		HMMPI::CorrMatern *func_var_mat = dynamic_cast<HMMPI::CorrMatern*>(func_var);				// will be used for perturbing "nu"
@@ -1431,7 +1431,7 @@ void KrigCorr::CalculateDerivatives2(const std::vector<double> &par) const				//
 			dynamic_cast<HMMPI::CorrMatern*>(func)->SetNu(Nu);
 
 		HMMPI::Func1D_corr *func_var = 0;
-		if (tot_ind[2] != -1)						// "nu" is active
+		if (tot_ind[2] != (size_t)-1)				// "nu" is active
 			func_var = func->Copy();
 
 		HMMPI::CorrMatern *func_var_mat = dynamic_cast<HMMPI::CorrMatern*>(func_var);				// will be used for perturbing "nu"
@@ -1607,8 +1607,8 @@ KrigCorr::KrigCorr(const HMMPI::Func1D_corr *cf, Parser_1 *K, _proxy_params *con
 				throw HMMPI::Exception("MODEL не задано, либо задано с ошибками", "MODEL is not defined, or defined with errors");
 		}
 		init = std::vector<double>{config->nugget, config->R, config->nu};
-		act_ind = tot_ind = std::vector<int>();	// not supposed to be used
-		con = nullptr;							// not supposed to be used
+		act_ind = tot_ind = std::vector<size_t>();	// not supposed to be used
+		con = nullptr;								// not supposed to be used
 
 		init_msg = (std::string)HMMPI::MessageRE("Параметры корреляции для кригинга взяты из \"", "Correlation parameters for kriging are taken from \"") + config->name + "\"";
 	}
@@ -1789,8 +1789,8 @@ KrigSigma::KrigSigma(Parser_1 *K, _proxy_params *config) : KrigSigma()
 				throw HMMPI::Exception("MODEL не задано, либо задано с ошибками", "MODEL is not defined, or defined with errors");
 		}
 		init = std::vector<double>{config->nugget, config->R, config->nu};
-		act_ind = tot_ind = std::vector<int>();	// not supposed to be used
-		con = nullptr;							// not supposed to be used
+		act_ind = tot_ind = std::vector<size_t>();	// not supposed to be used
+		con = nullptr;								// not supposed to be used
 	}
 }
 //---------------------------------------------------------------------------
@@ -1901,13 +1901,12 @@ KrigStart::KrigStart(Parser_1 *K, KW_item *kw, _proxy_params *config) :		// easy
 	if (solver->SolSize() < 1)
 		throw HMMPI::Exception("В LINSOLVER ничего не задано", "Empty LINSOLVER");
 
-	grad_inds = config->ind_grad_comps;
+	grad_inds = std::vector<size_t>(config->ind_grad_comps.begin(), config->ind_grad_comps.end());
 	pscale = std::vector<double>(dim, 1.0);			// default
 
-	if (grad_inds.size() > 0 && grad_inds[0] < 0)
-		throw HMMPI::Exception(HMMPI::stringFormatArr("Минимальный индекс компоненты градиента {0:%d} < 0", "Minimum gradient component index {0:%d} < 0", grad_inds[0]));
-	if (grad_inds.size() > 0 && *--grad_inds.end() >= dim)
-		throw HMMPI::Exception(HMMPI::stringFormatArr("Максимальный индекс компоненты градиента {0:%d} >= DIM", "Maximum gradient component index {0:%d} >= DIM", *--grad_inds.end()));
+	if (grad_inds.size() > 0 && *--grad_inds.end() >= (size_t)dim)
+		throw HMMPI::Exception(HMMPI::stringFormatArr("Максимальный индекс компоненты градиента {0:%zu} >= DIM",
+													  "Maximum gradient component index {0:%zu} >= DIM", *--grad_inds.end()));
 
 	R = 0;
 	func = 0;
@@ -1950,10 +1949,10 @@ const KrigStart &KrigStart::operator=(const KrigStart &p)
 	return *this;
 }
 //---------------------------------------------------------------------------
-std::vector<int> KrigStart::PointsSubsetKS(const std::vector<std::vector<double>> &x0, int count, bool &all_taken) const	// selects 'count' points from 'x0', returning their indices; IndSignificant() is used;
-{																															// the distance matrix which guides the selection comes from X_0 + x0
-	const size_t len_old = X_0.size();																						// if X_0 is empty, full x0 indices are taken (in which case all_taken = true)
-	std::vector<int> inds;
+std::vector<size_t> KrigStart::PointsSubsetKS(const std::vector<std::vector<double>> &x0, size_t count, bool &all_taken) const	// selects 'count' points from 'x0', returning their indices; IndSignificant() is used;
+{																																// the distance matrix which guides the selection comes from X_0 + x0
+	const size_t len_old = X_0.size();																							// if X_0 is empty, full x0 indices are taken (in which case all_taken = true)
+	std::vector<size_t> inds;
 
 	if (len_old != 0)							// already have some points
 	{
@@ -1970,7 +1969,7 @@ std::vector<int> KrigStart::PointsSubsetKS(const std::vector<std::vector<double>
 	}
 	else										// no points yet
 	{
-		inds = std::vector<int>(x0.size());		// all indices are taken
+		inds = std::vector<size_t>(x0.size());	// all indices are taken
 		iota(inds.begin(), inds.end(), 0);
 
 		all_taken = true;
@@ -2089,7 +2088,7 @@ void KrigStart::RecalcPoints()								// (after adding X0, X1) makes appropriate
 	std::vector<int> re_grad_inds(pscale.size(), -1);		// index mapping inverse to "grad_inds"; grad_inds[re_grad_inds[i_full]] = i_full for 'i_full' in grad_inds; -1 otherwise
 	int c = 0;												// 0 <= re_grad_inds[i_full] < Ngrad_comps (or may = -1); "re" = reduced/reversed
 	for (size_t i = 0; i < re_grad_inds.size(); i++)
-		if (c < Ngrad_comps && grad_inds[c] == (int)i)
+		if (c < Ngrad_comps && grad_inds[c] == i)
 		{
 			re_grad_inds[i] = c;
 			c++;
@@ -2216,7 +2215,7 @@ void KrigStart::ObjFuncGradCommon(std::vector<double> params)
 			{
 				const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
 				for (int i = 0; i < Ngrad_comps; i++)
-					gM(l, len_corr_0 + j*Ngrad_comps + i) = -(par_reord[i] - x1j[i])*(params[l] - X_1[j][l])*aux1(j, 0) - aux1_0(j, 0)*(grad_inds[i] == (int)l ? 1 : 0);
+					gM(l, len_corr_0 + j*Ngrad_comps + i) = -(par_reord[i] - x1j[i])*(params[l] - X_1[j][l])*aux1(j, 0) - aux1_0(j, 0)*(grad_inds[i] == l ? 1 : 0);
 			}
 	}
 
@@ -2299,9 +2298,9 @@ void KrigStart::ObjFuncHess_lCommon(std::vector<double> params, int l)
 				const std::vector<double> x1j = HMMPI::Reorder(X_1[j], grad_inds);
 				for (int i = 0; i < Ngrad_comps; i++)			// i - gradient component participating in proxy training
 					lM(k, len_corr_0 + j*Ngrad_comps + i) = (params[k] - X_1[j][k])*(par_reord[i] - x1j[i])*(params[l] - X_1[j][l])*aux3(j, 0) - aux4(j, 0)*(
-						   (grad_inds[i] == (int)k ? 1 : 0)*(params[l] - X_1[j][l]) +
-									  ((int)k == l ? 1 : 0)*(par_reord[i] - x1j[i]) +
-								(grad_inds[i] == l ? 1 : 0)*(params[k] - X_1[j][k]));
+						   (grad_inds[i] == k ? 1 : 0)*(params[l] - X_1[j][l]) +
+								 ((int)k == l ? 1 : 0)*(par_reord[i] - x1j[i]) +
+					  ((int)grad_inds[i] == l ? 1 : 0)*(params[k] - X_1[j][k]));
 			}
 	}
 
@@ -2389,15 +2388,15 @@ HMMPI::Mat KrigStart::RHS_dist_matr(std::vector<std::vector<double>> &Xarr, cons
 	return res;
 }
 //---------------------------------------------------------------------------
-std::vector<int> KrigStart::IndSignificant(const HMMPI::Mat &DM, int count, int start)
+std::vector<size_t> KrigStart::IndSignificant(const HMMPI::Mat &DM, size_t count, size_t start)
 {
 	if (DM.ICount() != DM.JCount())
 		throw HMMPI::Exception("DM должна быть симметричной в KrigStart::IndSignificant", "DM should be symmetric in KrigStart::IndSignificant");
-	if (start < 0 || start > (int)DM.ICount())
+	if (start > DM.ICount())
 		throw HMMPI::Exception("start вне диапазона в KrigStart::IndSignificant", "start out of range in KrigStart::IndSignificant");
 
 	size_t N = DM.ICount() - start;		// number of points left when the first "start" points are removed
-	std::vector<int> res;
+	std::vector<size_t> res;
 	if (N == 0)
 		return res;
 	if (N == 1)
@@ -2407,7 +2406,7 @@ std::vector<int> KrigStart::IndSignificant(const HMMPI::Mat &DM, int count, int 
 		return res;
 	}
 
-	if (count > (int)N)
+	if (count > N)
 		count = N;
 	res.reserve(count);
 
@@ -2415,10 +2414,10 @@ std::vector<int> KrigStart::IndSignificant(const HMMPI::Mat &DM, int count, int 
 	for (bool &&t : taken)				// proxy iterator for vector<bool>, see http://stackoverflow.com/questions/15927033/what-is-the-correct-way-of-using-c11s-range-based-for
 		t = false;
 
-	int c0 = 0;
+	size_t c0 = 0;
 	if (start == 0)
 	{
-		int i1, i2;
+		size_t i1, i2;
 		DM.Max(i1, i2);			// DM uses global indices; max DM(i1, i2) <--> min 1/DM(i1, i2)^3
 		if (i1 == i2)
 			i2 += 1;	// this is safe: N >= 2, DM is all zeros (although this is a strange input), i1 == i2 == 0
@@ -2431,16 +2430,16 @@ std::vector<int> KrigStart::IndSignificant(const HMMPI::Mat &DM, int count, int 
 		taken[i2] = true;
 	}
 
-	for (int c = c0; c < count; c++)
+	for (size_t c = c0; c < count; c++)
 	{
 		// find the min
 		double min = std::numeric_limits<double>::max();
-		int ind = -1;						// local index
+		size_t ind = -1;					// local index
 		for (size_t j = 0; j < N; j++)		// j -- local
 			if (!taken[j])
 			{
 				double sum = 0;
-				for (int k = 0; k < start; k++)						// points [0...start)
+				for (size_t k = 0; k < start; k++)					// points [0...start)
 					sum += pow(DM(j + start, k), -3);				// k -- global
 				for (size_t k = 0; k < res.size(); k++)				// other added points
 					sum += pow(DM(j + start, res[k] + start), -3);	// res[k] -- local
@@ -2452,7 +2451,7 @@ std::vector<int> KrigStart::IndSignificant(const HMMPI::Mat &DM, int count, int 
 				}
 			}
 
-		if (ind == -1)
+		if (ind == (size_t)-1)
 			throw HMMPI::Exception("ind == -1 in KrigStart::IndSignificant");
 
 		res.push_back(ind);		// save 'local' index
@@ -2881,7 +2880,7 @@ int ValContDouble::total_count() const
 	return res;
 }
 //---------------------------------------------------------------------------
-void ValContDouble::DistrValues(std::vector<KrigEnd> &dep, const std::vector<int> &inds) const
+void ValContDouble::DistrValues(std::vector<KrigEnd> &dep, const std::vector<size_t> &inds) const
 {
 	if (dep.size() != 1)
 		throw HMMPI::Exception("std::vector<PM_Proxy*> должен быть длины 1 в ValContDouble::DistrValues",
@@ -3222,7 +3221,7 @@ int ValContVecDouble::total_count() const
 	return res;
 }
 //---------------------------------------------------------------------------								// distributes the stored values/gradients to the given proxies; 'inds' shows which data points (with func. values) should be taken
-void ValContVecDouble::DistrValues(std::vector<KrigEnd> &dep, const std::vector<int> &inds) const			// all points with func. gradients are taken (no subset is extracted)
+void ValContVecDouble::DistrValues(std::vector<KrigEnd> &dep, const std::vector<size_t> &inds) const		// all points with func. gradients are taken (no subset is extracted)
 {																											// 'dep' should be consistent with local (current rank's) 'Vecs' and 'Grads'
 	// Each rank executes different stuff
 
@@ -3332,9 +3331,9 @@ ValContSimProxy::ValContSimProxy(MPI_Comm c, std::vector<int> data_ind, const st
 int ValContSimProxy::vals_count() const					// number of design points with func. values (to distinguish from gradients)
 {
 	// Vecs[smry_len][...]
-	size_t max = 0;
+	int max = 0;
 	for (size_t i = 0; i < Vecs.size(); i++)
-		if (Vecs[i].size() > max)
+		if ((int)Vecs[i].size() > max)
 			max = Vecs[i].size();
 
 	MPI_Allreduce(MPI_IN_PLACE, &max, 1, MPI_INT, MPI_MAX, comm);
@@ -3346,7 +3345,7 @@ int ValContSimProxy::total_count() const				// total number of design points (fu
 	return vals_count();	// no gradients so far - TODO
 }
 //---------------------------------------------------------------------------
-void ValContSimProxy::DistrValues(std::vector<KrigEnd> &dep, const std::vector<int> &inds) const
+void ValContSimProxy::DistrValues(std::vector<KrigEnd> &dep, const std::vector<size_t> &inds) const
 {
 	// this function repeats the code from ValContVecDouble::DistrValues
 	// each rank executes different stuff

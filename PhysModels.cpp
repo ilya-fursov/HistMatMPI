@@ -29,7 +29,8 @@ PhysModel::PhysModel(MPI_Comm c) : comm(c), con(nullptr), name("PhysModel")
 #endif
 }
 //---------------------------------------------------------------------------
-PhysModel::PhysModel(std::vector<double> in, std::vector<int> act, std::vector<int> tot, const HMMPI::BoundConstr *c) : comm(MPI_COMM_SELF), init(std::move(in)), act_ind(std::move(act)), tot_ind(std::move(tot)), con(c), name("PhysModel")
+PhysModel::PhysModel(std::vector<double> in, std::vector<size_t> act, std::vector<size_t> tot, const HMMPI::BoundConstr *c) :
+		comm(MPI_COMM_SELF), init(std::move(in)), act_ind(std::move(act)), tot_ind(std::move(tot)), con(c), name("PhysModel")
 {
 	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
 
@@ -77,8 +78,8 @@ std::vector<double> PhysModel::tot_par(const std::vector<double> &act_par) const
 		throw HMMPI::Exception(HMMPI::stringFormatArr("act_par.size() != act_ind.size() [{0:%zu}, {1:%zu} respectively] in PhysModel::tot_par -- rank-{2:%zu}", std::vector<size_t>{act_par.size(), act_size, (size_t)RNK}));
 	for (size_t i = 0; i < act_size; i++)
 	{
-		int ind = act_ind[i];
-		if (ind < 0 || ind >= dim)
+		size_t ind = act_ind[i];
+		if (ind >= (size_t)dim)
 			throw HMMPI::Exception("Active parameter index is out of range in PhysModel::tot_par");
 		res[ind] = act_par[i];
 	}
@@ -260,7 +261,7 @@ bool PhysModel::FindIntersect_ACT(const std::vector<double> &x0, const std::vect
 	if (!res)
 	{
 		xint = act_par(xint_tot);	// convert full-dim params to active params
-		i = tot_ind[i_tot];			// convert full-dim index to active index
+		i = (int)tot_ind[i_tot];	// convert full-dim index to active index
 		if (i == -1)
 			throw HMMPI::Exception(HMMPI::stringFormatArr("Full-dim index {0:%d} corresponds to non-active parameter in PhysModel::FindIntersect_ACT", std::vector<int>{i_tot}));
 	}
@@ -576,7 +577,8 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		if (Y0.size() != 0)
 		{
 			std::string msg;
-			msg = Res_proxy->Train(Y0, config->ind_grad_init_pts, 0);		// Nfval_pts = 0 since the proxy is empty so far
+			std::vector<size_t> ind_grad_0(config->ind_grad_init_pts.begin(), config->ind_grad_init_pts.end());
+			msg = Res_proxy->Train(Y0, ind_grad_0, 0);		// Nfval_pts = 0 since the proxy is empty so far
 			K->AppText(msg);
 		}
 		Res_proxy->SetDumpFlag(-1);
@@ -2533,7 +2535,7 @@ void PM_Posterior::correct_of_grad(const std::vector<double> &params, double &y,
 		grad = (HMMPI::Mat(grad) - 2*work).ToVector();
 }
 //---------------------------------------------------------------------------
-std::vector<int> PM_Posterior::PointsSubset(const std::vector<std::vector<double>> &X0, int count) const
+std::vector<size_t> PM_Posterior::PointsSubset(const std::vector<std::vector<double>> &X0, size_t count) const
 {
 	const PM_Proxy *pr = dynamic_cast<const PM_Proxy*>(PM);
 	if (pr == nullptr)
@@ -2830,9 +2832,9 @@ void VM_Ham_eq2_eps::calc_eps(const std::vector<double> &xfull)	const					// cal
 	MPI_Bcast(&eps, 1, MPI_DOUBLE, 0, comm);
 }
 //---------------------------------------------------------------------------
-std::vector<int> VM_Ham_eq2_eps::indices_no_i0() const									// [0,.. i0-1, i0+1,.. ACTDIM), indices vector of dimension ACTDIM-1
+std::vector<size_t> VM_Ham_eq2_eps::indices_no_i0() const								// [0,.. i0-1, i0+1,.. ACTDIM), indices vector of dimension ACTDIM-1
 {
-	std::vector<int> res(x0.size() - 1);
+	std::vector<size_t> res(x0.size() - 1);
 	std::iota(res.begin(), res.begin() + i0, 0);
 	std::iota(res.begin() + i0, res.end(), i0 + 1);
 
@@ -2874,7 +2876,7 @@ HMMPI::Mat VM_Ham_eq2_eps::Jac_ACT(const std::vector<double> &x) const
 
 	if (rank == 0)
 	{
-		std::vector<int> no_i0 = indices_no_i0();
+		std::vector<size_t> no_i0 = indices_no_i0();
 
 		HMMPI::Mat vfull = (eps*eps/(4*(M0 - x0[i0]))) * (Hx0 + Hx1);
 		HMMPI::Mat Grad_aux_row_i0(Grad_aux.JCount(), 1, 0.0);

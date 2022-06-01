@@ -46,22 +46,26 @@ double Rand::RandN()
 	return norm(gen);
 }
 //------------------------------------------------------------------------------------------
-Mat Rand::RandU(int I0, int J0)
+Mat Rand::RandU(size_t I0, size_t J0)
 {
 	Mat res(I0, J0, 0);
-	for (int i = 0; i < I0; i++)
-		for (int j = 0; j < J0; j++)
-			res(i, j) = RandU();
+	std::vector<double> &data = res.ToVectorMutable();
+	size_t len = res.Length();
+
+	for (size_t i = 0; i < len; i++)
+		data[i] = RandU();
 
 	return res;
 }
 //------------------------------------------------------------------------------------------
-Mat Rand::RandN(int I0, int J0)
+Mat Rand::RandN(size_t I0, size_t J0)
 {
 	Mat res(I0, J0, 0);
-	for (int i = 0; i < I0; i++)
-		for (int j = 0; j < J0; j++)
-			res(i, j) = RandN();
+	std::vector<double> &data = res.ToVectorMutable();
+	size_t len = res.Length();
+
+	for (size_t i = 0; i < len; i++)
+		data[i] = RandN();
 
 	return res;
 }
@@ -1687,7 +1691,7 @@ void LeapFrogGeneralized::make_bounds(const Mat &xcurr, std::vector<bound> &boun
 			break;
 		}
 
-	std::vector<int> inds = SortPermutation(dist.begin(), dist.end());
+	std::vector<size_t> inds = SortPermutation(dist.begin(), dist.end());
 	bounds = Reorder(bounds, inds);
 }
 //------------------------------------------------------------------------------------------
@@ -2231,12 +2235,12 @@ void HMC1::trainProxy(bool is_initial)
 		}
 
 		// 1. Prepare indices for gradient points
-		std::vector<int> inds_grad;
+		std::vector<size_t> inds_grad;
 		if (calc_grads())
 		{
 			if (!is_initial)
 				assert(Xnew.size() >= (size_t)Nselect);
-			std::vector<int> inds_sel = proxy_int->PointsSubset(Xnew, Nselect);			// inds_sel points will be selected from Xnew (func. vals); inds_sel[i] is index for "Xnew"
+			std::vector<size_t> inds_sel = proxy_int->PointsSubset(Xnew, Nselect);			// inds_sel points will be selected from Xnew (func. vals); inds_sel[i] is index for "Xnew"
 			HMMPI::Bcast_vector(inds_sel, 0, pm_aux->GetComm());
 
 			if (is_initial)
@@ -2247,7 +2251,7 @@ void HMC1::trainProxy(bool is_initial)
 			}
 			else
 			{
-				std::vector<int> ind_grad_extended = ind_grad_add_pts;
+				std::vector<size_t> ind_grad_extended(ind_grad_add_pts.begin(), ind_grad_add_pts.end());
 				if (update_type == 1)													// e.g. for Nadd_fval_pts = 5, ind_grad_extended => 0,1,4 | 5,6,9 | 10,11,14 |...
 				{
 					assert(u > 0);

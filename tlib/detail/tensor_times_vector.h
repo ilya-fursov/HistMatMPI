@@ -34,14 +34,12 @@
 
 
 #ifdef USE_OPENBLAS
-#include <cblas.h>
+#include "../../cblas_select.h"
 #endif
 
 #ifdef USE_INTELBLAS
 #include <mkl.h>
 #endif
-
-
 
 
 namespace tlib::detail{
@@ -126,7 +124,6 @@ inline void multiple_gemv_over_small_tensor_slices (
 }
 
 
-
 /* @brief Recursively executes gemv over large tensor slices
  * 
  * @note is applied in tensor-times-vector which uses large tensor slices
@@ -165,8 +162,6 @@ inline void multiple_gemv_over_large_tensor_slices (
 }
 
 
-
-
 /**
  * \brief Implements a tensor-times-vector-multiplication
  *
@@ -188,7 +183,6 @@ inline void ttv(
 	value_t const*const b, size_t const*const nb,
 	value_t      *const c, size_t const*const nc, size_t const*const wc, size_t const*const pic
 	);
-
 
 
 /*
@@ -215,7 +209,6 @@ inline void ttv(
 			gemv_col<value_t,size_t>, p, p-1, na_pia_1, na[m-1], wa[m-1], inv_pia_m, a, na, wa, pia, b,  c, nc, wc, pic);
 	}
 }
-
 
 
 /*
@@ -257,7 +250,9 @@ inline void ttv(
 		const auto wa_pia_p = wa[pia_p-1];
 		const auto wc_pic_p = wc[pic_p-1];
 
+		#if defined(_OPENMP)
 		#pragma omp parallel for schedule(dynamic) firstprivate(pia_p,pic_p,p,m,   na_pia_1,inv_pia_m,   a,na,wa,pia,  b,c,nc,wc,pic)
+		#endif
 		for(size_t i = 0; i < na[pia_p-1]; ++i)
 			multiple_gemv_over_small_tensor_slices(
 				gemv_col<value_t,size_t>, p-1, p-2, na_pia_1, na[m-1], wa[m-1], inv_pia_m, a+i*wa_pia_p, na, wa, pia, b,  c+i*wc_pic_p, nc, wc, pic);
@@ -308,7 +303,9 @@ inline void ttv(
 		const auto wa_pia_p = wa[pia_p-1];
 		const auto wc_pic_p = wc[pic_p-1];
 
+		#if defined(_OPENMP)
 		#pragma omp parallel for schedule(dynamic) firstprivate(pia_p,pic_p,p,m,   na_pia_1,inv_pia_m,   a,na,wa,pia,  b,c,nc,wc,pic)
+		#endif
 		for(size_t i = 0; i < na[pia_p-1]; ++i)
 			multiple_gemv_over_small_tensor_slices(
 				gemv_col_blas<value_t,size_t>, p-1, p-2, na_pia_1, na[m-1], wa[m-1], inv_pia_m, a+i*wa_pia_p, na, wa, pia, b,  c+i*wc_pic_p, nc, wc, pic);
@@ -352,8 +349,10 @@ inline void ttv(
 
 		auto const na_pia_1 = na[pia[0]-1];
 
+		#if defined(_OPENMP)
 		auto const na_m = na[m-1];
 		auto const wa_m = wa[m-1];
+		#endif
 
 		auto num = 1u;
 		for(auto i = inv_pia_m; i < p; ++i)
@@ -362,14 +361,14 @@ inline void ttv(
 		auto const wa_m1 = wa[pia[inv_pia_m]-1];
 		auto const wc_m1 = wc[pic[inv_pia_m-1]-1];
 
+		#if defined(_OPENMP)
 		#pragma omp parallel for schedule(dynamic) firstprivate(p, m, num, wa_m1,wc_m1,inv_pia_m,  na_m,wa_m,na_pia_1, a,b,c)
+		#endif
 		for(size_t k = 0u; k < num; ++k)
 			multiple_gemv_over_small_tensor_slices
 				( gemv_col_blas<value_t,size_t>, inv_pia_m-1, inv_pia_m-1, na_pia_1, na[m-1], wa[m-1], inv_pia_m,  a+k*wa_m1 ,na,wa,pia,  b,  c+k*wc_m1,nc,wc,pic );
 	}
 }
-
-
 
 
 // parallel execution with blas using all free outer dimensions
@@ -435,8 +434,9 @@ inline void ttv(
 		auto va2 = generate_strides(na2,pia2); // same for a and c
 
 
-
+		#if defined(_OPENMP)
 		#pragma omp parallel for schedule(dynamic) firstprivate(p, wc2, wa2,va2,pia2,  na_m,wa_m,na_pia_1, a,b,c)
+		#endif
 		for(size_t k = 0; k < nn; ++k){
 			auto ka = at_at_1(k, va2, wa2, pia2);
 			auto kc = at_at_1(k, va2, wc2, pia2);
@@ -446,16 +446,6 @@ inline void ttv(
 		}
 	}
 }
-
-
-
-
-
-
-
-
-
-
 
 
 /** \brief Implements a tensor-times-vector-multiplication with large tensor slices
@@ -499,8 +489,7 @@ inline void ttv(
 }
 	
 	
-
-	// uses for case 8 the outer-most dimension for parallelization without BLAS.
+// uses for case 8 the outer-most dimension for parallelization without BLAS.
 	
 //template<class value_t>
 //struct TensorTimesVector<value_t,large_slices_tag,parallel_tag,outer_tag>
@@ -545,7 +534,9 @@ inline void ttv(
 
 		auto n = compute_ninvpia( na, pia, inv_pia_m ); // this is for the most inner computation
 		assert(n == wa_m);
+		#if defined(_OPENMP)
 		#pragma omp parallel for schedule(dynamic) firstprivate(p,m,n,inv_pia_m,maxp,   a,na,wa,pia,  b,c,nc,wc,pic)
+		#endif
 		for(size_t i = 0; i < na[pia[maxp-1]-1]; ++i)
 			multiple_gemv_over_large_tensor_slices
 				( gemv_col<value_t,size_t>, p-1,p-2,n,  na_m,wa_m,inv_pia_m,  a+i*wa[pia[maxp-1]-1],na,wa,pia,  b,  c+i*wc[pic[maxp-2]-1],nc,wc,pic );
@@ -597,7 +588,9 @@ inline void ttv(
 		auto n = compute_ninvpia( na, pia, inv_pia_m ); // this is for the most inner computation
 		assert(n == wa_m);
 
+		#if defined(_OPENMP)
 		#pragma omp parallel for schedule(dynamic) firstprivate(p,m,n,inv_pia_m,maxp,   a,na,wa,pia,  b,c,nc,wc,pic)
+		#endif
 		for(size_t i = 0; i < na[pia[maxp-1]-1]; ++i)
 			multiple_gemv_over_large_tensor_slices 
 				(gemv_col_blas<value_t,size_t>, p-1,p-2,n,  na_m,wa_m,inv_pia_m,  a+i*wa[pia[maxp-1]-1],na,wa,pia,  b,  c+i*wc[pic[maxp-2]-1],nc,wc,pic);
@@ -648,7 +641,9 @@ inline void ttv(
 		auto const wa_m1 = wa[pia[inv_pia_m  ]-1];
 		auto const wc_m1 = wc[pic[inv_pia_m-1]-1];
 
+		#if defined(_OPENMP)
 		#pragma omp parallel for schedule(dynamic) firstprivate(p,m,inv_pia_m,wa_m1,wc_m1,   a,na,wa,pia,  b,c,nc,wc,pic)
+		#endif
 		for(size_t i = 0; i < num; ++i)
 			multiple_gemv_over_large_tensor_slices
 				(gemv_col_blas<value_t,size_t>,  inv_pia_m-1, inv_pia_m-1, wa_m, na_m, wa_m, inv_pia_m, a+i*wa_m1,na,wa,pia,    b,   c+i*wc_m1,nc,wc,pic );
@@ -656,7 +651,6 @@ inline void ttv(
 }
 
 } // namespace tlib::detail
-
 
 
 #endif // TLIB_DETAIL_TTV_H

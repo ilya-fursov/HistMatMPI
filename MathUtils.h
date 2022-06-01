@@ -19,6 +19,11 @@
 #include "Vectors.h"
 #include "mpi.h"
 
+namespace tlib
+{
+	template<class value_t>
+	class tensor;
+}
 
 namespace HMMPI
 {
@@ -44,6 +49,7 @@ void CholDecomp(const double *A, double *res, int sz);		// Cholesky decomp. A[sz
 void Bcast_string(std::string &s, int root, MPI_Comm comm);			// MPI broadcast std::string from 'root' rank; memory allocation is done if needed
 void Bcast_vector(std::vector<double> &v, int root, MPI_Comm comm);		// MPI broadcast vector<double> from 'root' rank; memory allocation is done if needed
 void Bcast_vector(std::vector<int> &v, int root, MPI_Comm comm);		// MPI broadcast vector<int> from 'root' rank; memory allocation is done if needed
+void Bcast_vector(std::vector<size_t> &v, int root, MPI_Comm comm);		// MPI broadcast vector<size_t> from 'root' rank; memory allocation is done if needed
 void Bcast_vector(std::vector<char> &v, int root, MPI_Comm comm);		// MPI broadcast vector<char> from 'root' rank; memory allocation is done if needed
 void Bcast_vector(std::vector<std::vector<double>> &v, int root, MPI_Comm comm);	// MPI broadcast vector of vectors from 'root' rank; memory allocation is done if needed
 void Bcast_vector(std::vector<std::vector<std::vector<double>>> &v, int root, MPI_Comm comm);	// MPI broadcast vector^3 from 'root' rank; memory allocation is done if needed
@@ -65,29 +71,29 @@ double Vec_pow_multiind(const std::vector<double> &v, const std::vector<int> &mi
 //------------------------------------------------------------------------------------------
 // some template functions
 template <class RandomAccessIterator>
-std::vector<int> SortPermutation(RandomAccessIterator first, RandomAccessIterator last);	// sorts [first, last) - not via modification, but by returning the indices of permutation
+std::vector<size_t> SortPermutation(RandomAccessIterator first, RandomAccessIterator last);	// sorts [first, last) - not via modification, but by returning the indices of permutation
 
 template <class FwdIterator, class T>
-FwdIterator FindBinary(FwdIterator first, FwdIterator last, const T &val);		// binary search of "val" in a SORTED range [first, last); returns iterator to the first found element == "val", returns "last" if not found
+FwdIterator FindBinary(FwdIterator first, FwdIterator last, const T &val);			// binary search of "val" in a SORTED range [first, last); returns iterator to the first found element == "val", returns "last" if not found
 
 template <class T>
-std::vector<T> Reorder(const std::vector<T> &v, const std::vector<int> &ord);	// creates vector from elements of "v" with indices from "ord" (indices may be repeated)
+std::vector<T> Reorder(const std::vector<T> &v, const std::vector<size_t> &ord);	// creates vector from elements of "v" with indices from "ord" (indices may be repeated)
 
 template <class T>																		// treats "v" as row-major storage of M x N matrix, extracts ordi.size() x ordj.size() sub-matrix with indices "ordi", "ordj" (indices may be repeated)
-std::vector<T> Reorder(const std::vector<T> &v, size_t M, size_t N, const std::vector<int> &ordi, const std::vector<int> &ordj, bool skipneg = false, T defval = T());	// returns its row-major storage vector
+std::vector<T> Reorder(const std::vector<T> &v, size_t M, size_t N, const std::vector<size_t> &ordi, const std::vector<size_t> &ordj, bool skipneg = false, T defval = T());	// returns its row-major storage vector
 																						// if 'skipneg' == true, indices ordi, ordj equal to -1 will be populated with 'defval'
-template <class T>																				// returns vector of indices of "subvec" elements within "mainvec" elements (only first encounter);
-std::vector<int> GetSubvecInd(const std::vector<T> &mainvec, const std::vector<T> &subvec);	 	// index is set to -1 if element is not found in "mainvec"; result.size = subvec.size
+template <class T>																					// returns vector of indices of "subvec" elements within "mainvec" elements (only first encounter);
+std::vector<size_t> GetSubvecInd(const std::vector<T> &mainvec, const std::vector<T> &subvec);	 	// index is set to -1 if element is not found in "mainvec"; result.size = subvec.size
 
 template <class T>
-std::vector<int> GetSubvecIndSorted(const std::vector<T> &mainvec_sorted, const std::vector<T> &subvec);	 	// same as GetSubvecInd, but "mainvec_sorted" should be a sorted vector; uses binary search
+std::vector<size_t> GetSubvecIndSorted(const std::vector<T> &mainvec_sorted, const std::vector<T> &subvec);	 	// same as GetSubvecInd, but "mainvec_sorted" should be a sorted vector; uses binary search
 
 template <class T>																						// returns subvector of "subvec" composed of elements with corresponding subvec_ind[i] == -1 (lengths of "subvec", "subvec_ind" should be the same)
-std::vector<T> SubvecNotFound(const std::vector<T> &subvec, const std::vector<int> &subvec_ind);		// if subvec_ind := GetSubvecInd[Sorted](mainvec, subvec), then the returned vector is the not-found part of "subvec"
+std::vector<T> SubvecNotFound(const std::vector<T> &subvec, const std::vector<size_t> &subvec_ind);		// if subvec_ind := GetSubvecInd[Sorted](mainvec, subvec), then the returned vector is the not-found part of "subvec"
 
 template <class T>
-void VecAssign(std::vector<T> &vec, const std::vector<int> &ind, const std::vector<T> &rhs);	// vec[ind] = rhs; sizes of 'ind' and 'rhs' should be the same; 'ind' are indices in 'vec'
-																								// for indices not in 'ind', 'vec' values are not changed
+void VecAssign(std::vector<T> &vec, const std::vector<size_t> &ind, const std::vector<T> &rhs);	// vec[ind] = rhs; sizes of 'ind' and 'rhs' should be the same; 'ind' are indices in 'vec'
+																								// for the remaining indices (those not in 'ind'), 'vec' values are not changed
 template <class T>
 std::vector<std::vector<T>> VecTranspose(const std::vector<std::vector<T>> &arr2d);		// transposes 2D array: res[i][j] = arr2d[j][i]
 
@@ -103,11 +109,12 @@ bool is_strictly_sorted(FwdIterator first, FwdIterator last);					// 'true' if [
 template <class T>
 std::string ToString(const std::vector<T> &v, const std::string fmt = "%12.8g", const std::string delim = "\t");	// convert to string, applying format "fmt" to each element, separating them by "delim", adding '\n' in the end
 template <class T>
-void SaveASCII(FILE *f, const T *Data, int len, std::string fmt = "%12.8g");	// save Data[len] to "f" with given format
+void SaveASCII(FILE *f, const T *Data, size_t len, std::string fmt = "%12.8g");	// save Data[len] to "f" with given format
 template <class T>
-void SaveASCII(FILE *f, const T* const *Data, int len1, int len2, std::string fmt = "%12.8g");	// save Data[len1][len2] to "f" with given format; len1 numbers rows, len2 - columns
+void SaveASCII(FILE *f, const T* const *Data, size_t len1, size_t len2, std::string fmt = "%12.8g");	// save Data[len1][len2] to "f" with given format; len1 numbers rows, len2 - columns
 template <class T>
 void VecAppend(std::vector<T> &a, const std::vector<T> &b);						// append to the vector end: a += b
+
 
 //------------------------------------------------------------------------------------------
 // This class represents matrices or vectors (= N x 1 matrices).
@@ -149,7 +156,7 @@ public:
 	const Mat &operator=(Mat &&m) noexcept;		// move =
 
 	// I/O and conversions
-	void LoadASCII(FILE *f, int num = -1);			// load matrix from file "f" by reading "num" non-empty lines (or until EOF); if num == -1, reads until EOF
+	void LoadASCII(FILE *f, size_t num = -1);		// load matrix from file "f" by reading "num" non-empty lines (or until EOF); if num == -1, reads until EOF
 													// any data previously stored in *this will be overridden
 	void SaveASCII(FILE *f, std::string fmt = "%12.8g") const;		// save matrix to file "f", applying format "fmt" to each element
 	std::string ToString(std::string fmt = "%12.8g") const;			// convert matrix to string (table), applying format "fmt" to each element
@@ -166,19 +173,19 @@ public:
 	Mat Tr() const;							// transpose
 	double Trace() const;					// square matrix trace
 	double Sum() const;						// sum of all elements
-	double Max(int &i, int &j) const;		// returns the max element and its index (i, j)
-	double Min(int &i, int &j) const;		// returns the min element and its index (i, j)
+	double Max(size_t &i, size_t &j) const;		// returns the max element and its index (i, j)
+	double Min(size_t &i, size_t &j) const;		// returns the min element and its index (i, j)
 	double Norm1() const;					// 1-norm of a vector (matrix gets extended to the vector)
 	double Norm2() const;					// 2-norm of a vector (matrix gets extended to the vector), Manual | BLAS depending on 'op_switch'
 	double NormInf() const;					// inf-norm of a vector (matrix gets extended to the vector)
 	void Func(const std::function<double (double)> &f);					// apply function f: R -> R to all matrix elements, i.e. Mat(i, j) = f(Mat(i, j))
-	void FuncInd(const std::function<double (int, int, double)> &f);	// apply function f: (N, N, R) -> R to all matrix elements, i.e. Mat(i, j) = f(i, j, Mat(i, j))
+	void FuncInd(const std::function<double (size_t, size_t, double)> &f);	// apply function f: (N, N, R) -> R to all matrix elements, i.e. Mat(i, j) = f(i, j, Mat(i, j))
 	virtual double &operator()(size_t i, size_t j);			// element (i, j) - overrides the operator from Vector2<double>, adding reset_chol_spo_cache(), reset_dsytrf_cache()
 	virtual const double &operator()(size_t i, size_t j) const;
 	friend Mat operator&&(const Mat &m1, const Mat &m2);	// returns extended matrix by appending "m2" to the right of "m1": [m1, m2]
 	friend Mat operator||(Mat m1, const Mat &m2);			// returns extended matrix by appending "m2" below "m1": [m1; m2]
-	Mat Reorder(const std::vector<int> &ordi, const std::vector<int> &ordj) const;	// creates matrix with indices from "ordi" and "ordj" (indices may be repeated)
-	Mat Reorder(int i0, int i1, int j0, int j1) const;		// creates a submatrix with indices [i0, i1)*[j0, j1)
+	Mat Reorder(const std::vector<size_t> &ordi, const std::vector<size_t> &ordj) const;	// creates matrix with indices from "ordi" and "ordj" (indices may be repeated)
+	Mat Reorder(size_t i0, size_t i1, size_t j0, size_t j1) const;		// creates a submatrix with indices [i0, i1)*[j0, j1)
 	Mat operator+(Mat m) const;				// *this + m; explicit RL associativity allows avoiding unnecessary copying, e.g. (a + (b + (c + d))) instead of a + b + c + d
 	Mat operator-(Mat m) const;				// *this - m
 	void operator+=(const Mat &m);			// *this += m
@@ -214,22 +221,49 @@ public:
 	friend Mat operator/(Mat A, Mat b);		// A^(-1) * b - i.e. solution of A*x = b, uses Gaussian elimination, with pivoting; 'b' may contain multiple right hand sides
 };
 //------------------------------------------------------------------------------------------
+// arbitrary order tensor, based on tlib::tensor<double>
+// data is stored contiguously
+// indexing (i, j, k, ... ): i - fastest, k - slower, ...
+//
+// NB although ttv() calls openblas_set_num_threads(std::thread::hardware_concurrency()), it does not seem to launch all these threads...
+// given the openblas configured as single-threaded
+class TensorTTV
+{
+protected:
+	tlib::tensor<double> *T;
+	std::vector<size_t> Shape;
+
+public:
+	TensorTTV();								// creates 'empty' tensor; although under the hood 'T' will contain 1 element
+	TensorTTV(std::vector<size_t> shape);		// creates tensor of the specified shape; order = |shape|
+	TensorTTV(const TensorTTV &x);				// copy ctor
+	const TensorTTV &operator=(const TensorTTV &x);		// assignment
+	~TensorTTV();								// dtor
+
+	const std::vector<double> &data() const;			// access the data, read-only
+	const std::vector<size_t> &shape() const;			// access the shape, read-only
+	void fill_from(const std::vector<double> &src);		// fetch the data from the provided 'src' vector
+	Mat MultVec(const std::vector<double> &v, size_t mode, std::string slicing, std::string fusion) const;	// multiplication by vector 'v', contraction mode = 'mode' (zero-based)
+																											// only works for order-3 tensors; slicing = "SMALL", "LARGE"; fusion = "NONE", "OUTER", "ALL"
+};
+//------------------------------------------------------------------------------------------
 // rank-3 tensor with manual T*vec operation - mostly for timing and debug purposes
 // data is stored contiguously
 // indexing (i, j, k): i - fastest, k - slowest
 class Tensor3
 {
 protected:
-	std::vector<double> data;
 	size_t N0, N1, N2;			// dimensions
 	size_t N0N1;				// stride for 'k'
+	std::vector<double> data;
 
 public:
 	Tensor3(size_t n0, size_t n1, size_t n2, const std::vector<double> &v);	// initialize tensor using its shape and data array
+	Tensor3() : Tensor3(0, 0, 0, std::vector<double>()){};					// empty tensor
 
 	double &operator()(size_t i, size_t j, size_t k);				// element (i, j, k)
 	const double &operator()(size_t i, size_t j, size_t k) const;	// const element (i, j, k)
-	Mat MultVec(const std::vector<double> &v, size_t mode);			// multiplication by vector 'v', contraction mode = 'mode'
+	Mat MultVec(const std::vector<double> &v, size_t mode) const;	// multiplication by vector 'v', contraction mode = 'mode' (zero-based)
 };
 //------------------------------------------------------------------------------------------
 // a bit legacy class for Standard Normal r.v. generation; no MPI;
@@ -245,7 +279,7 @@ protected:
 public:
 	RandNormal(){hold = false; tmp = 0;};
 	double get();						// one Standard Normal r.v.
-	std::vector<double> get(int n);		// a vector of 'n' Standard Normal r.v.
+	std::vector<double> get(size_t n);	// a vector of 'n' Standard Normal r.v.
 };
 //------------------------------------------------------------------------------------------
 // *** classes for 1D functions
@@ -620,13 +654,13 @@ public:
 // implementation of some TEMPLATE FUNCTIONS
 //------------------------------------------------------------------------------------------
 template <class RandomAccessIterator>
-std::vector<int> SortPermutation(RandomAccessIterator first, RandomAccessIterator last)
+std::vector<size_t> SortPermutation(RandomAccessIterator first, RandomAccessIterator last)
 {
 	assert(last - first >= 0);
-	std::vector<int> res(last - first);
+	std::vector<size_t> res(last - first);
 	std::iota(res.begin(), res.end(), 0);	// [0, N)
 
-	std::sort(res.begin(), res.end(), [&](int a, int b){return *(first+a) < *(first+b);});
+	std::sort(res.begin(), res.end(), [&](size_t a, size_t b){return *(first+a) < *(first+b);});
 	return res;
 }
 //------------------------------------------------------------------------------------------
@@ -641,7 +675,7 @@ FwdIterator FindBinary (FwdIterator first, FwdIterator last, const T &val)
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-std::vector<T> Reorder(const std::vector<T> &v, const std::vector<int> &ord)
+std::vector<T> Reorder(const std::vector<T> &v, const std::vector<size_t> &ord)
 {
 	std::vector<T> res;
 
@@ -649,9 +683,9 @@ std::vector<T> Reorder(const std::vector<T> &v, const std::vector<int> &ord)
 	res.reserve(LEN);
 	for (size_t i = 0; i < LEN; i++)
 	{
-		int k = ord[i];
-		if (k < 0 || k >= (int)v.size())
-			throw Exception(stringFormatArr("Index out of range in Reorder(), index k = {0:%d} is not in vector of size = {1:%d}", std::vector<int>{k, (int)v.size()}));
+		size_t k = ord[i];
+		if (k >= v.size())
+			throw Exception(stringFormatArr("Index out of range in Reorder(), index k = {0:%zu} is not in vector of size = {1:%zu}", std::vector<size_t>{k, v.size()}));
 
 		res.push_back(v[k]);
 	}
@@ -660,7 +694,7 @@ std::vector<T> Reorder(const std::vector<T> &v, const std::vector<int> &ord)
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-std::vector<T> Reorder(const std::vector<T> &v, size_t M, size_t N, const std::vector<int> &ordi, const std::vector<int> &ordj, bool skipneg, T defval)
+std::vector<T> Reorder(const std::vector<T> &v, size_t M, size_t N, const std::vector<size_t> &ordi, const std::vector<size_t> &ordj, bool skipneg, T defval)
 {
 	if (M*N != v.size())
 		throw Exception(stringFormatArr("M*N ({0:%zu}) != v.size ({1:%zu}) in Reorder()", std::vector<size_t>{M*N, v.size()}));
@@ -672,14 +706,14 @@ std::vector<T> Reorder(const std::vector<T> &v, size_t M, size_t N, const std::v
 	for (size_t i = 0; i < m; i++)
 		for (size_t j = 0; j < n; j++)
 		{
-			int k = ordi[i];
-			int l = ordj[j];
-			if (skipneg && (k == -1 || l == -1))
+			size_t k = ordi[i];
+			size_t l = ordj[j];
+			if (skipneg && (k == (size_t)-1 || l == (size_t)-1))		// if 'skipneg' == true, indices ordi, ordj equal to -1 will be populated with 'defval'
 				res[i*n + j] = defval;
 			else
 			{
-				if (k < 0 || k >= (int)M || l < 0 || l >= (int)N)
-					throw Exception(stringFormatArr("Index [{0:%d}, {1:%d}] is out of range in Reorder()", std::vector<int>{k, l}));
+				if (k >= M || l >= N)
+					throw Exception(stringFormatArr("Index [{0:%zu}, {1:%zu}] is out of range in Reorder()", std::vector<size_t>{k, l}));
 
 				res[i*n + j] = v[k*N + l];
 			}
@@ -689,13 +723,13 @@ std::vector<T> Reorder(const std::vector<T> &v, size_t M, size_t N, const std::v
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-std::vector<int> GetSubvecInd(const std::vector<T> &mainvec, const std::vector<T> &subvec)
+std::vector<size_t> GetSubvecInd(const std::vector<T> &mainvec, const std::vector<T> &subvec)
 {
-	std::vector<int> res(subvec.size());
+	std::vector<size_t> res(subvec.size());
 	for (size_t i = 0; i < subvec.size(); i++)
 	{
-		int ind = std::find(mainvec.begin(), mainvec.end(), subvec[i]) - mainvec.begin();
-		if ((size_t)ind != mainvec.size())
+		size_t ind = std::find(mainvec.begin(), mainvec.end(), subvec[i]) - mainvec.begin();
+		if (ind != mainvec.size())
 			res[i] = ind;
 		else
 			res[i] = -1;
@@ -705,13 +739,13 @@ std::vector<int> GetSubvecInd(const std::vector<T> &mainvec, const std::vector<T
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-std::vector<int> GetSubvecIndSorted(const std::vector<T> &mainvec_sorted, const std::vector<T> &subvec)
+std::vector<size_t> GetSubvecIndSorted(const std::vector<T> &mainvec_sorted, const std::vector<T> &subvec)
 {
-	std::vector<int> res(subvec.size());
+	std::vector<size_t> res(subvec.size());
 	for (size_t i = 0; i < subvec.size(); i++)
 	{
-		int ind = FindBinary(mainvec_sorted.begin(), mainvec_sorted.end(), subvec[i]) - mainvec_sorted.begin();
-		if ((size_t)ind != mainvec_sorted.size())
+		size_t ind = FindBinary(mainvec_sorted.begin(), mainvec_sorted.end(), subvec[i]) - mainvec_sorted.begin();
+		if (ind != mainvec_sorted.size())
 			res[i] = ind;
 		else
 			res[i] = -1;
@@ -721,28 +755,28 @@ std::vector<int> GetSubvecIndSorted(const std::vector<T> &mainvec_sorted, const 
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-std::vector<T> SubvecNotFound(const std::vector<T> &subvec, const std::vector<int> &subvec_ind)
+std::vector<T> SubvecNotFound(const std::vector<T> &subvec, const std::vector<size_t> &subvec_ind)
 {
 	if (subvec.size() != subvec_ind.size())
 		throw Exception("subvec.size() != subvec_ind.size() in SubvecNotFound()");
 
 	std::vector<T> res;
 	for (size_t i = 0; i < subvec.size(); i++)
-		if (subvec_ind[i] == -1)
+		if (subvec_ind[i] == (size_t)-1)
 			res.push_back(subvec[i]);
 
 	return res;
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-void VecAssign(std::vector<T> &vec, const std::vector<int> &ind, const std::vector<T> &rhs)
+void VecAssign(std::vector<T> &vec, const std::vector<size_t> &ind, const std::vector<T> &rhs)
 {
 	if (ind.size() != rhs.size())
-		throw Exception("РќРµ СЃРѕРІРїР°РґР°СЋС‚ РґР»РёРЅС‹ ind Рё rhs РІ VecAssign<T>", "Sizes of ind and rhs do not match in VecAssign<T>");
+		throw Exception("Sizes of ind and rhs do not match in VecAssign<T>");
 	for (size_t i = 0; i < ind.size(); i++)
 	{
-		if (ind[i] < 0 || ind[i] >= (int)vec.size())
-			throw Exception("Р�РЅРґРµРєСЃ ind[i] РІС‹С…РѕРґРёС‚ Р·Р° РґРѕРїСѓСЃС‚РёРјС‹Р№ РґРёР°РїР°Р·РѕРЅ РІ VecAssign<T>", "Index ind[i] is out of range in VecAssign<T>");
+		if (ind[i] >= vec.size())
+			throw Exception("Index ind[i] is out of range in VecAssign<T>");
 		vec[ind[i]] = rhs[i];
 	}
 }
@@ -819,19 +853,19 @@ std::string ToString(const std::vector<T> &v, const std::string fmt, const std::
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-void SaveASCII(FILE *f, const T *Data, int len, std::string fmt)
+void SaveASCII(FILE *f, const T *Data, size_t len, std::string fmt)
 {
 	fputs(ToString(std::vector<T>(Data, Data + len), fmt).c_str(), f);
 }
 //------------------------------------------------------------------------------------------
 template <class T>
-void SaveASCII(FILE *f, const T* const *Data, int len1, int len2, std::string fmt)
+void SaveASCII(FILE *f, const T* const *Data, size_t len1, size_t len2, std::string fmt)
 {
-	for (int i = 0; i < len1; i++)
-		for (int j = 0;  j < len2; j++)
+	for (size_t i = 0; i < len1; i++)
+		for (size_t j = 0; j < len2; j++)
 		{
 			fprintf(f, fmt.c_str(), Data[i][j]);
-			if (j < len2-1)
+			if (j+1 < len2)
 				fprintf(f, "\t");
 			else
 				fprintf(f, "\n");

@@ -154,6 +154,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_runtimelinalg);
 
 		kw1.AddKW_item(new KW_LinSolver);
+		kw1.AddKW_item(new KW_TTV_config);
 		kw1.AddKW_item(new KW_soboltest);
 		kw1.AddKW_item(new KW_runsoboltest);
 		kw1.AddKW_item(new KW_matrixtest);

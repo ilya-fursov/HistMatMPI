@@ -1,8 +1,10 @@
 #include <cstring>
+#include <algorithm>
 #include "Utils.h"
 #include "MathUtils.h"
 #include "lapacke_select.h"
 #include "cblas_select.h"
+#include "tlib/ttv.h"
 
 namespace HMMPI
 {
@@ -305,7 +307,7 @@ const Mat& Mat::operator=(Mat&& m) noexcept	// TODO not much sure here
 	return *this;
 }
 //------------------------------------------------------------------------------------------
-void Mat::LoadASCII(FILE* f, int num)
+void Mat::LoadASCII(FILE* f, size_t num)
 {
 	reset_chol_spo_cache();
 	reset_dsytrf_cache();
@@ -315,7 +317,7 @@ void Mat::LoadASCII(FILE* f, int num)
 	size_t ci = 0, cj = 0;		// size of the loaded matrix
 	std::vector<double> vec;	// data for the loaded matrix
 
-	while (!feof(f) && ci < (size_t)num)		// size_t(-1) is a very big number
+	while (!feof(f) && ci < num)		// size_t(-1) is a very big number
 	{
 		if (!fgets(line, LINEBUFF, f))
 			break;				// may happen when empty line with EOF was read
@@ -455,18 +457,18 @@ double Mat::Sum() const
 	return res;
 }
 //------------------------------------------------------------------------------------------
-double Mat::Max(int& i, int& j) const
+double Mat::Max(size_t& i, size_t& j) const
 {
 	double max = std::numeric_limits<double>::lowest();
-	int SZ = icount * jcount, ind = -1;
-	for (int x = 0; x < SZ; x++)
+	size_t SZ = icount * jcount, ind = -1;
+	for (size_t x = 0; x < SZ; x++)
 		if (data[x] > max)
 		{
 			max = data[x];
 			ind = x;
 		}
 
-	if (ind != -1)
+	if (ind != (size_t)-1)
 	{
 		i = ind / jcount;
 		j = ind % jcount;
@@ -480,18 +482,18 @@ double Mat::Max(int& i, int& j) const
 	}
 }
 //------------------------------------------------------------------------------------------
-double Mat::Min(int& i, int& j) const
+double Mat::Min(size_t& i, size_t& j) const
 {
 	double min = std::numeric_limits<double>::max();
-	int SZ = icount * jcount, ind = -1;
-	for (int x = 0; x < SZ; x++)
+	size_t SZ = icount * jcount, ind = -1;
+	for (size_t x = 0; x < SZ; x++)
 		if (data[x] < min)
 		{
 			min = data[x];
 			ind = x;
 		}
 
-	if (ind != -1)
+	if (ind != (size_t)-1)
 	{
 		i = ind / jcount;
 		j = ind % jcount;
@@ -550,7 +552,7 @@ void Mat::Func(const std::function<double(double)>& f)
 		data[i] = f(data[i]);
 }
 //------------------------------------------------------------------------------------------
-void Mat::FuncInd(const std::function<double(int, int, double)>& f)
+void Mat::FuncInd(const std::function<double(size_t, size_t, double)>& f)
 {
 	reset_chol_spo_cache();
 	reset_dsytrf_cache();
@@ -619,22 +621,22 @@ Mat operator||(Mat m1, const Mat& m2)
 	return m1;
 }
 //------------------------------------------------------------------------------------------
-Mat Mat::Reorder(const std::vector<int>& ordi, const std::vector<int>& ordj) const
+Mat Mat::Reorder(const std::vector<size_t>& ordi, const std::vector<size_t>& ordj) const
 {
 	return Mat(HMMPI::Reorder(data, icount, jcount, ordi, ordj), ordi.size(), ordj.size());
 }
 //------------------------------------------------------------------------------------------
-Mat Mat::Reorder(int i0, int i1, int j0, int j1) const		// creates a submatrix with indices [i0, i1)*[j0, j1)
+Mat Mat::Reorder(size_t i0, size_t i1, size_t j0, size_t j1) const		// creates a submatrix with indices [i0, i1)*[j0, j1)
 {
-	if (i0 < 0 || i1 >(int)icount || j0 < 0 || j1 >(int)jcount)
-		throw Exception(stringFormatArr("In Mat::Reorder indices [{0:%d}, {1:%d})*[{2:%d}, {3:%d}) are inconsistent with matrix dimension {4:%d} * {5:%d}",
-			std::vector<int>{i0, i1, j0, j1, (int)icount, (int)jcount}));
+	if (i1 > icount || j1 > jcount)
+		throw Exception(stringFormatArr("In Mat::Reorder indices [{0:%zu}, {1:%zu})*[{2:%zu}, {3:%zu}) are inconsistent with matrix dimension {4:%zu} * {5:%zu}",
+			std::vector<size_t>{i0, i1, j0, j1, icount, jcount}));
 	if (i0 >= i1 || j0 >= j1)
-		throw Exception(stringFormatArr("In Mat::Reorder I-indices ({0:%d}, {1:%d}) and J-indices ({2:%d}, {3:%d}) should be strictly increasing",
-			std::vector<int>{i0, i1, j0, j1}));
+		throw Exception(stringFormatArr("In Mat::Reorder I-indices ({0:%zu}, {1:%zu}) and J-indices ({2:%zu}, {3:%zu}) should be strictly increasing",
+			std::vector<size_t>{i0, i1, j0, j1}));
 
-	std::vector<int> ordi(i1 - i0);
-	std::vector<int> ordj(j1 - j0);
+	std::vector<size_t> ordi(i1 - i0);
+	std::vector<size_t> ordj(j1 - j0);
 	std::iota(ordi.begin(), ordi.end(), i0);
 	std::iota(ordj.begin(), ordj.end(), j0);
 
@@ -1373,6 +1375,111 @@ Mat operator/(Mat A, Mat b)
 	return res;
 }
 //------------------------------------------------------------------------------------------
+// TensorTTV
+//------------------------------------------------------------------------------------------
+TensorTTV::TensorTTV() : T(new tlib::tensor<double>({1}))		// creates 'empty' tensor; although under the hood 'T' will contain 1 element
+{
+	// Shape - empty
+}
+//------------------------------------------------------------------------------------------
+TensorTTV::TensorTTV(std::vector<size_t> shape)	: T(new tlib::tensor<double>(shape)), Shape(shape)	// creates tensor of the specified shape; order = |shape|
+{
+
+}
+//------------------------------------------------------------------------------------------
+TensorTTV::TensorTTV(const TensorTTV &x) : T(new tlib::tensor<double>(*x.T)), Shape(x.Shape)		// copy ctor
+{
+
+}
+//------------------------------------------------------------------------------------------
+const TensorTTV &TensorTTV::operator=(const TensorTTV &x) 			// assignment
+{
+	delete T;
+	T = new tlib::tensor<double>(*x.T);
+	Shape = x.Shape;
+
+	return *this;
+}
+//------------------------------------------------------------------------------------------
+TensorTTV::~TensorTTV()												// dtor
+{
+	delete T;
+}
+//------------------------------------------------------------------------------------------
+const std::vector<double> &TensorTTV::data() const					// access the data, read-only
+{
+	return T->data();
+}
+//------------------------------------------------------------------------------------------
+const std::vector<size_t> &TensorTTV::shape() const					// access the shape, read-only
+{
+	return Shape;
+}
+//------------------------------------------------------------------------------------------
+void TensorTTV::fill_from(const std::vector<double> &src)			// fetch the data from the provided 'src' vector
+{
+	std::vector<double> &D = T->data();
+
+	if (D.size() != src.size())
+	{
+		char msg[BUFFSIZE];
+		sprintf(msg, "Vector size mismatch in TensorTTV::fill_from, |data| = %zu, |src| = %zu", D.size(), src.size());
+		throw Exception(msg);
+	}
+
+	memcpy(D.data(), src.data(), src.size()*sizeof(double));
+}
+//------------------------------------------------------------------------------------------
+Mat TensorTTV::MultVec(const std::vector<double> &v, size_t mode, std::string slicing, std::string fusion) const	// multiplication by vector 'v', contraction mode = 'mode' (zero-based)
+{																													// only works for order-3 tensors; slicing = "SMALL", "LARGE"; fusion = "NONE", "OUTER", "ALL"
+	if (Shape.size() != 3)
+		throw Exception("Tensor of order 3 is expected in TensorTTV::MultVec");
+	if (mode >= 3)
+		throw Exception("Contraction mode < 3 is expected in TensorTTV::MultVec");
+
+	const size_t dim = Shape[mode];
+	if (v.size() != dim)
+	{
+		char msg[BUFFSIZE];
+		sprintf(msg, "Inconsistent vector (%zu) and tensor (%zu for mode %zu) dimensions in TensorTTV::MultVec", v.size(), dim, mode);
+		throw Exception(msg);
+	}
+
+	tlib::tensor<double> B({dim});				// = vector v
+	std::copy(v.begin(), v.end(), B.begin());
+
+	tlib::tensor<double> C({1});				// output order-2 tensor with a dummy ctor
+	if (slicing == "SMALL" && fusion == "NONE")
+		C = tlib::tensor_times_vector(mode+1, *T, B, tlib::execution::blas, tlib::slicing::small, tlib::loop_fusion::none);
+	else if (slicing == "SMALL" && fusion == "OUTER")
+		C = tlib::tensor_times_vector(mode+1, *T, B, tlib::execution::blas, tlib::slicing::small, tlib::loop_fusion::outer);
+	else if (slicing == "SMALL" && fusion == "ALL")
+		C = tlib::tensor_times_vector(mode+1, *T, B, tlib::execution::blas, tlib::slicing::small, tlib::loop_fusion::all);
+	else if (slicing == "LARGE" && fusion == "NONE")
+		C = tlib::tensor_times_vector(mode+1, *T, B, tlib::execution::blas, tlib::slicing::large, tlib::loop_fusion::none);
+	else if (slicing == "LARGE" && fusion == "ALL")
+		C = tlib::tensor_times_vector(mode+1, *T, B, tlib::execution::blas, tlib::slicing::large, tlib::loop_fusion::all);
+	else
+		throw Exception("Unrecognized slicing & fusion options in TensorTTV::MultVec");		// e.g., BLAS-LARGE-OUTER - missing
+
+	// copy the result to Mat
+	const double *pC = C.data().data();					// column-major
+
+	const auto resshape = C.shape();
+	assert(resshape.size() == 2);
+	const size_t N0 = resshape[0];
+	const size_t N1 = resshape[1];
+
+	Mat res(N0, N1, 0.0);
+	double *pres = res.ToVectorMutable().data();		// row-major
+
+	for (size_t i = 0; i < N0; i++)
+		for (size_t j = 0; j < N1; j++)
+			pres[i*N1 + j] = pC[i + j*N0];
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
 // Tensor3
 //------------------------------------------------------------------------------------------
 Tensor3::Tensor3(size_t n0, size_t n1, size_t n2, const std::vector<double> &v) : N0(n0), N1(n1), N2(n2), N0N1(n0*n1), data(v)	// initialize tensor using its shape and data array
@@ -1391,7 +1498,7 @@ const double &Tensor3::operator()(size_t i, size_t j, size_t k) const	// const e
 	return data[i + j*N0 + k*N0N1];
 }
 //------------------------------------------------------------------------------------------
-Mat Tensor3::MultVec(const std::vector<double> &v, size_t mode)			// multiplication by vector 'v', contraction mode = 'mode'
+Mat Tensor3::MultVec(const std::vector<double> &v, size_t mode) const	// multiplication by vector 'v', contraction mode = 'mode' (zero-based)
 {
 	if (mode == 0)
 	{

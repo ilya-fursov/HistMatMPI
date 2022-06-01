@@ -125,9 +125,9 @@ void KW_runmatrixtest::Run()
 
 		K->AppText(HMMPI::MessageRE("(eng)", "Finding max(A)\n"));
 		char buff[HMMPI::BUFFSIZE];
-		int mai, maj;
+		size_t mai, maj;
 		double maxA = A.Max(mai, maj);
-		sprintf(buff, "max(A) = %g, i = %d, j = %d\n", maxA, mai, maj);
+		sprintf(buff, "max(A) = %g, i = %zu, j = %zu\n", maxA, mai, maj);
 		K->AppText(buff);
 
 		K->AppText(HMMPI::MessageRE("(eng)", "Calculating A + B\n"));
@@ -463,16 +463,16 @@ void KW_rundebug::Run()
 //	for (double s = 0; s <= 5; s += 0.5)
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
-	std::vector<double> v(100);
-	std::iota(v.begin(), v.end(), 1);
 
-	HMMPI::Rand rctx(0, -1, 1);
-	HMMPI::Mat A = rctx.RandU(5, 4);
-	std::cout << A.ToString() << "\n";
+	HMMPI::Rand R(123);
 
-	printf("blas\t%.18g\n", A.Norm2());
+	HMMPI::Mat M1 = R.RandU(5, 5);
+	std::cout << "-----new-----\n";
+	std::cout << M1.ToString();
 
-	A.SetOpSwitch(1);
-	printf("manu\t%.18g\n", A.Norm2());
+	M1 = R.RandN(5, 5);
+	std::cout << "-----new-----\n";
+	std::cout << M1.ToString();
+
 }
 //------------------------------------------------------------------------------------------

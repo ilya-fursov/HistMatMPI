@@ -163,7 +163,7 @@ void Bcast_vector(std::vector<double> &v, int root, MPI_Comm comm)
 	if (comm == MPI_COMM_NULL)
 		return;
 
-	int sz = v.size();							// vector size to be broadcasted from 'root'
+	int sz = v.size();							// vector size to be broadcasted from 'root'; NOTE: 'int' is used here as required by MPI_Bcast()
 	MPI_Bcast(&sz, 1, MPI_INT, root, comm);
 	if ((int)v.size() != sz)
 		v = std::vector<double>(sz);			// reallocate array
@@ -193,6 +193,25 @@ void Bcast_vector(std::vector<int> &v, int root, MPI_Comm comm)
 	int rank00;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank00);
 	std::cout << "rank " << rank00 << "\tBcast_vector<int>\n";
+#endif
+}
+//------------------------------------------------------------------------------------------
+void Bcast_vector(std::vector<size_t> &v, int root, MPI_Comm comm)		// MPI broadcast vector<size_t> from 'root' rank; memory allocation is done if needed
+{
+	if (comm == MPI_COMM_NULL)
+		return;
+
+	int sz = v.size();							// vector size to be broadcasted from 'root'; NOTE: 'int' is used here as required by MPI_Bcast()
+	MPI_Bcast(&sz, 1, MPI_INT, root, comm);
+	if ((int)v.size() != sz)
+		v = std::vector<size_t>(sz);			// reallocate array
+
+	MPI_Bcast(v.data(), sz, MPI_LONG_LONG, root, comm);
+
+#ifdef TESTBCAST
+	int rank00;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank00);
+	std::cout << "rank " << rank00 << "\tBcast_vector<size_t>\n";
 #endif
 }
 //------------------------------------------------------------------------------------------
@@ -387,7 +406,7 @@ double RandNormal::get()
 	}
 }
 //------------------------------------------------------------------------------------------
-std::vector<double> RandNormal::get(int n)
+std::vector<double> RandNormal::get(size_t n)
 {
 	std::vector<double> res(n);
 	for (auto &i : res)

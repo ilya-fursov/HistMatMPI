@@ -8,14 +8,12 @@
 #include <algorithm>
 #include <omp.h>
 
-
 #include "tags.h"
 #include "cases.h"
 
-
 // <cblas.h>
 #ifdef USE_OPENBLAS
-#include <cblas.h>
+#include "../../cblas_select.h"
 #endif
 
 #ifdef USE_INTELBLAS
@@ -55,7 +53,9 @@ static inline void gemv_row(
 	for(auto i = 0ul; i < M; ++i){ // over row
 		auto const*const __restrict arow = a+i*lda;
 		auto sum = value_t{};
+		#if defined(_OPENMP)
 		#pragma omp simd reduction (+:sum) // aligned (arow,b : 32)
+		#endif
 		for(auto k = 0ul; k < N; ++k){ // over column
 			sum += arow[k] * b[k];
 		}
@@ -72,11 +72,15 @@ static inline void gemv_row_parallel(
 		size_t const N, // na_m
 		size_t const lda) // na_m usually as
 {
+	#if defined(_OPENMP)
 	#pragma omp parallel for firstprivate(a,b,c,N,lda,M)
+	#endif
 	for(auto i = 0ul; i < M; ++i){ // over row
 		auto const*const __restrict arow = a+i*lda;
 		auto sum = value_t{};
+		#if defined(_OPENMP)
 		#pragma omp simd reduction (+:sum) // aligned (arow,b : 32)
+		#endif
 		for(auto k = 0ul; k < N; ++k){ // over column
 			sum += arow[k] * b[k];
 		}
@@ -112,13 +116,14 @@ inline void gemv_col(
 		auto      *const __restrict c0 = c;
 		const auto bb = b[i];
 
+		#if defined(_OPENMP)
 		#pragma omp simd // aligned (c0,a0 : 32)
+		#endif
 		for(unsigned j = 0; j < M; ++j){
 			c0[j] += a0[j]  * bb;
 		}
 	}
 }	
-
 
 
 template<class value_t, class size_t>
@@ -134,9 +139,13 @@ void gemv_col_parallel(
 	const unsigned m = M/MB;
 	const unsigned MBmod = M%MB;
 
+	#if defined(_OPENMP)
 	#pragma omp parallel  firstprivate(a,b,c, MB, m, MBmod, N, lda, M)
+	#endif
 	{
+		#if defined(_OPENMP)
 		#pragma omp for schedule(dynamic)
+		#endif
 		for(unsigned k = 0; k < m; ++k){
 			auto const*const __restrict ak = a+k*MB;
 			auto      *const __restrict ck = c+k*MB;
@@ -146,7 +155,9 @@ void gemv_col_parallel(
 				auto      *const __restrict ci = ck;
 				const auto bb = b[i];
 
+				#if defined(_OPENMP)
 				#pragma omp simd safelen(MB)
+				#endif
 				// aligned (ci,ai : 32)
 				for(unsigned j = 0; j < MB; ++j){
 					ci[j] += ai[j]  * bb;
@@ -154,13 +165,17 @@ void gemv_col_parallel(
 			}
 		}
 
+		#if defined(_OPENMP)
 		#pragma omp single
+		#endif
 		for(unsigned i = 0; i < N; ++i){
 			auto const*const __restrict ai = a+i*lda+m*MB;
 			auto      *const __restrict ci = c+m*MB;
 			const auto bb = b[i];
 
+			#if defined(_OPENMP)
 			#pragma omp simd // aligned (ci,ai : 32)
+			#endif
 			for(unsigned j = 0; j < MBmod; ++j){
 				ci[j] += ai[j]  * bb;
 			}
@@ -237,7 +252,9 @@ inline void dot(
 	size_t const M) // nn
 {
 	auto sum = value_t{};
+	#if defined(_OPENMP)
 	#pragma omp simd reduction (+:sum)
+	#endif
 	for(auto k = 0ul; k < M; ++k){
 		sum += a[k] * b[k];
 	}
@@ -253,7 +270,9 @@ inline void dot_parallel(
 	size_t const M) // nn
 {
 	auto sum = value_t{};
+	#if defined(_OPENMP)
 	#pragma omp parallel for firstprivate(a,b) reduction (+:sum)
+	#endif
 	for(auto k = 0ul; k < M; ++k){
 		sum += a[k] * b[k];
 	}
@@ -311,7 +330,6 @@ inline void mtv(
 }
 
 
-
 //template<class value_t>
 //struct MatrixTimesVector<value_t,parallel_tag>
 template<class value_t, class size_t>
@@ -323,7 +341,6 @@ inline void mtv(
 			value_t      *const c, size_t const*const /*nc*/, size_t const*const /*wc*/, size_t const*const /*pic*/
 			)
 {
-	
 	auto n = compute_nfull(na,p) / na[m-1];
 	
 	     if(is_case<1>(p,m,pia)) dot_parallel     (a,b,c,na[0]);
@@ -333,10 +350,7 @@ inline void mtv(
 	else if(is_case<5>(p,m,pia)) gemv_row         (a,b,c,na[0],na[1],na[1] ); // last-order  (row-major)
 	else if(is_case<6>(p,m,pia)) gemv_row         (a,b,c,n,na[m-1],na[m-1]);
 	else if(is_case<7>(p,m,pia)) gemv_col_parallel(a,b,c,n,na[m-1],n);		
-	
 }
-
-
 
 
 //template<class value_t>
@@ -362,7 +376,6 @@ inline void mtv(
 	else if(is_case<7>(p,m,pia)) gemv_col_blas (a,b,c,n,na[m-1],n);	
 	
 }
-
 
 
 } // namespace tlib::detail

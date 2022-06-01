@@ -2343,7 +2343,7 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 	{
 		int MaxLen = Nvect;					// number of rows to be written
 		const int WidthWell = 10;			// min width for well, property columns
-		std::vector<int> perm = HMMPI::SortPermutation(of_vec.begin(), of_vec.end());
+		std::vector<size_t> perm = HMMPI::SortPermutation(of_vec.begin(), of_vec.end());
 		std::vector<std::string> wgname = HMMPI::Reorder(vect->WGname, perm);			// form the sorted arrays
 		std::vector<std::string> propname = HMMPI::Reorder(vect->vect, perm);
 		std::vector<double> ofval = HMMPI::Reorder(of_vec, perm);
@@ -2356,7 +2356,7 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 			Nparams = outer_post_diag->prior_contrib.size();
 			if (Nparams > MaxLen)
 				MaxLen = Nparams;
-			std::vector<int> perm2 = HMMPI::SortPermutation(outer_post_diag->prior_contrib.begin(), outer_post_diag->prior_contrib.end());
+			std::vector<size_t> perm2 = HMMPI::SortPermutation(outer_post_diag->prior_contrib.begin(), outer_post_diag->prior_contrib.end());
 			parnames = HMMPI::Reorder(params->name, perm2);
 			priorof = HMMPI::Reorder(outer_post_diag->prior_contrib, perm2);
 		}
@@ -3919,7 +3919,7 @@ PM_Func_pow::PM_Func_pow(Parser_1 *K, KW_item *kw, MPI_Comm c, int j) : PM_Func(
 
 	HMMPI::Mat colj = mat->M.Reorder(0, mat->M.ICount(), j, j+1);
 	Si = colj.ToVector();
-	int i0, j0;
+	size_t i0, j0;
 	const double minSi = colj.Min(i0, j0);
 
 	if (init.size() != 3)
