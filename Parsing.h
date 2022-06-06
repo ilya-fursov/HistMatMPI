@@ -57,8 +57,8 @@ private:
 	std::string ProblemKW();			// returns comma-separated list of problematic keywords; use after CheckKW(); used for verbosity<=-1
 	std::string ProblemKW_long();		// returns '\n'-separated list of problematic keywords + their problem description; use after CheckKW(); used for verbosity>=0
 	bool CheckKW();						// checks keywords from 'prerequisites' and sets "kws_ok", returns 'true' if all checked keywords are ok
-	int CheckDefault(std::string s);		// converts string "N*" -> N, "other strings" -> 0
-	std::vector<std::string> ReadDefaults(std::vector<std::string> p, int padto, int &def_count);	// puts "" (default values) where necessary in the array of strings 'p'
+	int CheckDefault(std::string s) noexcept;	// converts string "N*" -> N, "other strings" -> 0
+	std::vector<std::string> ReadDefaults(std::vector<std::string> p, int padto, int &def_count) noexcept;	// puts "" (default values) where necessary in the array of strings 'p'
 											// entries "N*" of 'p' are expanded to "", "",..., "" (N times); subsequently these can be treated in some "default" manner
 	 	 	 	 	 	 	 	 	 	 	// if resulting array length is < 'padto', the array is padded with ""-entries from right
 											// 'def_count' is incremented by the number of default values used
@@ -169,7 +169,7 @@ protected:
 	virtual void AddParam(double *val, const char *pname);
 	virtual void AddParam(std::string *val, const char *pname);
 	void FinalizeParams();								// call this function after adding all the params with 'AddParam' (in constructors of derived classes) -- to set 'ecols' and allocate 'EXPECTED'
-	std::string make_err_msg();				// message to print if some parameters are wrong
+	std::string make_err_msg(std::string inner_msg);	// message to print if some parameters are wrong
 	std::string CheckExpected(int j);		// returns "" if string parameter #j has a valid value, error message otherwise
 	std::string StrExpected(int j);			// returns a message - what are the valid values of string parameter #j
 	virtual void UpdateParams() noexcept {};		// this update (and maybe some I/O) happens after parameters were read and processed, but before they are printed

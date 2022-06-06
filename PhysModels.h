@@ -88,7 +88,7 @@ public:
 
 	virtual size_t ModelledDataSize() const {return 0;};	// returns the supposed size of "modelled_data", independently of "modelled_data";
 															// IMPLEMENT IT such that it returns identical results for each rank of MPI_COMM_WORLD, and does not involve any communication
-	virtual const std::vector<double> &ModelledData() const;		// returns "modelled_data" where it is available; produces error where it's not
+	virtual const std::vector<double> &ModelledData() const;		// returns "modelled_data" where it is available; produces error where it's not; NB "modelled_data" may not be sync!
 	virtual void PerturbData();											// perturb data for RML (and sync/distribute between ranks); typically KW_textsmry->randn is used for random number generation;
 																		// only models which have data (e.g. PhysModelHM, PM_Linear, PM_DataProxy) do something here (others produce exception);
 																		// some other models (e.g. PhysModMPI, PhysModGradNum) perform PerturbData call for the referenced model
@@ -404,6 +404,7 @@ public:
 	virtual const HMMPI::SimSMRY *get_smry() const = 0;
 	virtual bool is_sim() const = 0;			// TRUE if the simulation model is around
 	void set_post_diag_owner(const PM_PosteriorDiag *pd){outer_post_diag = pd;};
+	virtual void import_stats(const std::vector<double> &mod_data, const std::vector<double> &dx) = 0;		// supposed application - for importing the proxy modelled data and dX
 };
 //---------------------------------------------------------------------------
 // PM_Posterior: this model adds the Gaussian prior term (x - x0)' * C^(-1) * (x - x0) to the underlying likelihood 'PM'
@@ -454,6 +455,7 @@ public:
 	virtual void set_ignore_small_errors(bool flag);		// delegates to PM, if PM can do this
 	virtual const HMMPI::SimSMRY *get_smry() const;			// delegates to PM, if PM can do this
 	virtual bool is_sim() const;							// delegates to PM, if PM can do this
+	virtual void import_stats(const std::vector<double> &mod_data, const std::vector<double> &dx);		// delegates to PM, if PM can do this
 };
 //---------------------------------------------------------------------------
 // Like PM_Posterior, this model adds the Gaussian prior term (x - x0)' * C^(-1) * (x - x0) to the underlying likelihood 'PM'

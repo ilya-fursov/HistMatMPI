@@ -69,6 +69,24 @@ KW_viewsmry_config::KW_viewsmry_config()
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+void KW_smryplot_config::UpdateParams() noexcept	// checks Nint
+{
+	if (Nint < 2)
+		SilentError(HMMPI::stringFormatArr("Nint ({0:%d}) должно быть >= 2", "Nint ({0:%d}) should be >= 2", Nint));
+}
+//------------------------------------------------------------------------------------------
+KW_smryplot_config::KW_smryplot_config()
+{
+	name = "SMRYPLOT_CONFIG";
+
+	DEFPAR(fname_range, "SmryPlot_minmax_range.txt"); 		// file name for plotting in the range [min_i, max_i]
+	DEFPAR(fname_design, "SmryPlot_design_points.txt"); 	// file name for plotting using the design points (ECLSMRY)
+	DEFPAR(Nint, 20);										// num. of intervals to split the [min_i, max_i] range, should be >= 2
+
+	FinalizeParams();
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 KW_view_tNavsmry_config::KW_view_tNavsmry_config()
 {
 	name = "VIEW_TNAVSMRY_CONFIG";
@@ -1934,7 +1952,7 @@ KW_optimization::KW_optimization()
 	DEFPAR(restr, "CUBE");
 
 	FinalizeParams();
-	EXPECTED[0] = std::vector<std::string>{"CMAES", "LM"};
+	EXPECTED[0] = std::vector<std::string>{"CMAES", "LM", "LMFI"};
 	EXPECTED[1] = std::vector<std::string>{"OH1", "OH2", "OH4", "OH8"};
 	EXPECTED[2] = std::vector<std::string>{"FIXEDPOINT", "NEWTON", "GNEWTON", "HYBRIDPOWELL", "KIN_NEWTON", "KIN_NEWTON_LS", "KIN_FP", "KIN_PICARD"};
 	EXPECTED[10] = std::vector<std::string>{"CUBE", "SPHERE"};
@@ -1953,7 +1971,7 @@ OptContext *KW_optimization::MakeContext()
 {
 	if (algorithm == "CMAES")
 		return K;				// not added to "ctx" since it should not be deleted
-	else if (algorithm == "LM")
+	else if (algorithm == "LM" || algorithm == "LMFI")
 	{
 		OptCtxLM *res = new OptCtxLM(maxit, epsG, epsF, epsX);
 		ctx.push_back(res);

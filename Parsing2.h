@@ -79,6 +79,17 @@ public:
     virtual void Run();
 };
 //------------------------------------------------------------------------------------------
+class KW_runSmryPlot : public KW_run	// Plot (writing to the ASCII files) the current proxy o.f. (based on ECLSMRY file).
+{							// Plotting is done in 1D way, for the discretized range [min_p, max_p] for every parameter 'p'.
+public:						// Discretization is uniform for the LIN-params, and log10-uniform for the EXP-params.
+							// 		As one parameter changes, the others are fixed.
+							// 		Output file: one block per each parameter 'p': [values of 'p', changing over its range | obj. func.]
+	KW_runSmryPlot();		// Additionally, a separate plotting is done for all the design points from ECLSMRY, using a proxy with nugget = 0.
+							//		All parameters are changing here now, according to the design points.
+							// 		Output file: one block per each parameter 'p': [values of 'p' over all design points | obj. func | (internal) dist. from initial point to the given design point]
+    virtual void Run();		// Settings include: SMRYPLOT_CONFIG, all the settings for the proxy model and objective function.
+};
+//------------------------------------------------------------------------------------------
 class KW_runView_tNavSmry : public KW_run		// write the selected {DATES x ECLVECTORS} from the tNavigator results to the ASCII file
 {
 public:
@@ -311,6 +322,19 @@ public:
 	std::string order; 		// DIRECT, SORT
 
 	KW_viewsmry_config();
+};
+//------------------------------------------------------------------------------------------
+class KW_smryplot_config : public KW_params		// settings for RUNSMRYPLOT
+{
+protected:
+	virtual void UpdateParams() noexcept;	// checks Nint
+
+public:
+	std::string fname_range;   	// file name for plotting in the range [min_i, max_i]
+	std::string fname_design; 	// file name for plotting using the design points (ECLSMRY)
+	int Nint;					// num. of intervals to split the [min_i, max_i] range, should be >= 2
+
+	KW_smryplot_config();
 };
 //------------------------------------------------------------------------------------------
 class KW_view_tNavsmry_config : public KW_params
@@ -728,7 +752,7 @@ protected:
 	std::vector<NonlinearSystemSolver*> nonlin;		// -"- MakeNonlinSolver()
 
 public:
-	std::string algorithm;		// CMAES, LM
+	std::string algorithm;		// CMAES, LM, LMFI
 	std::string fin_diff;		// OH1, OH2, OH4, OH8
 	std::string nonlin_solver;	// FIXEDPOINT; (gsl) NEWTON, GNEWTON, HYBRIDPOWELL; (kinsol) KIN_NEWTON, KIN_NEWTON_LS, KIN_FP, KIN_PICARD; for nonlinear solver the other options are: 'maxit', 'epsG', ['epsX' - for KINSOL]
 	int maxit;					// max iterations (both for LM optimization, and Newton non-linear solver)

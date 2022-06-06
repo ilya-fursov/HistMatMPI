@@ -1313,32 +1313,6 @@ std::vector<int> SimProxyFile::block_starts() const
 	return res;
 }
 //--------------------------------------------------------------------------------------------------
-std::vector<std::vector<double>> SimProxyFile::get_internal_parameters(const KW_parameters *par) const	// reorders 'params' such that their 'par_names' follow KW_parameters order, and converts to the internal representation (output - comm-RANKS-0)
-{
-	// 1. Check that ECLSMRY parameters list is consistent with keyword PARAMETERS
-	size_t par_names_size = par_names.size();
-	MPI_Bcast(&par_names_size, 1, MPI_LONG_LONG, 0, comm);		// par_names_size is sync
-	if (par_names_size != par->name.size())
-		throw Exception(stringFormatArr(MessageRE("Количество параметров в файле ECLSMRY ({0:%zu}) не совпадает с PARAMETERS ({1:%zu})",
-												  "Number of parameters in ECLSMRY file ({0:%zu}) does not match PARAMETERS ({1:%zu})"), std::vector<size_t>{par_names_size, par->name.size()}));
-
-	std::vector<size_t> par_ind = GetSubvecIndSorted(par_names, par->name);
-	HMMPI::Bcast_vector(par_ind, 0, comm);							// par_ind is sync
-	std::vector<std::string> not_found = SubvecNotFound(par->name, par_ind);		// not_found is sync
-	if (not_found.size() > 0)
-		throw Exception((std::string)MessageRE("Следующие параметры из PARAMETERS не найдены в ECLSMRY: ", "The following parameters from PARAMETERS were not found in ECLSMRY: ") + ToString(not_found, "%s"));
-
-	// 2. Convert params to internal representation
-	std::vector<std::vector<double>> int_params(params.size());
-	for (size_t i = 0; i < params.size(); i++)
-	{
-		int_params[i] = Reorder(params[i], par_ind);				// reorder according to PARAMETERS order
-		int_params[i] = par->ExternalToInternal(int_params[i]);		// make internal parameters
-	}
-
-	return int_params;
-}
-//--------------------------------------------------------------------------------------------------
 SimProxyFile::~SimProxyFile()
 {
 	delete Ecl;
@@ -1788,6 +1762,32 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 		}
 		fclose(file);
 	}
+}
+//--------------------------------------------------------------------------------------------------
+std::vector<std::vector<double>> SimProxyFile::get_internal_parameters(const KW_parameters *par) const	// returns reordered 'params' such that their 'par_names' follow KW_parameters order,
+{																										// and making conversion to the internal representation (output - comm-RANKS-0)
+	// 1. Check that ECLSMRY parameters list is consistent with keyword PARAMETERS
+	size_t par_names_size = par_names.size();
+	MPI_Bcast(&par_names_size, 1, MPI_LONG_LONG, 0, comm);		// par_names_size is sync
+	if (par_names_size != par->name.size())
+		throw Exception(stringFormatArr(MessageRE("Количество параметров в файле ECLSMRY ({0:%zu}) не совпадает с PARAMETERS ({1:%zu})",
+												  "Number of parameters in ECLSMRY file ({0:%zu}) does not match PARAMETERS ({1:%zu})"), std::vector<size_t>{par_names_size, par->name.size()}));
+
+	std::vector<size_t> par_ind = GetSubvecIndSorted(par_names, par->name);
+	HMMPI::Bcast_vector(par_ind, 0, comm);						// par_ind is sync
+	std::vector<std::string> not_found = SubvecNotFound(par->name, par_ind);		// not_found is sync
+	if (not_found.size() > 0)
+		throw Exception((std::string)MessageRE("Следующие параметры из PARAMETERS не найдены в ECLSMRY: ", "The following parameters from PARAMETERS were not found in ECLSMRY: ") + ToString(not_found, "%s"));
+
+	// 2. Convert params to internal representation
+	std::vector<std::vector<double>> int_params(params.size());
+	for (size_t i = 0; i < params.size(); i++)
+	{
+		int_params[i] = Reorder(params[i], par_ind);				// reorder according to PARAMETERS order
+		int_params[i] = par->ExternalToInternal(int_params[i]);		// make internal parameters
+	}
+
+	return int_params;
 }
 //--------------------------------------------------------------------------------------------------
 std::string SimProxyFile::models_params_msg() const

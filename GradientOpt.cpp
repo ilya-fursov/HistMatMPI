@@ -770,13 +770,13 @@ std::vector<double> Optimizer::RunOptRestrictCube(PhysModel *pm, const std::vect
 void OptLM::make_checks(int fulldim) const
 {
 	if (pm_work == NULL)
-		throw HMMPI::Exception("pm_work == NULL in OptLM");
+		throw HMMPI::Exception("pm_work == NULL in " + name);
 	if (pm_work->ParamsDim() != fulldim)
-		throw HMMPI::Exception("pm_work->ParamsDim() != fulldim in OptLM");
+		throw HMMPI::Exception("pm_work->ParamsDim() != fulldim in " + name);
 
 	const HMMPI::BoundConstr *con = pm_work->GetConstr();
 	if (con != NULL && (con->fullmin().size() != (size_t)fulldim || con->fullmax().size() != (size_t)fulldim))
-		throw HMMPI::Exception("'pm->con' dimension != fulldim in OptLM");
+		throw HMMPI::Exception("'pm->con' dimension != fulldim in " + name);
 }
 //---------------------------------------------------------------------------
 void OptLM::func(const real_1d_array &x, double &f, void *ptr)
@@ -904,7 +904,7 @@ std::vector<double> OptLM::RunOpt(PhysModel *pm, std::vector<double> x0, const O
 {
 	const OptCtxLM *Ctx = dynamic_cast<const OptCtxLM*>(ctx);
 	if (Ctx == nullptr)
-		throw HMMPI::Exception("Cannot convert OptContext* to OptCtxLM* in OptLM::RunOpt");
+		throw HMMPI::Exception("Cannot convert OptContext* to OptCtxLM* in " + name + "::RunOpt");
 
 	pm_work = pm;
 	x0 = pm_work->tot_par(pm_work->act_par(x0));		// replace inactive params by init values
@@ -915,7 +915,7 @@ std::vector<double> OptLM::RunOpt(PhysModel *pm, std::vector<double> x0, const O
 		return std::vector<double>();					// empty vector is returned on ranks where "pm" is 'not defined'
 
 	if (!pm_work->CheckLimits(x0))
-		throw HMMPI::Exception("Initial point 'x0' violates the bounds in OptLM::RunOpt, x0 =\n" + HMMPI::ToString(x0, "%20.16g", "\n"));
+		throw HMMPI::Exception("Initial point 'x0' violates the bounds in " + name + "::RunOpt, x0 =\n" + HMMPI::ToString(x0, "%20.16g", "\n"));
 
 	tfunc = tgrad = thess = 0;
 	try
@@ -952,7 +952,7 @@ std::vector<double> OptLM::RunOpt(PhysModel *pm, std::vector<double> x0, const O
 		bndu.setcontent(fulldim, max.data());
 		minlmsetbc(state, bndl, bndu);						// set bound-constraints
 
-		minlmoptimize(state, func, grad, hess, NULL, this);				// optimize and get results
+		minlmoptimize(state, func, grad, get_hess(), NULL, this);				// optimize and get results
 		minlmresults(state, x, rep);
 
 		conv_reason = rep.terminationtype;
@@ -989,7 +989,7 @@ std::string OptLM::ReportMsg()
 	char reseng[HMMPI::BUFFSIZE];
 
 	if (pm_work == NULL)
-		throw HMMPI::Exception("Call to OptLM::ReportMsg before OptLM::RunOpt");
+		throw HMMPI::Exception("Call to " + name + "::ReportMsg before " + name + "::RunOpt");
 
 	double of = pm_work->ObjFunc(x_opt);
 	sprintf(res, "Целевая функция = %g\n"
@@ -1027,4 +1027,49 @@ std::string OptLM::ReportMsgMult()
 	return HMMPI::MessageRE(res, reseng);
 }
 //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
+void OptLMFI::hess(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr)
+{
+	// TODO HERE!
 
+	const OptLMFI *this_obj = static_cast<const OptLMFI*>(ptr);
+	int fulldim = x.length();
+	this_obj->make_checks(fulldim);
+	const double *xdata = x.getcontent();
+	std::vector<double> xin = std::vector<double>(xdata, xdata + fulldim);
+
+	high_resolution_clock::time_point time1 = high_resolution_clock::now(), time_of, time_grad, time_hess;
+
+	f = this_obj->pm_work->ObjFunc(xin);
+	time_of = high_resolution_clock::now();
+
+	std::vector<double> gr = this_obj->pm_work->ObjFuncGrad(xin);
+	time_grad = high_resolution_clock::now();
+
+	HMMPI::Mat Hess = this_obj->pm_work->ObjFuncHess(xin);
+	time_hess = high_resolution_clock::now();
+
+	this_obj->tfunc += duration_cast<duration<double>>(time_of-time1).count();			// update the time stats
+	this_obj->tgrad += duration_cast<duration<double>>(time_grad-time_of).count();		// update the time stats
+	this_obj->thess += duration_cast<duration<double>>(time_hess-time_grad).count();	// update the time stats
+
+	MPI_Comm comm = this_obj->pm_work->GetComm();		// MPI-synchronisation
+	if (comm != MPI_COMM_NULL)
+	{
+		MPI_Bcast(&f, 1, MPI_DOUBLE, 0, comm);
+		HMMPI::Bcast_vector(gr, 0, comm);
+		Hess.Bcast(0, comm);
+	}
+
+	assert(gr.size() == (size_t)fulldim);
+	assert(Hess.ICount() == (size_t)fulldim && Hess.JCount() == (size_t)fulldim);
+
+	real_1d_array g_work;
+	g_work.setcontent(fulldim, gr.data());
+	g = g_work;
+
+	real_2d_array h_work;
+	h_work.setcontent(fulldim, fulldim, Hess.Serialize());
+	h = h_work;
+}
+//---------------------------------------------------------------------------

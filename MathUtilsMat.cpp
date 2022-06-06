@@ -1242,7 +1242,9 @@ Mat operator*(double d, Mat m)		// number * Mat
 
 	m.reset_chol_spo_cache();
 	m.reset_dsytrf_cache();
-	size_t SZ = m.icount * m.jcount;
+
+	const size_t SZ = m.icount * m.jcount;
+
 	double* pm = m.data.data();
 	for (size_t i = 0; i < SZ; i++)
 		pm[i] *= d;

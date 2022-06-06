@@ -206,15 +206,25 @@ void KW_item::Finish_pre()
 		throw HMMPI::Exception("Проблемы с обязательными кл. словами", "Problems with prerequisite keywords");
 }
 //------------------------------------------------------------------------------------------
-int KW_item::CheckDefault(std::string s)	// (OK)
+int KW_item::CheckDefault(std::string s) noexcept	// converts string "N*" -> N, "other strings" -> 0
 {
 	if (*--s.end() == '*')
-		return HMMPI::StoL(s.substr(0, s.length()-1));
+	{
+		try
+		{
+			int res = HMMPI::StoL(s.substr(0, s.length()-1));
+			return res;
+		}
+		catch (...)
+		{
+			return 0;
+		}
+	}
 	else
 		return 0;
 }
 //------------------------------------------------------------------------------------------
-std::vector<std::string> KW_item::ReadDefaults(std::vector<std::string> p, int padto, int &def_count)	// (OK)
+std::vector<std::string> KW_item::ReadDefaults(std::vector<std::string> p, int padto, int &def_count) noexcept	// (OK)
 {
 	std::vector<std::string> res;
 
@@ -518,9 +528,9 @@ void KW_params::ProcessParamTable()  noexcept		// (OK)
 			}
 		}
 	}
-	catch (...)
+	catch (const std::exception &e)
 	{
-		SilentError(make_err_msg());
+		SilentError(make_err_msg(e.what()));
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -536,22 +546,22 @@ void KW_params::Action()  noexcept	// (OK)
 	FinalAction();
 }
 //------------------------------------------------------------------------------------------
-std::string KW_params::make_err_msg()		// (OK)
+std::string KW_params::make_err_msg(std::string inner_msg)	// message to print if some parameters are wrong
 {
-	std::string msg = HMMPI::MessageRE("Найдены некорректные значения; ожидается:\n",
-									   "Found incorrect values; expected:\n");
+	std::string msg = HMMPI::MessageRE("Найдены некорректные значения, а именно: " + inner_msg + ". В целом, ожидается следующее:\n",
+									   "Found incorrect values, namely: " + inner_msg + ". In general, the following is expected:\n");
 	for (size_t k = 0; k < par_table.JCount(); k++)
 	{
 		msg += NAMES[k] + " (";
 		switch (TYPE[k])
 		{
-			case 0: msg += "INT"; break;
-			case 1: msg += "DBL"; break;
+			case 0: msg += "int"; break;
+			case 1: msg += "double"; break;
 			case 2: std::string aux = StrExpected(k);
 				if (aux != "")
 					msg += aux;
 				else
-					msg += "STR";
+					msg += "str";
 				break;
 		}
 
@@ -572,7 +582,8 @@ std::string KW_params::CheckExpected(int j)		// (OK)
 	if (std::find(EXPECTED[j].begin(), EXPECTED[j].end(), *(std::string*)DATA[j]) != EXPECTED[j].end())
 		return "";	// no error
 	else
-		return (std::string)HMMPI::MessageRE("Ожидается ", "Expected ") + StrExpected(j);
+		return (std::string)HMMPI::MessageRE("нужно (", "need (") + StrExpected(j) +
+			   (std::string)HMMPI::MessageRE(") для ", ") for ") + NAMES[j];
 }
 //------------------------------------------------------------------------------------------
 std::string KW_params::StrExpected(int j)		// (OK)
@@ -628,7 +639,12 @@ std::string KW_multparams::CheckExpected(int i, int j)	// (OK)
 	if (std::find(EXPECTED[j].begin(), EXPECTED[j].end(), (*(std::vector<std::string>*)DATA[j])[i]) != EXPECTED[j].end())
 		return "";	// no error
 	else
-		return (std::string)HMMPI::MessageRE("Ожидается ", "Expected ") + StrExpected(j);
+	{
+		char msgrus[HMMPI::BUFFSIZE], msgeng[HMMPI::BUFFSIZE];
+		sprintf(msgrus, "нужно (%s) для %s%d", StrExpected(j).c_str(), NAMES[j].c_str(), i);
+		sprintf(msgeng, "need (%s) for %s%d", StrExpected(j).c_str(), NAMES[j].c_str(), i);
+		return (std::string)HMMPI::MessageRE(msgrus, msgeng);
+	}
 }
 //------------------------------------------------------------------------------------------
 void KW_multparams::PrintParams() noexcept
@@ -732,9 +748,9 @@ void KW_multparams::ProcessParamTable()  noexcept		// (OK)
 			}
 		}
 	}
-	catch (...)
+	catch (const std::exception &e)
 	{
-		SilentError(make_err_msg());
+		SilentError(make_err_msg(e.what()));
 	}
 }
 //------------------------------------------------------------------------------------------

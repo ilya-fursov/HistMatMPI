@@ -292,10 +292,13 @@ int PhysModel::ParamsDim_ACT() const noexcept
 	return res;
 }
 //---------------------------------------------------------------------------
-const std::vector<double> &PhysModel::ModelledData() const
+const std::vector<double> &PhysModel::ModelledData() const		// returns "modelled_data" where it is available; produces error where it's not; NB "modelled_data" may not be sync!
 {
-	if (modelled_data.size() == 0 && ModelledDataSize() != 0)
-		throw HMMPI::Exception(HMMPI::stringFormatArr("modelled_data.size() == 0 (expected size is {0:%ld}), it was not properly filled in the current physical model ", std::vector<size_t>{ModelledDataSize()}) + name);
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	if (rank == 0 && modelled_data.size() == 0 && ModelledDataSize() != 0)
+		throw HMMPI::Exception(HMMPI::stringFormatArr("[comm-rank-0 check failed] modelled_data.size() == 0 (expected size is {0:%zu}), it was not properly filled in the current physical model ", std::vector<size_t>{ModelledDataSize()}) + name);
 
 	return modelled_data;
 }
@@ -2605,6 +2608,15 @@ bool PM_Posterior::is_sim() const							// delegates to PM, if PM can do this		T
 		return sim->is_sim();
 	else
 		return false;
+}
+//---------------------------------------------------------------------------
+void PM_Posterior::import_stats(const std::vector<double> &mod_data, const std::vector<double> &dx)		// delegates to PM, if PM can do this
+{
+	Sim_small_interface *sim = dynamic_cast<Sim_small_interface*>(PM);
+	if (sim != nullptr)
+		sim->import_stats(mod_data, dx);
+	else
+		throw HMMPI::Exception("Not appropriate underlying model in PM_Posterior::import_stats()");
 }
 //---------------------------------------------------------------------------
 // PM_PosteriorDiag

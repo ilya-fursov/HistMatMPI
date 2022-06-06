@@ -285,7 +285,6 @@ private:
 													// all input and output parameters are only used on comm-RANKS-0
 	std::vector<int> block_starts() const;	// returns Nblock+1 array of indices in [0, Np) showing where each block starts
 											// the result is sync on all ranks
-	std::vector<std::vector<double>> get_internal_parameters(const KW_parameters *par) const;	// reorders 'params' such that their 'par_names' follow KW_parameters order, and converts to the internal representation (output - comm-RANKS-0)
 protected:
 	MPI_Comm comm;									// should be the same comm as in PM_SimProxy
 	int Rank;
@@ -299,7 +298,6 @@ protected:
 	std::vector<std::vector<SimSMRY::pair>> data_vecs;		// data_vecs[block][v] - sorted list of eclipse vectors for "block", 0 <= v < Nv(block), Nv(block+1) >= Nv(block)
 															// 0 <= block < Nblock
 	std::vector<std::vector<double>> data;			// Np x ... data values, inner vectors can have different length (they store 1st date + all vecs, 2nd date + all vecs, ...)
-
 
 
 public:
@@ -338,6 +336,7 @@ public:
 															// K->KW_parameters is used to transfer external "params" to the internal representation used in the models ordering mentioned above
 															// All input parameters are only used on comm-RANKS-0
 															// This function is to be used for monitoring purposes
+	std::vector<std::vector<double>> get_internal_parameters(const KW_parameters *par) const;	// returns reordered 'params' such that their 'par_names' follow KW_parameters order, and making conversion to the internal representation (output - comm-RANKS-0)
 
 	std::string models_params_msg() const;			// message about number of models and parameters (comm-RANKS-0 only)
 	void set_par_tran(const ParamsTransform *pt) {par_tran = pt;};

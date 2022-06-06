@@ -466,13 +466,20 @@ void KW_rundebug::Run()
 
 	HMMPI::Rand R(123);
 
-	HMMPI::Mat M1 = R.RandU(5, 5);
-	std::cout << "-----new-----\n";
+	HMMPI::Mat M1 = R.RandU(15, 5);
+	std::cout << "-----M1-----\n";
 	std::cout << M1.ToString();
 
-	M1 = R.RandN(5, 5);
-	std::cout << "-----new-----\n";
-	std::cout << M1.ToString();
+	HMMPI::Mat M2 = M1;
+	M1.SetOpSwitch(1);
+	M2.SetOpSwitch(2);
 
+	M1 = 4*std::move(M1);
+	M2 = 4*std::move(M2);
+
+	std::cout << "-----4*M1-----\n";
+	std::cout << M1.ToString();
+	std::cout << "-----4*M2-----\n";
+	std::cout << M2.ToString();
 }
 //------------------------------------------------------------------------------------------

@@ -590,7 +590,7 @@ class Rand;
 class BoundConstr : public Constraints
 {
 protected:
-	std::vector<double> min;									// min & max - INTERNAL representation
+	std::vector<double> min;								// min & max - INTERNAL representation
 	std::vector<double> max;
 
 	virtual std::string par_name(int i) const;				// name for parameter "i" - used in reporting

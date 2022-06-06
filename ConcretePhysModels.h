@@ -131,6 +131,7 @@ public:
 	virtual void set_ignore_small_errors(bool flag){ignore_small_errors = flag;};
 	virtual const HMMPI::SimSMRY *get_smry() const;
 	virtual bool is_sim() const {return true;};
+	virtual void import_stats(const std::vector<double> &mod_data, const std::vector<double> &dx){};	// dummy
 };
 //---------------------------------------------------------------------------
 // Reservoir Simulation model with a more clear code and interface
@@ -156,6 +157,7 @@ protected:
 	std::string CWD;
 
 	const std::string log_file;		// ObjFuncLog.txt is only written by RNK-0
+	const std::string break_file;	// ObjFunc_breakdown.txt is only written by RNK-0, during RUNPOTPROXY run
 	mutable size_t modelled_data_size = 0;
 	std::string obj_func_msg;		// filled in ObjFunc()
 	mutable bool cov_is_diag;		// true, if covariance matrix is fully diagonal; filled by CorrBlocks() or ObjFunc()
@@ -165,11 +167,16 @@ protected:
 	bool ignore_small_errors;		// if 'true', exceptions != EObjFunc are intercepted in ObjFunc, and the main loop (simulation etc) is restarted; EObjFunc always leads to immediate termination
 									// also, if 'true', no log file (ObjFuncLog.txt) is written
 	HMMPI::SimSMRY *smry;			// model SMRY filled by the last call of ObjFunc()
+	std::vector<double> proxy_mod_data;		// proxy modelled data, for reporting only; should be set before ObjFunc() call
+	std::vector<double> dx_inner;			// dx step in RUNOPTPROXY, for reporting only; should be set before ObjFunc() call
 
 	void write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry_mod, const HMMPI::Vector2<double> &smry_hist, const std::vector<double> &of_vec, bool text_sigma, bool only_hist = false);	// output summary data to ASCII file
 									// if "only_hist" == true, then "smry_mod", "of_vec" are not written (and can be empty)
+	void write_breakdown(std::ofstream &sw, const std::vector<double> &of_vec, const std::vector<double> &of_vec_proxy);	// output to ASCII file: o.f. breakdown (simulator & proxy), dx_inner
+
 	std::string form_prior(double &pr_of) const;		// if prior info is available, returns a message (and fills its value 'pr_of'); returns "" otherwise
 	void perturb_well();
+
 public:
 
 	PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c);		// all data are taken from keywords of "k"; "kw" is used only to handle prerequisites
@@ -186,10 +193,12 @@ public:
 	virtual std::vector<HMMPI::Mat> CorrBlocks() const;			// N x N blocks, or N x 1 diagonals; updates "cov_is_diag"
 	virtual std::vector<double> Std() const;		// these sigmas (std's) are fully taken from TEXTSMRY, not from ECLVECTORS!
 	virtual std::vector<double> Data() const;		// data are taken only where sigma != 0, i.e. same vector length as ModelledData
-
+	HMMPI::Vector2<double> mod_data_to_smry(const std::vector<double> &data) const;		// convert the contiguous modelled data (vec0<all dates>, vec1<all dates>,...) to the 2D SMRY-like array
+																						// following the TEXTSMRY layout
 	virtual void set_ignore_small_errors(bool flag){ignore_small_errors = flag;};
 	virtual const HMMPI::SimSMRY *get_smry() const {return smry;};
 	virtual bool is_sim() const {return true;};
+	virtual void import_stats(const std::vector<double> &mod_data, const std::vector<double> &dx){proxy_mod_data = mod_data; dx_inner = dx;};	// import this stuff before ObjFunc() call!
 };
 //---------------------------------------------------------------------------
 // pConnect model:

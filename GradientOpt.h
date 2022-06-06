@@ -203,6 +203,7 @@ public:
 class OptLM : public Optimizer
 {
 protected:
+	std::string name;			// class name, for reporting
 	PhysModel *pm_work;			// used by callback functions, and ReportMsg()
 	std::vector<double> x_opt;	// found optimum point
 
@@ -210,6 +211,10 @@ protected:
 	static void func(const alglib::real_1d_array &x, double &f, void *ptr);					// callback functions, pass ptr = &OptLM_object
 	static void grad(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, void *ptr);
 	static void hess(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr);
+
+																							// virtual function allowing the derived classes to behave differently
+	virtual void (*get_hess() const)(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr){return hess;};
+
 	virtual void reset_mult_stats();	// resets "sum_..."
 	virtual void gather_mult_stats();	// fills "sum_..."
 public:						// some quantities reported after optimization
@@ -234,9 +239,9 @@ public:						// some quantities reported after optimization
 	double sum_tgrad;
 	double sum_thess;
 
-	OptLM() : pm_work(NULL), conv_reason(0), iter_count(0), nfunc(0), ngrad(0), nhess(0), nchol(0),
-						 sum_iter_count(0), sum_nfunc(0), sum_ngrad(0), sum_nhess(0), sum_nchol(0),
-						 tfunc(0), tgrad(0), thess(0), sum_tfunc(0), sum_tgrad(0), sum_thess(0){};
+	OptLM() : name("OptLM"), pm_work(NULL), conv_reason(0), iter_count(0), nfunc(0), ngrad(0), nhess(0), nchol(0),
+						 	 sum_iter_count(0), sum_nfunc(0), sum_ngrad(0), sum_nhess(0), sum_nchol(0),
+						 	 tfunc(0), tgrad(0), thess(0), sum_tfunc(0), sum_tgrad(0), sum_thess(0){};
 	virtual std::vector<double> RunOpt(PhysModel *pm, std::vector<double> x0, const OptContext *ctx);		// runs Levenberg-Marquardt optimization for "pm" starting from "x0" (full-dim),
 																		// A/N parameters are taken according to "pm"; bounds are taken from "pm" (may be NULL)
 																		// returns the solution vector (full-dim), and fills the 'int' quantities above (conv_reason ... nchol)
@@ -258,7 +263,18 @@ public:						// some quantities reported after optimization
 //*  8    terminated by user who called minlmrequesttermination().
 //        X contains point which was "current accepted" when termination request was submitted.
 //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
+// class OptLMFI - same as OptLM, except that it uses 2*FI (Gauss-Newton) instead of Hessian
+//---------------------------------------------------------------------------
+class OptLMFI : public OptLM
+{
+protected:
+	static void hess(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr);
 
-
+	virtual void (*get_hess() const)(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr){return hess;};
+public:
+	OptLMFI() : OptLM() {name = "OptLMFI";};
+};
+//---------------------------------------------------------------------------
 
 #endif /* GRADIENTOPT_H_ */

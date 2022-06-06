@@ -170,6 +170,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_MCMC_config);
 		kw1.AddKW_item(new KW_pConnect_config);
 		kw1.AddKW_item(new KW_viewsmry_config);
+		kw1.AddKW_item(new KW_smryplot_config);
 		kw1.AddKW_item(new KW_view_tNavsmry_config);
 		kw1.AddKW_item(new KW_view_tNavsmry_properties);
 		kw1.AddKW_item(new KW_corrstruct);
@@ -194,6 +195,7 @@ int main(int argc, char *argv[])
 		kw1.AddKW_item(new KW_runOptProxy);
 		kw1.AddKW_item(new KW_runPopModel);
 		kw1.AddKW_item(new KW_runViewSmry);
+		kw1.AddKW_item(new KW_runSmryPlot);
 		kw1.AddKW_item(new KW_runView_tNavSmry);
 
 		// Adding console text tweaks

@@ -405,7 +405,7 @@ void KW_runOptProxy::Run()
 	const std::string modtype_cache = model->type;
 	model->type = "PROXY";
 
-	const std::string params_log_file = HMMPI::getFullPath(this->CWD, "ParamsLog.txt");	// resulting solution vector is saved here
+	const std::string params_log_file = HMMPI::getFullPath(this->CWD, "ParamsLog.txt");			// resulting solution vector is saved here
 	const std::string progress_file = HMMPI::getFullPath(this->CWD, "ObjFunc_progress.txt");
 
 	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
@@ -516,6 +516,9 @@ void KW_runOptProxy::Run()
 		K->AppText(optmsg);
 
 		// recalculate simulation
+		PMproxy->ObjFunc(p);									// first, calculate the proxy o.f. (with breakdown) for reporting
+		PMecl->import_stats(PMproxy->ModelledData(), (HMMPI::Mat(p) - HMMPI::Mat(LM_start)).ToVector());	// import the proxy modelled data and the step taken
+
 		double of = PMecl->ObjFunc(p);
 		MPI_Bcast(&of, 1, MPI_DOUBLE, 0, PMecl->GetComm());		// sync SIM o.f.
 		if (of < of_simbest)
@@ -639,6 +642,129 @@ void KW_runViewSmry::Run()
 	Finish_pre();
 
 	smry->get_Data().ViewSmry(view->out_file, datesW->dates, vect->vecs, view->order == "DIRECT", K);
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+KW_runSmryPlot::KW_runSmryPlot()
+{
+	name = "RUNSMRYPLOT";
+}
+//------------------------------------------------------------------------------------------
+void KW_runSmryPlot::Run()
+{
+	Start_pre();
+	IMPORTKWD(cfg, KW_smryplot_config, "SMRYPLOT_CONFIG");
+	IMPORTKWD(params, KW_parameters, "PARAMETERS");
+	IMPORTKWD(model, KW_model, "MODEL");
+	IMPORTKWD(smry, KW_eclsmry, "ECLSMRY");
+	Add_pre("DATES");
+	Add_pre("ECLVECTORS");
+	Add_pre("TEXTSMRY");
+	Add_pre("PRIOR");
+	Finish_pre();
+
+	std::vector<double> min = params->ExternalToInternal(params->min);
+	std::vector<double> max = params->ExternalToInternal(params->max);
+
+	PhysModel *PMproxy = model->MakeModel(this, this->CWD, true, "PROXY");				// make the posterior (will be deleted automatically)
+	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + "POSTERIOR(PROXY)\n");
+	K->AppText(PMproxy->proc_msg());
+
+
+	// I. Plot over a 1D range
+	FILE *F0 = NULL;
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+		F0 = fopen(cfg->fname_range.c_str(), "w");
+		if (F0 == NULL)
+			throw HMMPI::Exception("Невозможно открыть файл для записи " + cfg->fname_range, "Cannot open file for writing " + cfg->fname_range);
+	RANK0_SYNCERR_END(MPI_COMM_WORLD);
+
+	try
+	{
+		if (K->MPI_rank == 0)
+			fprintf(F0, "%-12s\t%d\n\n", "Nt", cfg->Nint + 1);
+		for (size_t i = 0; i < params->name.size(); i++)
+		{
+			if (K->MPI_rank == 0)
+				fprintf(F0, "%-12s\t%s\n", params->name[i].c_str(), "PROXY");
+
+			const double dx = (max[i] - min[i])/cfg->Nint;		// internal
+			for (int j = 0; j <= cfg->Nint; j++)
+			{
+				std::vector<double> X = params->init;			// internal
+				X[i] = min[i] + dx*j;							// adjust the i-th coordinate
+				double f = PMproxy->ObjFunc(X);
+				double x = params->InternalToExternal(X)[i];	// external, i-th coordinate
+				if (K->MPI_rank == 0)
+					fprintf(F0, "%-12.7g\t%.7g\n", x, f);
+			}
+			if (K->MPI_rank == 0)
+				fprintf(F0, "\n");
+		}
+	}
+	catch (...)
+	{
+		if (F0 != NULL)
+			fclose(F0);
+		throw;
+	}
+	if (F0 != NULL)
+		fclose(F0);
+
+
+	// II. Plot over design points
+	const double model_nug_cache = model->nugget;
+	model->nugget = 0;														// zero nugget to get the exact proxy behavior
+	PMproxy = model->MakeModel(this, this->CWD, true, "PROXY");				// make the posterior (will be deleted automatically)
+	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + "POSTERIOR(PROXY, nugget=0)\n");
+	K->AppText(PMproxy->proc_msg());
+
+	F0 = NULL;
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+		F0 = fopen(cfg->fname_design.c_str(), "w");
+		if (F0 == NULL)
+			throw HMMPI::Exception("Невозможно открыть файл для записи " + cfg->fname_design, "Cannot open file for writing " + cfg->fname_design);
+	RANK0_SYNCERR_END(MPI_COMM_WORLD);
+
+	try
+	{
+		const HMMPI::SimProxyFile &data = smry->get_Data();
+		std::vector<std::vector<double>> points = data.get_internal_parameters(params);		// internal
+		HMMPI::Bcast_vector(points, 0, MPI_COMM_WORLD);
+
+		const HMMPI::Mat init(params->init);			// internal
+		std::vector<double> f(points.size());			// aux storage arrays
+		std::vector<double> dist(points.size());
+		for (size_t j = 0; j < points.size(); j++)		// loop over all design points
+		{
+			f[j] = PMproxy->ObjFunc(points[j]);
+			dist[j] = (HMMPI::Mat(points[j]) - init).Norm2();		// distance in internal coords
+		}
+
+		if (K->MPI_rank == 0)
+			fprintf(F0, "%-12s\t%-12s\t%zu\n\n", "Design", "points", points.size());
+		for (size_t i = 0; i < params->name.size(); i++)
+		{
+			if (K->MPI_rank == 0)
+				fprintf(F0, "%-12s\t%-12s\t%s\n", params->name[i].c_str(), "PROXY(n=0)", "|Xi-X0|");
+
+			for (size_t j = 0; j < points.size(); j++)				// loop over all design points
+				if (K->MPI_rank == 0)
+					fprintf(F0, "%-12.7g\t%-12.7g\t%.7g\n", params->InternalToExternal(points[j])[i], f[j], dist[j]);		// X: external, i-th coordinate
+			if (K->MPI_rank == 0)
+				fprintf(F0, "\n");
+		}
+	}
+	catch (...)
+	{
+		if (F0 != NULL)
+			fclose(F0);
+		throw;
+	}
+	if (F0 != NULL)
+		fclose(F0);
+
+	model->nugget = model_nug_cache;								// restore the nugget
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
