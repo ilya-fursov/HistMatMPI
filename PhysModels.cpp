@@ -18,30 +18,62 @@
 //#define TESTCOMM
 
 //---------------------------------------------------------------------------
-// PhysModel
+// BDC_creator
 //---------------------------------------------------------------------------
-PhysModel::PhysModel(MPI_Comm c) : comm(c), con(nullptr), name("PhysModel")
+BDC_creator::BDC_creator(MPI_Comm c, const HMMPI::BlockDiagMat *bdc) : comm(c), RNK(-1), BDC(bdc)
 {
 	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
+}
+//---------------------------------------------------------------------------
+const HMMPI::BlockDiagMat *BDC_creator::GetBDC(const HMMPI::BlockDiagMat **bdc) const	// Philosophy:
+{							// The pointer filled in 'bdc' should be used in production, it provides the BDC mathematically assumed by the current model.
+							// The pointer returned is for the memory management, it should be safely freed (from the outside) when the BDC is no longer needed.
 
+	if (BDC != nullptr)		// Composite models are supposed to get a BDC at construction, and then transfer it when this function is called.
+	{
+		*bdc = BDC;
+		return nullptr;		// nothing new was created to delete
+	}
+	else					// Simple models are supposed to create (and return) a new BDC object.
+	{
+		const HMMPI::CovAndDataCreator *cov_creator = dynamic_cast<const HMMPI::CovAndDataCreator*>(this);
+		const HMMPI::CorrelCreator *Corr = dynamic_cast<const HMMPI::CorrelCreator*>(cov_creator);
+		const HMMPI::StdCreator *Std = dynamic_cast<const HMMPI::StdCreator*>(cov_creator);
+
+		const HMMPI::BlockDiagMat *resBDC;
+		if (cov_creator != nullptr && Corr != nullptr && Std != nullptr)
+			resBDC = new HMMPI::BlockDiagMat(comm, Corr, Std);		// NOTE that the current model gives its 'comm' to the BDC
+		else
+			resBDC = nullptr;		// the current model cannot create BDC
+
+		*bdc = resBDC;
+		return resBDC;				// a new object (or nullptr) was created, it should be _DELETED_ outside
+	}
+}
+//---------------------------------------------------------------------------
+// PhysModel
+//---------------------------------------------------------------------------
+PhysModel::PhysModel(MPI_Comm c, const HMMPI::BlockDiagMat *bdc) : BDC_creator(c, bdc), con(nullptr),
+																   of_cache_valid(false), grad_cache_valid(false), hess_cache_valid(false), of_cache(0.0), name("PhysModel")
+
+{
 #ifdef TESTCOMM
 	std::cout << "rank " << RNK << "\tPhysModel::PhysModel\n";
 #endif
 }
 //---------------------------------------------------------------------------
 PhysModel::PhysModel(std::vector<double> in, std::vector<size_t> act, std::vector<size_t> tot, const HMMPI::BoundConstr *c) :
-		comm(MPI_COMM_SELF), init(std::move(in)), act_ind(std::move(act)), tot_ind(std::move(tot)), con(c), name("PhysModel")
+		init(std::move(in)), act_ind(std::move(act)), tot_ind(std::move(tot)), con(c),
+		of_cache_valid(false), grad_cache_valid(false), hess_cache_valid(false), of_cache(0.0), name("PhysModel")
 {
-	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
-
 #ifdef TESTCOMM
 	std::cout << "rank " << RNK << "\tPhysModel::PhysModel\n";
 #endif
 }
 //---------------------------------------------------------------------------
-PhysModel::PhysModel(Parser_1 *K, KW_item *kw, MPI_Comm c) : comm(c), name("PhysModel")
+PhysModel::PhysModel(Parser_1 *K, KW_item *kw, MPI_Comm c) : BDC_creator(c),
+															 of_cache_valid(false), grad_cache_valid(false), hess_cache_valid(false), of_cache(0.0), name("PhysModel")
 {
-	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
 	DECLKWD(params, KW_parameters, "PARAMETERS");
 	const ParamsInterface *par_interface = params->GetParamsInterface();
 
@@ -100,15 +132,80 @@ HMMPI::Mat PhysModel::act_mat(const HMMPI::Mat &tot_M) const
 	return tot_M.Reorder(act_ind, act_ind);
 }
 //---------------------------------------------------------------------------
-std::vector<double> PhysModel::ObjFuncGrad(const std::vector<double> &params)
+double PhysModel::obj_func_work(const std::vector<double> &params)
+{
+	throw HMMPI::Exception(HMMPI::stringFormatArr("Запрещенный вызов ObjFunc ({0:%s})", "Illegal call to ObjFunc ({0:%s})", name));
+}
+//---------------------------------------------------------------------------
+std::vector<double> PhysModel::obj_func_grad_work(const std::vector<double> &params)
 {
 	throw HMMPI::Exception(HMMPI::stringFormatArr("Запрещенный вызов ObjFuncGrad ({0:%s})", "Illegal call to ObjFuncGrad ({0:%s})", name));
 }
 //---------------------------------------------------------------------------
+HMMPI::Mat PhysModel::obj_func_hess_work(const std::vector<double> &params)
+{
+	throw HMMPI::Exception(HMMPI::stringFormatArr("Запрещенный вызов ObjFuncHess ({0:%s})", "Illegal call to ObjFuncHess ({0:%s})", name));
+}
+//---------------------------------------------------------------------------
+double PhysModel::ObjFunc(const std::vector<double> &params)
+{
+	if (params != last_x_of)
+		of_cache_valid = false;
+	if (!of_cache_valid)
+	{
+		of_cache = obj_func_work(params);				// also fills 'modelled_data'
+		last_x_of = params;
+		of_cache_valid = true;
+
+		HMMPI::MsgToFileApp("..... o.f. | recalculating ..... (" + name + ")\n");
+	}
+	else
+		HMMPI::MsgToFileApp("***** o.f. | USING_CACHE! ****** (" + name + ")\n");
+
+	return of_cache;
+}
+//---------------------------------------------------------------------------
+std::vector<double> PhysModel::ObjFuncGrad(const std::vector<double> &params)
+{
+	if (params != last_x_grad)
+		grad_cache_valid = false;
+	if (!grad_cache_valid)
+	{
+		grad_cache = obj_func_grad_work(params);		// also fills 'data_sens', 'data_sens_loc'
+		last_x_grad = params;
+		grad_cache_valid = true;
+
+		HMMPI::MsgToFileApp("..... grad | recalculating ..... (" + name + ")\n");
+	}
+	else
+		HMMPI::MsgToFileApp("***** grad | USING_CACHE! ****** (" + name + ")\n");
+
+	return grad_cache;
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PhysModel::ObjFuncHess(const std::vector<double> &params)
+{
+	if (params != last_x_hess)
+		hess_cache_valid = false;
+	if (!hess_cache_valid)
+	{
+		hess_cache = obj_func_hess_work(params);
+		last_x_hess = params;
+		hess_cache_valid = true;
+
+		HMMPI::MsgToFileApp("..... HESS | recalculating ..... (" + name + ")\n");
+	}
+	else
+		HMMPI::MsgToFileApp("***** HESS | USING_CACHE! ****** (" + name + ")\n");
+
+	return hess_cache;
+}
+//---------------------------------------------------------------------------
 double PhysModel::ObjFuncGradDir(const std::vector<double> &params, const std::vector<double> &dir)
 {
-	int rank;
-	MPI_Comm_rank(comm, &rank);
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
 
 	std::vector<double> grad = ObjFuncGrad(params);
 	if (rank == 0)
@@ -117,14 +214,27 @@ double PhysModel::ObjFuncGradDir(const std::vector<double> &params, const std::v
 		return 0;
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PhysModel::ObjFuncHess(const std::vector<double> &params)
-{
-	throw HMMPI::Exception(HMMPI::stringFormatArr("Запрещенный вызов ObjFuncHess ({0:%s})", "Illegal call to ObjFuncHess ({0:%s})", name));
-}
-//---------------------------------------------------------------------------
 HMMPI::Mat PhysModel::ObjFuncFisher(const std::vector<double> &params)
 {
-	throw HMMPI::Exception(HMMPI::stringFormatArr("Запрещенный вызов ObjFuncFisher ({0:%s})", "Illegal call to ObjFuncFisher ({0:%s})", name));
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	ObjFuncGrad(params);									// calculate data_sens_loc
+
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+	if (BDC == nullptr || data_sens_loc.Length() == 0)
+		throw HMMPI::Exception("ObjFuncFisher cannot be calculated in '" + name + "': BDC == NULL || data_sens_loc == EMPTY on rank-0");
+	RANK0_SYNCERR_END(MPI_COMM_WORLD);
+
+	HMMPI::Mat CinvSens = *BDC / data_sens_loc;
+	HMMPI::Mat FI_local = data_sens_loc.Tr() * CinvSens;	// fulldim x fulldim matrix on each rank
+
+	HMMPI::Mat res;
+	if (rank == 0)
+		res = HMMPI::Mat(params.size(), params.size(), 0);
+	MPI_Reduce(FI_local.ToVector().data(), res.ToVectorMutable().data(), params.size()*params.size(), MPI_DOUBLE, MPI_SUM, 0, comm);	// element-wise summation of matrices
+
+	return res;
 }
 //---------------------------------------------------------------------------
 HMMPI::Mat PhysModel::ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r)
@@ -132,27 +242,40 @@ HMMPI::Mat PhysModel::ObjFuncFisher_dxi(const std::vector<double> &params, const
 	throw HMMPI::Exception(HMMPI::stringFormatArr("Запрещенный вызов ObjFuncFisher_dxi ({0:%s})", "Illegal call to ObjFuncFisher_dxi ({0:%s})", name));
 }
 //---------------------------------------------------------------------------
+HMMPI::Mat PhysModel::ObjFuncFisher_mix(const std::vector<double> &params)		// mix between FI and Hess for composite models, essentially PM_Spherical;
+{																				// replaces some expensive Hess parts by cheaper 2*FI parts; to be used instead of Hess in LM optimization
+	return 2*ObjFuncFisher(params);												// by default falls back to 2*FI
+}
+//---------------------------------------------------------------------------
 double PhysModel::ObjFunc_ACT(const std::vector<double> &params)
 {
 	return ObjFunc(tot_par(params));
 }
 //---------------------------------------------------------------------------
-std::vector<double> PhysModel::ObjFuncGrad_ACT(const std::vector<double> &params)
+std::vector<double> PhysModel::ObjFuncGrad_ACT(const std::vector<double> &params)	// fills data_sens_act, data_sens_loc_act
 {
-	int rank;
-	MPI_Comm_rank(comm, &rank);
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
 
-	std::vector<double> grad = ObjFuncGrad(tot_par(params));		// long gradient
+	std::vector<double> grad = ObjFuncGrad(tot_par(params));		// fulldim gradient (fills data_sens, data_sens_loc)
+	if (data_sens_loc.Length() > 0)
+		data_sens_loc_act = data_sens_loc.Reorder(act_ind, 1);		// distributed
 	if (rank == 0)
+	{
+		if (data_sens.Length() > 0)
+			data_sens_act = data_sens.Reorder(act_ind, 1);
 		return HMMPI::Reorder(grad, act_ind);
+	}
 	else
 		return std::vector<double>();
 }
 //---------------------------------------------------------------------------
 double PhysModel::ObjFuncGradDir_ACT(const std::vector<double> &params, const std::vector<double> &dir)
 {
-	int rank;
-	MPI_Comm_rank(comm, &rank);
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
 
 	std::vector<double> grad = ObjFuncGrad_ACT(params);
 	if (rank == 0)
@@ -163,8 +286,9 @@ double PhysModel::ObjFuncGradDir_ACT(const std::vector<double> &params, const st
 //---------------------------------------------------------------------------
 HMMPI::Mat PhysModel::ObjFuncHess_ACT(const std::vector<double> &params)
 {
-	int rank;
-	MPI_Comm_rank(comm, &rank);
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
 
 	HMMPI::Mat Hess = ObjFuncHess(tot_par(params));		// big matrix
 	if (rank == 0)
@@ -175,8 +299,9 @@ HMMPI::Mat PhysModel::ObjFuncHess_ACT(const std::vector<double> &params)
 //---------------------------------------------------------------------------
 HMMPI::Mat PhysModel::ObjFuncFisher_ACT(const std::vector<double> &params)
 {
-	int rank;
-	MPI_Comm_rank(comm, &rank);
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
 
 	HMMPI::Mat FI = ObjFuncFisher(tot_par(params));		// big matrix
 	if (rank == 0)
@@ -190,12 +315,26 @@ HMMPI::Mat PhysModel::ObjFuncFisher_dxi_ACT(const std::vector<double> &params, c
 	if (i < 0 || i >= (int)act_ind.size())
 		throw HMMPI::Exception("Index 'i' out of range [0, actdim) in PhysModel::ObjFuncFisher_dxi_ACT");
 
-	int rank;
-	MPI_Comm_rank(comm, &rank);
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
 
 	HMMPI::Mat dFI = ObjFuncFisher_dxi(tot_par(params), act_ind[i], r);		// big matrix
 	if (rank == r)
 		return dFI.Reorder(act_ind, act_ind);
+	else
+		return HMMPI::Mat();
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PhysModel::ObjFuncFisher_mix_ACT(const std::vector<double> &params)
+{
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
+
+	HMMPI::Mat FImix = ObjFuncFisher_mix(tot_par(params));		// big matrix
+	if (rank == 0)
+		return FImix.Reorder(act_ind, act_ind);
 	else
 		return HMMPI::Mat();
 }
@@ -294,8 +433,9 @@ int PhysModel::ParamsDim_ACT() const noexcept
 //---------------------------------------------------------------------------
 const std::vector<double> &PhysModel::ModelledData() const		// returns "modelled_data" where it is available; produces error where it's not; NB "modelled_data" may not be sync!
 {
-	int rank;
-	MPI_Comm_rank(comm, &rank);
+	int rank = -1;
+	if (comm != MPI_COMM_NULL)
+		MPI_Comm_rank(comm, &rank);
 
 	if (rank == 0 && modelled_data.size() == 0 && ModelledDataSize() != 0)
 		throw HMMPI::Exception(HMMPI::stringFormatArr("[comm-rank-0 check failed] modelled_data.size() == 0 (expected size is {0:%zu}), it was not properly filled in the current physical model ", std::vector<size_t>{ModelledDataSize()}) + name);
@@ -316,6 +456,23 @@ void PhysModel::ExportIAC(PhysModel *p) const
 	p->con = con;
 }
 //---------------------------------------------------------------------------
+//#define PHYS_MODEL_PRINT_COMMS
+//---------------------------------------------------------------------------
+void PhysModel::print_comms() const			// print comm and BDC->comm, for debug pusposes
+{
+#ifdef PHYS_MODEL_PRINT_COMMS
+	MPI_Comm bdc_comm = MPI_COMM_NULL;
+	if (BDC != nullptr)
+		bdc_comm = BDC->GetComm();
+
+	std::string msg_ranks = HMMPI::MPI_Ranks(std::vector<MPI_Comm>{comm, bdc_comm});
+	int RNK;
+	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
+	if (RNK == 0)
+		std::cout << "--======= Communicators for '" << name << "' =======--\nWORLD\tMODEL\tBDC\n" << msg_ranks << "\n";
+#endif
+}
+//---------------------------------------------------------------------------
 // ModelFactory
 //---------------------------------------------------------------------------
 void ModelFactory::FillCreators(Parser_1 *K, KW_item *kw, HMMPI::CorrelCreator **cor, HMMPI::StdCreator **std, HMMPI::DataCreator **data)
@@ -333,17 +490,19 @@ void ModelFactory::FillCreators(Parser_1 *K, KW_item *kw, HMMPI::CorrelCreator *
 	*data = matvecvec;
 }
 //---------------------------------------------------------------------------
-void ModelFactory::MakeComms(MPI_Comm in, MPI_Comm *one, MPI_Comm *two, bool ref_is_dataproxy)
+void ModelFactory::MakeComms(MPI_Comm in, MPI_Comm *one, MPI_Comm *two, bool ref_is_dataproxy, bool ref_is_simproxy)
 {
 	int size = 0;
 	if (in != MPI_COMM_NULL)
 		MPI_Comm_size(in, &size);	// total number of processes in "in"
 
 	int nwork;
-	if (!ref_is_dataproxy)
-		nwork = size;
+	if (ref_is_dataproxy)
+		nwork = sqrt(size);			// NUMGRAD + DATAPROXY[2]
+	else if (ref_is_simproxy)
+		nwork = 1;					// NUMGRAD + SIMPROXY
 	else
-		nwork = sqrt(size);			// NUMGRAD + DATAPROXY
+		nwork = size;
 
 	PhysModMPI::HMMPI_Comm_split(nwork, in, one, two);
 }
@@ -357,6 +516,12 @@ bool ModelFactory::object_for_deletion(const HMMPI::ManagedObject *m)
 //---------------------------------------------------------------------------
 PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, std::string cwd, int num, MPI_Comm c, std::vector<HMMPI::ManagedObject*> *mngd, bool train)
 {
+	// TODO memory/pointers management is not very clear (incl. BDC part)
+	// TODO comm stuff is not nice,
+	// e.g.
+	// SIMPROXY -> BDC -> NUMGRAD with BDC		which is not good
+	// WORLD       WORLD  0xxxx        WORLD
+
 	PhysModel *Res = 0;
 	DECLKWD(physmodel, KW_physmodel, "PHYSMODEL");
 	DECLKWD(proxy, KW_proxy, "PROXY_CONFIG");
@@ -394,14 +559,16 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 
 	MPI_Comm this_comm = c, next_comm = MPI_COMM_SELF;
 	if (!physmodel->is_plain[num-1] && (physmodel->type[Ref-1] == "ECLIPSE" || physmodel->type[Ref-1] == "SIMECL" || physmodel->type[Ref-1] == "PCONNECT" ||
-										physmodel->type[Ref-1] == "CONC" || physmodel->type[Ref-1] == "SIMPROXY"))		// reference type which refers to ECLIPSE || SIMECL || PCONNECT || CONC || SIMPROXY
+										physmodel->type[Ref-1] == "CONC"))		// composite model which refers to ECLIPSE || SIMECL || PCONNECT || CONC
 	{
-		MPI_Comm_dup(MPI_COMM_SELF, &next_comm);		// duplicate of MPI_COMM_SELF which will not be changed to MPI_COMM_WORLD when ECLIPSE/SIMECL/PCONNECT/CONC/SIMPROXY model is made
+		MPI_Comm_dup(MPI_COMM_SELF, &next_comm);		// duplicate of MPI_COMM_SELF which will not be changed to MPI_COMM_WORLD when ECLIPSE/SIMECL/PCONNECT/CONC model is made
 		mngd_ptr->push_back(new HMMPI::ManagedComm(next_comm));
 	}
 	if (Type == "NUMGRAD")
 	{
-		MakeComms(c, &this_comm, &next_comm, bool(physmodel->type[Ref-1] == "DATAPROXY" || physmodel->type[Ref-1] == "DATAPROXY2"));
+		bool is_dataproxy = physmodel->type[Ref-1] == "DATAPROXY" || physmodel->type[Ref-1] == "DATAPROXY2";
+		bool is_simproxy = physmodel->type[Ref-1] == "SIMPROXY";
+		MakeComms(c, &this_comm, &next_comm, is_dataproxy, is_simproxy);
 		mngd_ptr->push_back(new HMMPI::ManagedComm(this_comm));
 		mngd_ptr->push_back(new HMMPI::ManagedComm(next_comm));
 	}
@@ -424,7 +591,7 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		if (Ref != 0)
 			std::cout << "----------------- ModelFactory::Make communicators: -----------------\nWORLD\t" << Type << "\t" << physmodel->type[Ref-1] << "\n" << msg_ranks << "\n";
 		else
-			std::cout << "----------------- ModelFactory::Make communicators: -----------------\nWORLD\t" << Type << "\n" << msg_ranks << "\n";
+			std::cout << "----------------- ModelFactory::Make communicators: -----------------\nWORLD\t" << Type << "\t'next_comm'\n" << msg_ranks << "\n";
 	}
 	// DEBUG
 
@@ -439,6 +606,28 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		{
 //			std::cout << "DEBUG -------------------- not for deletion: " << dynamic_cast<PhysModel*>(ref)->name << "\n";	// DEBUG
 		}
+	}
+
+	// create BDC if needed
+	const HMMPI::BlockDiagMat *BDC = nullptr;
+	if (Type == "NUMGRAD" || Type == "SPHERICAL" || Type == "CUBEBOUND" || Type == "DATAPROXY" || Type == "DATAPROXY2")
+	{
+		const HMMPI::BlockDiagMat *mem_keep;
+		mem_keep = ref->GetBDC(&BDC);
+
+		if (BDC == nullptr)							// could not generate BDC from the reference model
+		{
+			HMMPI::CorrelCreator *Corr;
+			HMMPI::StdCreator *Std;
+			HMMPI::DataCreator *Data;
+			FillCreators(K, kw, &Corr, &Std, &Data);
+
+			BDC = new HMMPI::BlockDiagMat(this_comm, Corr, Std);		// NOTE, 'this_comm' is used, not the ref->comm
+			mem_keep = BDC;
+		}
+
+		mngd_ptr->push_back(const_cast<HMMPI::BlockDiagMat*>(mem_keep));		// TODO dodgy const removal!
+		BDC->PrintToFile(Type);						// output to files for debug
 	}
 
 	// create the main model based on type
@@ -468,7 +657,7 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		Res = new PM_Func_pow(K, kw, this_comm, 0);
 
 	if (Type == "NUMGRAD")
-		Res = new PhysModGradNum(this_comm, ref, K, kw);
+		Res = new PhysModGradNum(this_comm, ref, K, kw, BDC);
 	if (Type == "POSTERIOR")
 	{
 		DECLKWD(matvec, KW_matvec, "MATVEC");
@@ -509,9 +698,9 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 			dynamic_cast<PM_LagrangianSpher*>(Res)->Hk = config->r0;
 		}
 		else if (Type == "SPHERICAL")
-			Res = new PM_Spherical(ref, config->r0, points->x, config->delta);
+			Res = new PM_Spherical(ref, BDC, config->r0, points->x, config->delta);
 		else if (Type == "CUBEBOUND")
-			Res = new PM_CubeBounds(ref, config->r0, points->x);
+			Res = new PM_CubeBounds(ref, BDC, config->r0, points->x);
 		else		   // HAMILTONIAN
 		{
 			const double MM_shift = 0;				// the shift is hardcoded so far
@@ -523,7 +712,7 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		}
 	}
 	if (Type == "PROXY")
-		Res = new PM_Proxy(this_comm, ref, K, kw, proxy);
+		Res = new PM_Proxy(this_comm, ref, nullptr, K, kw, proxy);			// for the simple proxy, BDC is irrelevant
 	if (Type == "KRIGCORR" || Type == "KRIGSIGMA")
 	{
 		PM_Proxy *pk = dynamic_cast<PM_Proxy*>(ref);
@@ -537,16 +726,12 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 	}
 	if (Type == "DATAPROXY" || Type == "DATAPROXY2")
 	{
-		HMMPI::CovAndDataCreator *cov_creator = dynamic_cast<HMMPI::CovAndDataCreator*>(ref);		// if 'ref' is ECLIPSE/SIMECL/ROSENBROCK/PCONNECT/CONC, it will be used as CovAndDataCreator
-		HMMPI::CorrelCreator *Corr = dynamic_cast<HMMPI::CorrelCreator*>(cov_creator);				// SIMPROXY doesn't have CovAndDataCreator, and is not supposed to be used inside DataProxy
-		HMMPI::StdCreator *Std = dynamic_cast<HMMPI::StdCreator*>(cov_creator);
-		HMMPI::DataCreator *Data = dynamic_cast<HMMPI::DataCreator*>(cov_creator);
+		HMMPI::CorrelCreator *Corr;
+		HMMPI::StdCreator *Std;
+		HMMPI::DataCreator *Data = dynamic_cast<HMMPI::DataCreator*>(ref);	// if 'ref' is ECLIPSE/SIMECL/ROSENBROCK/PCONNECT/CONC, it will be used as DataCreator
 
-		if (cov_creator == 0)
-			FillCreators(K, kw, &Corr, &Std, &Data);	// ECLIPSE/SIMECL/ROSENBROCK/PCONNECT/CONC not detected; TODO Cov and Data creators should work in a more unified way for all models, preferably like it works now for ECLIPSE/SIMECL/...; i.e. all models with data should be convertible to these creators
-
-		HMMPI::BlockDiagMat *BDC = new HMMPI::BlockDiagMat(this_comm, Corr, Std);
-		mngd_ptr->push_back(BDC);
+		if (Data == nullptr)
+			FillCreators(K, kw, &Corr, &Std, &Data);						// ECLIPSE/SIMECL/ROSENBROCK/PCONNECT/CONC not detected
 
 		if (Type == "DATAPROXY")
 			Res = new PM_DataProxy(ref, K, kw, proxy, BDC, Data->Data());
@@ -575,7 +760,6 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		for (int i = 0; i < proxy->init_pts; i++)
 			Y0[i] = par_interface->SobolDP(seed);
 
-		//Res_proxy->SetDumpFlag(256);	// DEBUG
 		Res_proxy->SetTrainFromDump(proxy_dump->train_ind);
 		if (Y0.size() != 0)
 		{
@@ -586,15 +770,6 @@ PhysModel *ModelFactory::Make(std::string &message, Parser_1 *K, KW_item *kw, st
 		}
 		Res_proxy->SetDumpFlag(-1);
 		Res_proxy->SetTrainFromDump(-1);
-
-		// DEBUG **********************	CHECKING proxy training in different ways, but with the same total set of design points
-//		Y0 = std::vector<std::vector<double>>();
-//		Res = Res_proxy = Res_proxy->Copy();	// make a copy before additional training
-//		for (int i = 0; i < 4*(proxy->init_pts); i++)
-//			Y0.push_back(par_interface->SobolDP(seed));
-//
-//		Res_proxy->Train(Y0);
-		// DEBUG **********************
 
 		if (Res_proxy->do_optimize_krig)
 			K->AppText(HMMPI::MessageRE("Параметры кригинга оптимизируются при каждой тренировке прокси\n", "Kriging parameters are optimized on each proxy training\n"));
@@ -687,7 +862,7 @@ void PhysModMPI::fill_counts_displs(int ind1)
 	}
 }
 //---------------------------------------------------------------------------
-PhysModMPI::PhysModMPI(MPI_Comm c, PhysModel *pm) : PhysModel(c), PM(pm)
+PhysModMPI::PhysModMPI(MPI_Comm c, PhysModel *pm, const HMMPI::BlockDiagMat *bdc) : PhysModel(c, bdc), PM(pm)
 {
 	name = "PhysModMPI";
 
@@ -930,11 +1105,6 @@ void PhysModMPI::ObjFuncMPI_ACT(int len, const double * const *POP, double *FIT,
 		throw HMMPI::Exception(error_msg);				// synchronous (PM_comm) exception
 }
 //---------------------------------------------------------------------------
-double PhysModMPI::ObjFunc(const std::vector<double> &params)
-{
-	throw HMMPI::Exception("Запрещенный вызов ObjFunc", "Illegal call to ObjFunc");
-}
-//---------------------------------------------------------------------------
 double PhysModMPI::ObjFunc_ACT(const std::vector<double> &params)
 {
 	double of_val = 0;
@@ -1070,7 +1240,7 @@ HMMPI::Vector2<int> PhysModGradNum::make_ind(size_t dim, std::string fd)
 	return ind;
 }
 //---------------------------------------------------------------------------
-PhysModGradNum::PhysModGradNum(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *kw) : PhysModMPI(c, pm), of_val(-1)
+PhysModGradNum::PhysModGradNum(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *kw, const HMMPI::BlockDiagMat *bdc) : PhysModMPI(c, pm, bdc), of_val(-1)
 {
 	DECLKWD(opt, KW_optimization, "OPTIMIZATION");
 	//DECLKWD(limits, KW_limits, "LIMITS");
@@ -1117,6 +1287,8 @@ PhysModGradNum::PhysModGradNum(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *
 	testf << "rank " << RNK << ", PhysModGradNum easy CTOR, this = " << this << "\n";
 	testf.close();
 #endif
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
 PhysModGradNum::~PhysModGradNum()
@@ -1215,7 +1387,7 @@ std::vector<double> PhysModGradNum::ObjFuncGrad_ACT(const std::vector<double> &p
 
 	if (rank == 0)
 	{
-		DataSens = HMMPI::Mat(smry_len, dim, 0.0);
+		data_sens_act = HMMPI::Mat(smry_len, dim, 0.0);
 
 		for (size_t i = 0; i < dim; i++)
 		{
@@ -1258,7 +1430,7 @@ std::vector<double> PhysModGradNum::ObjFuncGrad_ACT(const std::vector<double> &p
 							aux_sum += SENS[ind(i, k)][d] * coeff(i, k) / hi;
 					}
 
-					DataSens(d, i) += aux_sum;
+					data_sens_act(d, i) += aux_sum;
 				}
 		}
 
@@ -1278,10 +1450,40 @@ std::vector<double> PhysModGradNum::ObjFuncGrad_ACT(const std::vector<double> &p
 	if (comm != MPI_COMM_NULL)
 	{
 		HMMPI::Bcast_vector(GRAD, 0, comm);
-		DataSens.Bcast(0, comm);
-	}
+		data_sens_act.Bcast(0, comm);
+		data_sens_loc_act = data_sens_act;		// TODO *** Note that 'data_sens_loc_act' is sync now. To be used in ObjFuncFisher, it should be distributed!
+	}											// TODO	*** So, don't use MPI for now. The mess with communicators should be cleaned and fixed though.
 
 	return GRAD;
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PhysModGradNum::ObjFuncFisher_ACT(const std::vector<double> &params)	// calculates fin. diff. FI for the active params; TODO currently there is MPI mess with 'data_sens_loc'
+{
+	int Size;
+	MPI_Comm_size(MPI_COMM_WORLD, &Size);
+	if (Size != 1)
+		throw HMMPI::Exception("Currently PhysModGradNum::ObjFuncFisher_ACT only works for MPI size = 1");
+
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	ObjFuncGrad_ACT(params);									// calculate data_sens_loc_act
+
+	RANK0_SYNCERR_BEGIN(MPI_COMM_WORLD);
+	if (BDC == nullptr || data_sens_loc_act.Length() == 0)
+		throw HMMPI::Exception("ObjFuncFisher_ACT cannot be calculated in '" + name + "': BDC == NULL || data_sens_loc_act == EMPTY on rank-0");
+	RANK0_SYNCERR_END(MPI_COMM_WORLD);
+
+	HMMPI::Mat CinvSens = *BDC / data_sens_loc_act;
+	HMMPI::Mat FI_local = data_sens_loc_act.Tr() * CinvSens;	// actdim x actdim matrix on each rank
+	assert(FI_local.ICount() == params.size() && FI_local.JCount() == params.size());
+
+	HMMPI::Mat res;
+	if (rank == 0)
+		res = HMMPI::Mat(params.size(), params.size(), 0);		// actdim x actdim
+	MPI_Reduce(FI_local.ToVector().data(), res.ToVectorMutable().data(), params.size()*params.size(), MPI_DOUBLE, MPI_SUM, 0, comm);	// element-wise summation of matrices
+
+	return res;
 }
 //---------------------------------------------------------------------------
 double PhysModGradNum::ObjFuncGradDir_ACT(const std::vector<double> &params, const std::vector<double> &dir)
@@ -1452,7 +1654,8 @@ HMMPI::Mat PhysModGradNum::ObjFuncHess_ACT(const std::vector<double> &params)
 	HMMPI::Vector2<double> coeff;
 	HMMPI::Vector2<int> ind;
 
-	HMMPI::Mat DataSensSave = std::move(DataSens);		// save DataSens because it will be overwritten by gradient calculations
+	HMMPI::Mat data_sens_act_Cache = std::move(data_sens_act);			// save these because they will be overwritten by gradient calculations
+	HMMPI::Mat data_sens_loc_act_Cache = std::move(data_sens_loc_act);
 
 	if (fin_diff == "OH1")
 		Nmod = dim + 1;				// no check for par == params, since "of_val" is not used in this function
@@ -1525,7 +1728,8 @@ HMMPI::Mat PhysModGradNum::ObjFuncHess_ACT(const std::vector<double> &params)
 	if (comm != MPI_COMM_NULL)
 		Hess.Bcast(0, comm);
 
-	DataSens = std::move(DataSensSave);
+	data_sens_act = std::move(data_sens_act_Cache);
+	data_sens_loc_act = std::move(data_sens_loc_act_Cache);
 
 	return Hess;
 }
@@ -1557,7 +1761,7 @@ PM_LagrangianSpher::~PM_LagrangianSpher()
 	delete con;
 }
 //---------------------------------------------------------------------------
-double PM_LagrangianSpher::ObjFunc(const std::vector<double> &params)
+double PM_LagrangianSpher::obj_func_work(const std::vector<double> &params)
 {
 	std::vector<double> params0(params.begin(), --params.end());
 	double lambda = *--params.end();
@@ -1569,7 +1773,7 @@ double PM_LagrangianSpher::ObjFunc(const std::vector<double> &params)
 	return of - lambda*(InnerProd(x, x) - Hk*Hk);
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_LagrangianSpher::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_LagrangianSpher::obj_func_grad_work(const std::vector<double> &params)
 {
 	int rank = -1;
 	if (comm != MPI_COMM_NULL)
@@ -1591,7 +1795,7 @@ std::vector<double> PM_LagrangianSpher::ObjFuncGrad(const std::vector<double> &p
 	return res;
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_LagrangianSpher::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_LagrangianSpher::obj_func_hess_work(const std::vector<double> &params)
 {
 	int rank = -1;
 	if (comm != MPI_COMM_NULL)
@@ -1643,7 +1847,7 @@ std::string PM_LagrangianSpher::ObjFuncMsg() const
 //---------------------------------------------------------------------------
 // PM_Spherical
 //---------------------------------------------------------------------------
-PM_Spherical::PM_Spherical(PhysModel *pm, double R, const std::vector<double> &c, double d) : PhysModel(pm->GetComm()), PM(pm), Sc(R, c), delta(d)
+PM_Spherical::PM_Spherical(PhysModel *pm, const HMMPI::BlockDiagMat *bdc, double R, const std::vector<double> &c, double d) : PhysModel(pm->GetComm(), bdc), PM(pm), Sc(R, c), delta(d)
 {
 	const ParamsInterface *pm_con = dynamic_cast<const ParamsInterface*>(pm->GetConstr());
 	assert(pm_con != nullptr);
@@ -1655,6 +1859,8 @@ PM_Spherical::PM_Spherical(PhysModel *pm, double R, const std::vector<double> &c
 	init = par->init;
 	act_ind = par->get_act_ind();
 	tot_ind = par->get_tot_ind();
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
 PM_Spherical::~PM_Spherical()
@@ -1667,7 +1873,7 @@ PM_Spherical::~PM_Spherical()
 	delete con;
 }
 //---------------------------------------------------------------------------
-double PM_Spherical::ObjFunc(const std::vector<double> &params)
+double PM_Spherical::obj_func_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
@@ -1679,32 +1885,40 @@ double PM_Spherical::ObjFunc(const std::vector<double> &params)
 	return of;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_Spherical::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_Spherical::obj_func_grad_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
 
-	HMMPI::Mat grad = PM->ObjFuncGrad_ACT(Sc.spher_to_cart(params));
+	std::vector<double> res;
+	HMMPI::Mat dxdp;
+	HMMPI::Mat grad = PM->ObjFuncGrad_ACT(Sc.spher_to_cart(params));	// fills data_sens_act, data_sens_loc_act
 	if (rank == 0)
 	{
-		HMMPI::Mat dxdp = Sc.dxdp(params);
-		return (dxdp.Tr()*grad).ToVector();
+		dxdp = Sc.dxdp(params);
+		data_sens = PM->DataSens_act() * dxdp;			// PM->data_sens_act is [Ndata * PM_actdim]
+		res = (dxdp.Tr()*grad).ToVector();
 	}
-	else
-		return std::vector<double>();
+
+	dxdp.Bcast(0, comm);
+	data_sens.Bcast(0, comm);
+	data_sens_loc = PM->DataSens_loc_act() * dxdp;		// distributed, [Ndata_loc * PM_actdim]
+
+	return res;
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_Spherical::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_Spherical::obj_func_hess_work_1(const std::vector<double> &params)	// Hessian of objective function, version before Jun 2022
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
 
-	HMMPI::Mat grad = PM->ObjFuncGrad_ACT(Sc.spher_to_cart(params));
-	HMMPI::Mat hess = PM->ObjFuncHess_ACT(Sc.spher_to_cart(params));
+	const std::vector<double> cartpar = Sc.spher_to_cart(params);
+	HMMPI::Mat grad = PM->ObjFuncGrad_ACT(cartpar);
+	HMMPI::Mat hess = PM->ObjFuncHess_ACT(cartpar);
 
 	if (rank == 0)
 	{
-		HMMPI::Mat dxdp = Sc.dxdp(params);
+		HMMPI::Mat dxdp = Sc.dxdp(params);				// Jacobian
 		HMMPI::Mat res = dxdp.Tr()*hess*dxdp;
 		for (size_t j = 0; j < params.size(); j++)		// add a vector to each column 'j'
 		{
@@ -1713,6 +1927,105 @@ HMMPI::Mat PM_Spherical::ObjFuncHess(const std::vector<double> &params)
 				res(i, j) += add(i, 0);
 		}
 		return res;
+	}
+	else
+		return HMMPI::Mat();
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Spherical::obj_func_hess_work(const std::vector<double> &params)		// Hessian of objective function, faster version accounting for symmetry
+{
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	const std::vector<double> cartpar = Sc.spher_to_cart(params);
+	const std::vector<double> grad = PM->ObjFuncGrad_ACT(cartpar);
+	const HMMPI::Mat hess = PM->ObjFuncHess_ACT(cartpar);
+
+	if (rank == 0)
+	{
+		const HMMPI::Mat dxdp = Sc.dxdp(params);		// Jacobian
+		const HMMPI::Mat res = dxdp.Tr()*hess*dxdp;
+
+		const size_t N = params.size();
+		assert(N == res.ICount() && N == res.JCount());
+		HMMPI::Mat add(N, N, 0.0);
+		std::vector<double> &vadd = add.ToVectorMutable();
+
+		for (size_t k = 0; k < N; k++)
+		{
+			std::vector<double> row = grad * Sc.dxdp_k_upper(params, k);
+			assert(row.size() == k+1);
+			for (size_t j = 0; j <= k; j++)
+			{
+				vadd[k*N + j] = row[j];					// fill symmetrically
+				vadd[j*N + k] = row[j];
+			}
+		}
+		return res + add;
+	}
+	else
+		return HMMPI::Mat();
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Spherical::ObjFuncFisher_mix_1(const std::vector<double> &params)		// mix between FI and Hess, version before Jul 2022
+{
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	const std::vector<double> cartpar = Sc.spher_to_cart(params);
+	const HMMPI::Mat grad = PM->ObjFuncGrad_ACT(cartpar);
+	const HMMPI::Mat fi = PM->ObjFuncFisher_ACT(cartpar);
+
+	if (rank == 0)
+	{
+		HMMPI::Mat dxdp = Sc.dxdp(params);				// Jacobian
+		HMMPI::Mat res = 2*dxdp.Tr()*fi*dxdp;
+		for (size_t j = 0; j < params.size(); j++)		// add a vector to each column 'j'
+		{
+			HMMPI::Mat add = Sc.dxdp_k(params, j).Tr() * grad;
+			for (size_t i = 0; i < params.size(); i++)
+				res(i, j) += add(i, 0);
+		}
+		return res;
+	}
+	else
+		return HMMPI::Mat();
+}
+//---------------------------------------------------------------------------
+HMMPI::Mat PM_Spherical::ObjFuncFisher_mix(const std::vector<double> &params)		// mix between FI and Hess, faster version accounting for symmetry
+{
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	const std::vector<double> cartpar = Sc.spher_to_cart(params);
+	const std::vector<double> grad = PM->ObjFuncGrad_ACT(cartpar);
+	const HMMPI::Mat fi = PM->ObjFuncFisher_ACT(cartpar);
+
+	if (rank == 0)
+	{
+		const HMMPI::Mat dxdp = Sc.dxdp(params);		// Jacobian
+		const HMMPI::Mat res = 2*dxdp.Tr()*fi*dxdp;
+
+		const size_t N = params.size();
+		assert(N == res.ICount() && N == res.JCount());
+		HMMPI::Mat add(N, N, 0.0);
+		std::vector<double> &vadd = add.ToVectorMutable();
+
+		for (size_t k = 0; k < N; k++)
+		{
+			std::vector<double> row = grad * Sc.dxdp_k_upper(params, k);
+			assert(row.size() == k+1);
+			for (size_t j = 0; j <= k; j++)
+				vadd[k*N + j] = row[j];					// fill the lower part
+		}
+
+		const HMMPI::Mat addTr = add.Tr();				// fill the upper part symmetrically; keep the cache locality
+		const std::vector<double> &vaddTr = addTr.ToVector();
+		for (size_t k = 0; k < N; k++)
+			for (size_t j = k+1; j < N; j++)
+				vadd[k*N + j] = vaddTr[k*N + j];
+
+		return res + add;
 	}
 	else
 		return HMMPI::Mat();
@@ -1735,7 +2048,7 @@ std::string PM_Spherical::ObjFuncMsg() const
 //---------------------------------------------------------------------------
 // PM_CubeBounds
 //---------------------------------------------------------------------------
-PM_CubeBounds::PM_CubeBounds(PhysModel *pm, double R0, const std::vector<double> &c0) : PhysModel(pm->GetComm()), PM(pm), R(R0), c(c0)
+PM_CubeBounds::PM_CubeBounds(PhysModel *pm, const HMMPI::BlockDiagMat *bdc, double R0, const std::vector<double> &c0) : PhysModel(pm->GetComm(), bdc), PM(pm), R(R0), c(c0)
 {
 	const ParamsInterface *pm_con = dynamic_cast<const ParamsInterface*>(pm->GetConstr());
 	assert(pm_con != nullptr);
@@ -1747,6 +2060,8 @@ PM_CubeBounds::PM_CubeBounds(PhysModel *pm, double R0, const std::vector<double>
 	init = par->init;
 	act_ind = par->get_act_ind();
 	tot_ind = par->get_tot_ind();
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
 PM_CubeBounds::~PM_CubeBounds()
@@ -1759,7 +2074,7 @@ PM_CubeBounds::~PM_CubeBounds()
 	delete con;
 }
 //---------------------------------------------------------------------------
-double PM_CubeBounds::ObjFunc(const std::vector<double> &params)
+double PM_CubeBounds::obj_func_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
@@ -1771,12 +2086,16 @@ double PM_CubeBounds::ObjFunc(const std::vector<double> &params)
 	return of;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_CubeBounds::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_CubeBounds::obj_func_grad_work(const std::vector<double> &params)
 {
-	return PM->ObjFuncGrad(params);
+	const std::vector<double> res = PM->ObjFuncGrad(params);
+	data_sens = PM->DataSens();
+	data_sens_loc = PM->DataSens_loc();
+
+	return res;
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_CubeBounds::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_CubeBounds::obj_func_hess_work(const std::vector<double> &params)
 {
 	return PM->ObjFuncHess(params);
 }
@@ -2204,11 +2523,6 @@ const PM_FullHamiltonian &PM_FullHamiltonian::operator=(const PM_FullHamiltonian
 	return *this;
 }
 //---------------------------------------------------------------------------
-double PM_FullHamiltonian::ObjFunc(const std::vector<double> &params)
-{
-	throw HMMPI::Exception("Запрещенный вызов PM_FullHamiltonian::ObjFunc", "Illegal call to PM_FullHamiltonian::ObjFunc");
-}
-//---------------------------------------------------------------------------
 double PM_FullHamiltonian::ObjFunc_ACT(const std::vector<double> &params)
 {
 	G.MsgToFile("calculate HAM\n");				// separation mark for debug logging
@@ -2401,6 +2715,21 @@ PM_Posterior::PM_Posterior(PhysModel *pm, HMMPI::Mat C, HMMPI::Mat d, const bool
 
 	if (!is_posterior_diag)
 		invCpr = Cpr.InvSY();
+
+	// take the extended BDC: [Cpr | PM->BDC]
+	// NOTE, Cpr can be N*1 vector (diagonal case)
+	assert(BDC == nullptr);
+	const HMMPI::BlockDiagMat *mem, *work;
+	mem = PM->GetBDC(&work);
+	if (work != nullptr)		// otherwise, if PM->BDC is absent (nullptr), this->BDC will also be absent
+	{
+		BDC = new HMMPI::BlockDiagMat(Cpr, *work);		// to be deleted in DTOR
+		BDC->PrintToFile(is_posterior_diag ? "PostDiag" : "Posterior");
+	}
+
+	delete mem;					// delete TEMP object
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
 PM_Posterior::PM_Posterior(const PM_Posterior &p) : Sim_small_interface(p), Cpr(p.Cpr), dpr(p.dpr), invCpr(p.invCpr)		// copy CTOR will copy PM if it is PM_Proxy*, and will borrow the pointer otherwise
@@ -2435,9 +2764,10 @@ PM_Posterior::~PM_Posterior()													// deletes 'con'
 #endif
 	delete con;
 	delete copy_PM;
+	delete BDC;			// it was created in CTOR
 }
 //---------------------------------------------------------------------------
-double PM_Posterior::ObjFunc(const std::vector<double> &params)
+double PM_Posterior::obj_func_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
@@ -2448,26 +2778,34 @@ double PM_Posterior::ObjFunc(const std::vector<double> &params)
 	{
 		HMMPI::Mat r = HMMPI::Mat(params) - dpr;
 		res += InnerProd(invCpr*r, r);
-		modelled_data = PM->ModelledData();
+		modelled_data = params;
+		HMMPI::VecAppend(modelled_data, PM->ModelledData());
 	}
 
 	return res;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_Posterior::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_Posterior::obj_func_grad_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
 	assert(Cpr.ICount() == Cpr.JCount());
 
 	HMMPI::Mat res = PM->ObjFuncGrad(params);
+	HMMPI::Mat E(params.size());				// fulldim*fulldim unity
+	data_sens_loc = PM->DataSens_loc();			// distributed
 	if (rank == 0)
+	{
 		res += 2*(invCpr*(HMMPI::Mat(params) - dpr));
+		data_sens = E || PM->DataSens();
+		data_sens_loc = std::move(E) || data_sens_loc;
+	}
+	data_sens.Bcast(0, comm);
 
 	return res.ToVector();
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_Posterior::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_Posterior::obj_func_hess_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
@@ -2476,19 +2814,6 @@ HMMPI::Mat PM_Posterior::ObjFuncHess(const std::vector<double> &params)
 	HMMPI::Mat res = PM->ObjFuncHess(params);
 	if (rank == 0)
 		res += 2*invCpr;
-
-	return res;
-}
-//---------------------------------------------------------------------------
-HMMPI::Mat PM_Posterior::ObjFuncFisher(const std::vector<double> &params)
-{
-	int rank;
-	MPI_Comm_rank(comm, &rank);
-	assert(Cpr.ICount() == Cpr.JCount());
-
-	HMMPI::Mat res = PM->ObjFuncFisher(params);
-	if (rank == 0)
-		res += invCpr;
 
 	return res;
 }
@@ -2510,7 +2835,7 @@ int PM_Posterior::ParamsDim() const noexcept
 //---------------------------------------------------------------------------
 size_t PM_Posterior::ModelledDataSize() const
 {
-	return PM->ModelledDataSize();
+	return init.size() + PM->ModelledDataSize();
 }
 //---------------------------------------------------------------------------
 std::string PM_Posterior::ObjFuncMsg() const
@@ -2639,6 +2964,8 @@ PM_PosteriorDiag::PM_PosteriorDiag(PhysModel *pm, const HMMPI::Mat &C_diag, HMMP
 
 	if (dynamic_cast<PMEclipse*>(PM) != nullptr)
 		dynamic_cast<PMEclipse*>(PM)->set_post_diag_owner(this);
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
 PM_PosteriorDiag::PM_PosteriorDiag(const PM_PosteriorDiag &p) : PM_Posterior(p), c_pr(p.c_pr), prior_contrib(p.prior_contrib)	// copy CTOR will copy PM if it is PM_Proxy*,
@@ -2657,7 +2984,7 @@ PM_PosteriorDiag::~PM_PosteriorDiag()
 #endif
 }
 //---------------------------------------------------------------------------
-double PM_PosteriorDiag::ObjFunc(const std::vector<double> &params)
+double PM_PosteriorDiag::obj_func_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
@@ -2673,24 +3000,34 @@ double PM_PosteriorDiag::ObjFunc(const std::vector<double> &params)
 
 	res += PM->ObjFunc(params);
 	if (rank == 0)
-		modelled_data = PM->ModelledData();
+	{
+		modelled_data = params;
+		HMMPI::VecAppend(modelled_data, PM->ModelledData());
+	}
 
 	return res;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_PosteriorDiag::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_PosteriorDiag::obj_func_grad_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
 
 	HMMPI::Mat res = PM->ObjFuncGrad(params);
+	HMMPI::Mat E(params.size());				// fulldim*fulldim unity
+	data_sens_loc = PM->DataSens_loc();			// distributed
 	if (rank == 0)
+	{
 		res += 2*(invCpr.ToVector() % (HMMPI::Mat(params) - dpr));
+		data_sens = E || PM->DataSens();
+		data_sens_loc = std::move(E) || data_sens_loc;
+	}
+	data_sens.Bcast(0, comm);
 
 	return res.ToVector();
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_PosteriorDiag::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_PosteriorDiag::obj_func_hess_work(const std::vector<double> &params)
 {
 	int rank;
 	MPI_Comm_rank(comm, &rank);
@@ -2705,11 +3042,6 @@ HMMPI::Mat PM_PosteriorDiag::ObjFuncHess(const std::vector<double> &params)
 	}
 
 	return res;
-}
-//---------------------------------------------------------------------------
-HMMPI::Mat PM_PosteriorDiag::ObjFuncFisher(const std::vector<double> &params)								//  not implemented
-{
-	throw HMMPI::Exception("Illegal call to PM_PosteriorDiag::ObjFuncFisher");
 }
 //---------------------------------------------------------------------------
 HMMPI::Mat PM_PosteriorDiag::ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r)		//  not implemented

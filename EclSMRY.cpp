@@ -1647,7 +1647,8 @@ PM_SimProxy *SimProxyFile::MakeProxy(const std::vector<Date> &dates, const std::
 
 	Ecl = new PMEclipse(K, kw, cwd, comm);
 	BDC = new HMMPI::BlockDiagMat(comm, Ecl, Ecl);
-	std::vector<int> b_starts = block_starts();						// the result is sync on all ranks
+	BDC->PrintToFile("SIMPROXY");							// just a debug report
+	std::vector<int> b_starts = block_starts();				// the result is sync on all ranks
 	std::vector<std::vector<double>> vals = extract_proxy_vals(dates, vecs, all_sigmas, b_starts);	// fills 'datapoint_block' (sync on "comm"); all input and output parameters are only used on comm-RANKS-0
 
 	SimProxy = new PM_SimProxy(Ecl, K, kw, model, BDC, Ecl->Data(), b_starts, datapoint_block);

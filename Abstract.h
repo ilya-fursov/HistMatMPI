@@ -126,6 +126,9 @@ public:
 	virtual std::vector<double> dxe_To_dxi(const std::vector<double> &dxe, const std::vector<double> &in) const = 0;		// transform gradient d/dxe -> d/dxi
 };
 //------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+void MsgToFileApp(const std::string &msg);						// output to TEST_CACHE file
+//------------------------------------------------------------------------------------------
 // 'Cache' - this class allows caching and reusing results of some calculation MyObj.Func(x)
 // NOTE if state of MyObj changes, the stored cache may become irrelevant; in such situations do Reset()
 //------------------------------------------------------------------------------------------
@@ -143,7 +146,7 @@ public:
 	Cache(std::function<OutType(const Caller*, InType)> func) : F(func), cache_valid(false) {};		// here use something like &MyClass::Func
 	const OutType &Get(const Caller *obj, const InType &x) const;									// here use something like (&MyObj, params) to call MyObj.Func(params)
 	void Reset() {cache_valid = false;};
-	void MsgToFile(const std::string &msg) const;													// output to TEST_CACHE file
+	void MsgToFile(const std::string &msg) const {MsgToFileApp(msg);};								// output to TEST_CACHE file
 };
 //------------------------------------------------------------------------------------------
 template <class Caller, class InType, class OutType>
@@ -160,29 +163,12 @@ const OutType &Cache<Caller, InType, OutType>::Get(const Caller *obj, const InTy
 		last_x = x;
 		cache_valid = true;
 
-		MsgToFile(".....recalculating.....\n");
+		MsgToFileApp(".....recalculating.....\n");
 	}
 	else
-		MsgToFile("*****USING_CACHE!******\n");
+		MsgToFileApp("*****USING_CACHE!******\n");
 
 	return data;
-}
-//------------------------------------------------------------------------------------------
-template <class Caller, class InType, class OutType>
-void Cache<Caller, InType, OutType>::MsgToFile(const std::string &msg) const
-{
-#ifdef TEST_CACHE
-	char fname[500];
-	int rank;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	sprintf(fname, TEST_CACHE, rank);
-	FILE *f = fopen(fname, "a");
-	if (f != NULL)
-	{
-		fputs(msg.c_str(), f);
-		fclose(f);
-	}
-#endif
 }
 //------------------------------------------------------------------------------------------
 } // namespace HMMPI

@@ -17,42 +17,78 @@
 class Parser_1;
 class KW_item;
 //---------------------------------------------------------------------------
+// BDC_creator - base class for PhysModels, it handles the data covariance (BDC) stuff: creation and transfer.
+// *** MPI philosophy: Use on all processes in MPI_COMM_WORLD. See more in 'PhysModel' comments below.
+//---------------------------------------------------------------------------
+class BDC_creator
+{
+protected:
+	MPI_Comm comm;								// NOTE: "comm" handles distribution of data points (like in BDC), not the distribution of 'forward runs'
+	int RNK;									// MPI_COMM_WORLD rank value filled at construction time - for reporting and file id
+
+	const HMMPI::BlockDiagMat *BDC;				// block-diagonal covariance matrix (MPI-distributed with "comm")
+												// if it is NULL, this should be sync
+
+	HMMPI::Mat data_sens_loc;					// stores local fulldim sensitivities (MPI-distributed with "comm"), calculated in ObjFuncGrad, used in ObjFuncFisher, ObjFuncFisher_dxi
+	HMMPI::Mat data_sens_loc_act;				// stores local actdim sensitivities, filled in ObjFuncGrad_ACT
+
+public:
+	BDC_creator(MPI_Comm c = MPI_COMM_SELF, const HMMPI::BlockDiagMat *bdc = nullptr);		// Communicator "comm" is given at construction, and cannot be changed afterwards.
+	virtual ~BDC_creator(){};
+	const HMMPI::BlockDiagMat *GetBDC(const HMMPI::BlockDiagMat **bdc) const;	// Philosophy:
+			// The pointer filled in 'bdc' should be used in production, it provides the BDC mathematically assumed by the current model.
+			// The pointer returned is for the memory management, it should be safely freed (from the outside) when the BDC is no longer needed.
+			// Simple models are supposed to create (and return) a new BDC object.
+			// Composite models are supposed to get a BDC at construction, and then transfer it when this function is called.
+	const HMMPI::Mat &DataSens_loc() const {return data_sens_loc;};
+	const HMMPI::Mat &DataSens_loc_act() const {return data_sens_loc_act;};
+};
+//---------------------------------------------------------------------------
 // PhysModel - base class for all "physical models"
 // physical models allow calculation of objective function values, gradients and Hessians for the given parameters vector
 // parameters vector can be
 // - full vector which matches the dimension of the model -- this works with ObjFuncXXX
 // - (smaller) vector of active parameters; the inactive (remaining) parameters are pinned to some initial values -- this works with ObjFuncXXX_ACT
 // *** MPI philosophy:
-// The model should be created and used on all processes in MPI_COMM_WORLD; all input function parameters should be sync on MPI_COMM_WORLD (this is sufficient for safety), unless opposite is said
-// Communicator "comm" is given to the model at construction, and cannot be changed afterwards
-// "comm" is used to provide communication the model may need within its functions; for simple cases comm = MPI_COMM_SELF (no communication is needed)
-// The functions output (and many member variables) are guaranteed to be correct at comm-RANKS-0 (at other ranks -- no guarantee)
-// "comm" may be MPI_COMM_NULL at some processes - in this case some functions may be abandoned earlier
-// *** USER: call on all processes in MPI_COMM_WORLD, collect results on comm-RANKS-0
-// *** DEVELOPER: make sure comm-RANKS-0 get correct results, make sure comm-RANKS-NULL are properly treated
+// The model should be created and used on all processes in MPI_COMM_WORLD.
+// All input function parameters should be sync on MPI_COMM_WORLD (this is sufficient for safety), unless opposite is said.
+// Communicator "comm" is given to the model at construction, and cannot be changed afterwards.
+// "comm" is used to provide communication the model may need within its functions. It handles the distribution of data points (like in BDC).
+// For simple cases comm = MPI_COMM_SELF (no communication is needed).
+// The functions output (and many member variables) are guaranteed to be correct at comm-RANKS-0 (at other ranks -- no guarantee).
+// "comm" may be MPI_COMM_NULL at some processes - in this case some functions may be abandoned earlier.
+// *** USER: call on all processes in MPI_COMM_WORLD, collect results on comm-RANKS-0.
+// *** DEVELOPER: make sure comm-RANKS-0 get correct results, make sure comm-RANKS-NULL are properly treated.
 //---------------------------------------------------------------------------
-class PhysModel : public HMMPI::ManagedObject
+class PhysModel : public HMMPI::ManagedObject, public BDC_creator
 {
 private:
 
 protected:
-	MPI_Comm comm = MPI_COMM_SELF;			// this communicator should be as minimal as possible to avoid unnecessary communication
-											// in most cases it's set to MPI_COMM_SELF by default
-	int RNK;							// MPI_COMM_WORLD rank value filled at construction time - for reporting and file id
-
 										// philosophy: "init", "act_ind", "tot_ind", "con" should be sync between ranks of MPI_COMM_WORLD
 	std::vector<double> init;			// (total) vector of initial parameters - used in ObjFuncXXX_ACT; its size = ParamsDim
 	std::vector<size_t> act_ind;		// indices of active params within full-dim params; 0 <= act_ind[i] < ParamsDim; size = dimension of active parameters
 	std::vector<size_t> tot_ind;		// indices of full-dim params within active params; 0 <= tot_ind[i] < dimension of active parameters, or tot_ind[i] = -1; size = ParamsDim
 	const HMMPI::BoundConstr *con;		// object for checking constraints, see CheckLimits()
+
+									// *** LOGIC for modelled data and sensitivities: after ObjFunc or ObjFuncGrad calls, the corresponding data structures
+									// (modelled_data, data_sens, data_sens_loc, data_sens_act, data_sens_loc_act)
+									// keep the up-to-date values until the next call to these functions; i.e. they work as caches.
 	std::vector<double> modelled_data;	// vector of modelled data (ordered in some way); this is supposed to be filled, if possible, by ObjFunc()
+	HMMPI::Mat data_sens;				// sensitivity matrix of modelled data, indexed as (ind_data, fulldim); this is supposed to be filled, if possible, by ObjFuncGrad()
+	HMMPI::Mat data_sens_act;			// restriction of data_sens to active parameters (ind_data, actdim), filled by ObjFuncGrad_ACT()
+
 	mutable std::string limits_msg;		// message optionally created by CheckLimits()
 
+	bool of_cache_valid, grad_cache_valid, hess_cache_valid;		// some data for caching o.f., gradients and Hessians
+	std::vector<double> last_x_of, last_x_grad, last_x_hess;
+	double of_cache;
+	std::vector<double> grad_cache;
+	HMMPI::Mat hess_cache;
 public:
 	std::string name;					// model name -- mostly for debug purposes
-	HMMPI::Mat DataSens;				// sensitivity matrix of modelled data, indexed as (ind_data, fulldim_ind_param); this is supposed to be filled, if possible, by ObjFuncGrad()
 
-	PhysModel(MPI_Comm c = MPI_COMM_SELF);
+	PhysModel(MPI_Comm c = MPI_COMM_SELF, const HMMPI::BlockDiagMat *bdc = nullptr);
 	PhysModel(std::vector<double> in, std::vector<size_t> act, std::vector<size_t> tot, const HMMPI::BoundConstr *c);
 	PhysModel(Parser_1 *K, KW_item *kw, MPI_Comm c);		// easy constructor; all data are taken from K->LIMITS/PARAMETERS; "kw" is used only to handle prerequisites
 	virtual ~PhysModel();
@@ -61,19 +97,26 @@ public:
 	std::vector<double> act_par(const std::vector<double> &tot_par) const;	// convert total params vector to active params vector based on 'act_ind'
 	HMMPI::Mat act_mat(const HMMPI::Mat &tot_M) const;						// convert square matrix of "total" dimension to the "active" sub-matrix, based on 'act_ind'
 
-	virtual double ObjFunc(const std::vector<double> &params) = 0;					// objective function value
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);		// gradient of objective function; if no gradient calculation is available, produces error
+	virtual double obj_func_work(const std::vector<double> &params);						// These lower case functions perform the concrete calculations (o.f., grad, Hess)
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);		// subsequently used in caching.
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);				// Override them in derived classes!
+
+	virtual double ObjFunc(const std::vector<double> &params) final;					// Objective function value [and modelled_data].
+	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params) final;	// Gradient of objective function [and data_sens]; if no gradient calculation is available, produces error.
+	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params) final;			// Hessian of objective function; if no Hessian calculation is available, produces error.
+
 	virtual double ObjFuncGradDir(const std::vector<double> &params, const std::vector<double> &dir);		// grad' * dir; if necessary, override it by a more efficient implementation
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);				// Hessian of objective function; if no Hessian calculation is available, produces error
 	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);			// Fisher Information matrix (only for models with data; for other models produces error); actually, FI corresponds to Likelihood = exp(-1/2*func)
 	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);		// derivative of FI matrix w.r.t. x_i (i - index in total dim); "r" is the rank where result should be accessed
-
+	virtual HMMPI::Mat ObjFuncFisher_mix(const std::vector<double> &params);		// mix between FI and Hess for composite models, essentially PM_Spherical; replaces some expensive Hess parts by cheaper 2*FI parts; to be used instead of Hess in LM optimization
+																					// by default falls back to 2*FI
 	virtual double ObjFunc_ACT(const std::vector<double> &params);						// the following five versions of ObjFuncXXX only work with active parameters (act_ind)
 	virtual std::vector<double> ObjFuncGrad_ACT(const std::vector<double> &params);		// inactive parameters always take the corresponding values from 'init'
 	virtual double ObjFuncGradDir_ACT(const std::vector<double> &params, const std::vector<double> &dir);		// these functions are based on the five 'usual' functions above; normally ObjFuncXXX_ACT should work fine in all derived classes
 	virtual HMMPI::Mat ObjFuncHess_ACT(const std::vector<double> &params);										// override these functions if more efficient implementation is needed
 	virtual HMMPI::Mat ObjFuncFisher_ACT(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher_dxi_ACT(const std::vector<double> &params, const int i, int r = 0);		// i - index in act dim; "r" is the rank where result should be accessed
+	virtual HMMPI::Mat ObjFuncFisher_mix_ACT(const std::vector<double> &params);
 
 	// philosophy: CheckLimits[_ACT], ParamsDim[_ACT], FindIntersect[_ACT] should work identically on all ranks of MPI_COMM_WORLD
 	virtual bool CheckLimits(const std::vector<double> &params) const;					// 'true', if "params" don't violate the constraints 'con'; if con == 0, 'true' is always returned
@@ -89,6 +132,9 @@ public:
 	virtual size_t ModelledDataSize() const {return 0;};	// returns the supposed size of "modelled_data", independently of "modelled_data";
 															// IMPLEMENT IT such that it returns identical results for each rank of MPI_COMM_WORLD, and does not involve any communication
 	virtual const std::vector<double> &ModelledData() const;		// returns "modelled_data" where it is available; produces error where it's not; NB "modelled_data" may not be sync!
+	const HMMPI::Mat &DataSens() const {return data_sens;};
+	const HMMPI::Mat &DataSens_act() const {return data_sens_act;};
+
 	virtual void PerturbData();											// perturb data for RML (and sync/distribute between ranks); typically KW_textsmry->randn is used for random number generation;
 																		// only models which have data (e.g. PhysModelHM, PM_Linear, PM_DataProxy) do something here (others produce exception);
 																		// some other models (e.g. PhysModMPI, PhysModGradNum) perform PerturbData call for the referenced model
@@ -104,6 +150,7 @@ public:
 	virtual std::string get_limits_msg() const {return limits_msg;};
 	virtual bool is_proxy() const {return false;};
 	virtual bool is_dataproxy() const {return false;};
+	void print_comms() const;			// print comm and BDC->comm, for debug pusposes
 };
 //---------------------------------------------------------------------------
 // ModelFactory - class for creating instances of different PhysModels
@@ -116,22 +163,22 @@ protected:
 	std::map<PhysModel*, std::vector<HMMPI::ManagedObject*>> ptrs;	// pointers to objects are stored here to delete ManagedObjects when necessary
 
 	void FillCreators(Parser_1 *K, KW_item *kw, HMMPI::CorrelCreator **cor, HMMPI::StdCreator **std, HMMPI::DataCreator **data);		// fill from CORRSTRUCT, MATVECVEC
-	void MakeComms(MPI_Comm in, MPI_Comm *one, MPI_Comm *two, bool ref_is_dataproxy);		// create two communicators from "in": for NUMGRAD and its reference model
+	void MakeComms(MPI_Comm in, MPI_Comm *one, MPI_Comm *two, bool ref_is_dataproxy, bool ref_is_simproxy);		// create two communicators from "in": for NUMGRAD and its reference model
 	static bool object_for_deletion(const HMMPI::ManagedObject *m);	// 'true', if "m" is to be deleted in dtor/FreeModel; 'false' otherwise (e.g. for KrigCorr)
 public:
 	PhysModel *Make(std::string &message, Parser_1 *K, KW_item *kw, std::string cwd, int num, MPI_Comm c = MPI_COMM_SELF, std::vector<HMMPI::ManagedObject*> *mngd = 0, bool train = true);
-							// Create a PhysModel of given type -- according to line "num" (1-based) in keyword PHYSMODEL
-							// if line "num" in PHYSMODEL further refers to another line (say, 'num_2'), the model corresponding to 'num_2' will be created internally, and deleted automatically in the end
+							// Create a PhysModel of given type -- according to line "num" (1-based) in keyword PHYSMODEL.
+							// If line "num" in PHYSMODEL further refers to another line (say, 'num_2'), the model corresponding to 'num_2' will be created internally, and deleted automatically in the end.
 							// All data are taken from keywords of "K"; KW_item "kw" which called Make() is only used to handle prerequisites.
-							// Pointers returned by Make (or created internally) will be added to "ptrs" if mngd == 0 (for internal uses, with mngd != 0, these pointers are added to 'mngd')
-							// Contents of "ptrs" are automatically freed in the end by ModelFactory destructor,
-							// OR, pointers associated with a particular returned PhysModel* PM can be deleted by calling FreeModel(PM)
-							// Communicator of the new PhysModel is set to 'c'
-							// for NUMGRAD, communicator is created from 'c' ('c' is split into two communicators)
-							// for DATAPROXY, ECLIPSE and NUMGRAD, if c == MPI_COMM_SELF, then c = MPI_COMM_WORLD is used (with further splitting for NUMGRAD)
-							// "message" is the output message indicating which model (chain of models) were employed
-							// If "train" == true, and the requested model is PROXY/DATAPROXY, it will be trained
-							// USER: call Make() with 'c' and 'mngd' as default parameters
+							// Pointers returned by Make (or created internally) will be added to "ptrs" if mngd == 0 (for internal uses, with mngd != 0, these pointers are added to 'mngd').
+							// Contents of "ptrs" are automatically freed in the end by ModelFactory destructor.
+							// OR, pointers associated with a particular returned PhysModel* PM can be deleted by calling FreeModel(PM).
+							// Communicator of the new PhysModel is set to 'c'.
+							// For NUMGRAD, communicator is created from 'c' ('c' is split into two communicators).
+							// For DATAPROXY, ECLIPSE and NUMGRAD, if c == MPI_COMM_SELF, then c = MPI_COMM_WORLD is used (with further splitting for NUMGRAD).
+							// "message" is the output message indicating which model (chain of models) were employed.
+							// If "train" == true, and the requested model is PROXY/DATAPROXY, it will be trained.
+							// USER: call Make() with 'c' and 'mngd' as default parameters.
 	~ModelFactory();
 	void FreeModel(PhysModel* pm);			// frees "pm" and all objects (stored on heap) associated with it
 };
@@ -150,7 +197,7 @@ protected:
 	void fill_counts_displs(int ind1);			// auxiliary function to fill the above vectors; call it on all ranks; "ind1" is the upper index for models on each rank
 
 public:
-	PhysModMPI(MPI_Comm c, PhysModel *pm);		// 'c' and PM_comm should form a 2-level partition
+	PhysModMPI(MPI_Comm c, PhysModel *pm, const HMMPI::BlockDiagMat *bdc = nullptr);		// 'c' and PM_comm should form a 2-level partition
 	static void HMMPI_Comm_check(MPI_Comm first, MPI_Comm second, const std::string &where);		// Check if the two communicators form a 2-level partition, i.e.
 										// first-ranks <-> second-ranks-0 && second-ranks-[1,2..] -> first-ranks-NULL
 										// To be called on MPI_COMM_WORLD. If the test fails, exception is thrown (sync on MPI_COMM_WORLD).
@@ -168,7 +215,6 @@ public:
 								// 			quiet_out_of_range - if 'true', then models with violated params limits return o.f. = NaN; if 'false', such models try to calculate objective function.
 								// Outputs: FIT = [len] - o.f. values for the population, (optional) SMRY = [len][smry_len] - modelled data for the population
 
-	virtual double ObjFunc(const std::vector<double> &params);		// produces error; it is not supposed to be called
 	virtual double ObjFunc_ACT(const std::vector<double> &params);	// this function employs PM->ObjFunc_ACT, and Bcasts the results (and modelled_data) to "comm"
 
 	// the following functions simply wrap the corresponding functions of "PM"; no Bcast over "comm" is done (to avoid MPI deadlocking)
@@ -201,13 +247,14 @@ public:
 	std::vector<std::string> dh_type;	// CONST, LIN
 
 	PhysModGradNum(MPI_Comm c, PhysModel *pm, std::string fd, const std::vector<double> &h, const std::vector<std::string> &h_type) : PhysModMPI(c, pm), of_val(-1), fin_diff(fd), dh(h), dh_type(h_type) {name = "PhysModGradNum";};
-	PhysModGradNum(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *kw);		// easy constructor
+	PhysModGradNum(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *kw, const HMMPI::BlockDiagMat *bdc);		// easy constructor
 																				// "pm" should have appropriate communicator ("orthogonal" to the communicator 'c' of created model)
 																				// all data are taken from keywords of "K"; "kw" is used only to handle prerequisites
 	virtual ~PhysModGradNum();
 	virtual double ObjFunc_ACT(const std::vector<double> &params);						// the four ObjFuncXXX_ACT functions Bcast the results to "comm"
 	virtual std::vector<double> ObjFuncGrad_ACT(const std::vector<double> &params);		// calculates finite difference gradient; should be called on ALL RANKS with same "params"; exceptions are sync
-																						// fills (and broadcasts to "comm") "DataSens" (NOTE: DataSens will be for active params only)
+																						// fills (and broadcasts to "comm") "data_sens_act"
+	virtual HMMPI::Mat ObjFuncFisher_ACT(const std::vector<double> &params);	// calculates fin. diff. FI for the active params; TODO currently there is MPI mess with 'data_sens_loc'
 	virtual double ObjFuncGradDir_ACT(const std::vector<double> &params, const std::vector<double> &dir);	// gradient along direction using finite differences; should be called on ALL RANKS with same "params"; exceptions are sync
 																						// for OH1, this gradient calculation should be performed with the same "params" as the last call of this->ObjFunc_ACT()
 	virtual HMMPI::Mat ObjFuncHess_ACT(const std::vector<double> &params);				// calculates finite difference Hessian; should be called on ALL RANKS with same "params"; exceptions are sync
@@ -217,7 +264,7 @@ public:
 // Lagrangian function, taking "PM" as the main function, and constraint |x - x0| = Hk with Lagrange multiplier 'lambda' (goes as the last parameter in the list of parameters)
 // Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
 // comm = PM->comm is taken;
-// 'modelled_data', 'DataSens' are not filled at the moment;
+// 'modelled_data', 'data_sens' are not filled at the moment;
 //---------------------------------------------------------------------------
 class PM_LagrangianSpher : public PhysModel
 {
@@ -231,9 +278,9 @@ public:
 	PM_LagrangianSpher(PhysModel *pm, double lam);	// comm, init, act_ind, tot_ind, con are taken from PM (and one extra parameter is added); initial value for 'lambda' (last parameter) is taken equal 'lam'
 	virtual ~PM_LagrangianSpher();		// deletes 'con' (which is a separate copy)
 
-	virtual double ObjFunc(const std::vector<double> &params);						// objective function value
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);		// gradient of objective function
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);				// Hessian of objective function
+	virtual double obj_func_work(const std::vector<double> &params);						// objective function value
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);		// gradient of objective function
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);				// Hessian of objective function
 
 	bool FindIntersect(const std::vector<double> &x0, const std::vector<double> &x1, std::vector<double> &xint, double &alpha, int &i) const;		// these two functions should not be called at the moment
 	bool FindIntersect_ACT(const std::vector<double> &x0, const std::vector<double> &x1, std::vector<double> &xint, double &alpha, int &i) const;	// (need to check how "inf" is treated)
@@ -246,7 +293,7 @@ public:
 // First spherical coordinates p0,.. pk-1 range on [0, pi], the last coordinate pk ranges on [0, 2*pi]; more narrow bounds may be imposed in case the sphere center is lying on the PM bounds
 // Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
 // comm = PM->comm is taken;
-// 'modelled_data' is taken from "PM"; 'DataSens' is not filled at the moment
+// 'modelled_data' is taken from "PM"; 'data_sens' is filled based on "PM"
 //---------------------------------------------------------------------------
 class PM_Spherical : public PhysModel
 {
@@ -256,23 +303,27 @@ protected:
 	const double delta;					// gap at poles: the first spherical coordinates will range in [delta, pi-delta]
 
 public:
-	PM_Spherical(PhysModel *pm, double R, const std::vector<double> &c, double d);	// comm = PM->comm, 'con' is built from PM->con (should be deleted in the end)
+	PM_Spherical(PhysModel *pm, const HMMPI::BlockDiagMat *bdc, double R, const std::vector<double> &c, double d);	// comm = PM->comm, 'con' is built from PM->con (should be deleted in the end)
 															// 'init' is a transform of active(PM->init) into spherical coordinates (with adjustment to min/max); 'act_ind' = 'tot_ind' (but only active params of PM are converted to spherical coordinates)
 															// 'R' is sphere radius, 'c' is sphere center (both are in internal representation); c.size() should equal the actdim of PM; d is delta
 	virtual ~PM_Spherical();			// deletes 'con'
-	virtual double ObjFunc(const std::vector<double> &params);						// objective function value; NOTE 'params' is in spherical coordinates
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);		// gradient of objective function
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);				// Hessian of objective function
+	virtual double obj_func_work(const std::vector<double> &params);						// objective function value; NOTE 'params' is in spherical coordinates
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);		// gradient of objective function
+	virtual HMMPI::Mat obj_func_hess_work_1(const std::vector<double> &params);				// Hessian of objective function, version before Jun 2022
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);				// Hessian of objective function, faster version accounting for symmetry
+	virtual HMMPI::Mat ObjFuncFisher_mix_1(const std::vector<double> &params);		// mix between FI and Hess, version before Jul 2022
+	virtual HMMPI::Mat ObjFuncFisher_mix(const std::vector<double> &params);		// mix between FI and Hess, faster version accounting for symmetry
+
 	virtual int ParamsDim() const noexcept;											// dimension of parameters space (spherical coordinates)
 	virtual size_t ModelledDataSize() const;				// returns the supposed size of "modelled_data" (same on all ranks, no communication), independently of "modelled_data";
 	virtual std::string ObjFuncMsg() const;					// a message which can be printed after ObjFunc calculation
 	const HMMPI::SpherCoord &SC(){return Sc;};
 };
 //---------------------------------------------------------------------------
-// This model fully reproduces the underlying model 'PM',
-// the only difference is that 'con' is the cube |x - x0|_inf = Hk (over active coordinates)
-// Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
-// comm = PM->comm is taken; 'modelled_data' is taken from "PM"; 'DataSens' is not filled at the moment
+// This model fully reproduces the underlying model 'PM'.
+// The only difference is that 'con' is the cube |x - x0|_inf = Hk (over active coordinates).
+// Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0.
+// comm = PM->comm is taken; 'modelled_data' and 'data_sens' are taken from "PM".
 //---------------------------------------------------------------------------
 class PM_CubeBounds : public PhysModel
 {
@@ -282,11 +333,11 @@ protected:
 	const std::vector<double> c;		// cube center (full dim)
 
 public:
-	PM_CubeBounds(PhysModel *pm, double R0, const std::vector<double> &c0);			// comm = PM->comm, 'con' is built from PM->con (should be deleted in the end)
+	PM_CubeBounds(PhysModel *pm, const HMMPI::BlockDiagMat *bdc, double R0, const std::vector<double> &c0);		// comm = PM->comm, 'con' is built from PM->con (should be deleted in the end)
 	virtual ~PM_CubeBounds();			// deletes 'con'
-	virtual double ObjFunc(const std::vector<double> &params);						// objective function value
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);		// gradient of objective function
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);				// Hessian of objective function
+	virtual double obj_func_work(const std::vector<double> &params);						// objective function value
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);		// gradient of objective function
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);				// Hessian of objective function
 	virtual int ParamsDim() const noexcept;											// dimension of parameters space
 	virtual size_t ModelledDataSize() const;				// returns the supposed size of "modelled_data" (same on all ranks, no communication), independently of "modelled_data";
 	virtual std::string ObjFuncMsg() const;					// a message which can be printed after ObjFunc calculation
@@ -298,7 +349,7 @@ public:
 // Constraints are inherited from PM. The usual parameters vector is 'x', vector 'p' is set separately.
 // This model only works in terms of ACTIVE parameters!
 // Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
-// comm = PM->comm is taken; 'modelled_data', 'DataSens' are not filled
+// comm = PM->comm is taken; 'modelled_data', 'data_sens' are not filled
 // _NOTE_ whenever PM is changed (e.g. proxy gets trained), Caches should be Reset!
 //---------------------------------------------------------------------------
 class PM_FullHamiltonian : public PhysModel
@@ -350,7 +401,6 @@ public:
 	virtual ~PM_FullHamiltonian();		// deletes 'con'
 	const PM_FullHamiltonian &operator=(const PM_FullHamiltonian &H);
 
-	virtual double ObjFunc(const std::vector<double> &params);						// this function produces an error
 	virtual double ObjFunc_ACT(const std::vector<double> &params);					// when calculating ObjFunc_ACT or ObjFuncGrad_ACT, make sure 'pact' is set correctly!
 	virtual std::vector<double> ObjFuncGrad_ACT(const std::vector<double> &params);
 	double MMALA_logQ_ACT(const HMMPI::Mat &x, const HMMPI::Mat &xnew, double eps, const HMMPI::Cache<PM_FullHamiltonian, std::pair<std::vector<double>, double>, HMMPI::Mat> &mu_mmala);
@@ -407,10 +457,12 @@ public:
 	virtual void import_stats(const std::vector<double> &mod_data, const std::vector<double> &dx) = 0;		// supposed application - for importing the proxy modelled data and dX
 };
 //---------------------------------------------------------------------------
-// PM_Posterior: this model adds the Gaussian prior term (x - x0)' * C^(-1) * (x - x0) to the underlying likelihood 'PM'
+// PM_Posterior: this model adds the Gaussian prior term (x - x0)' * C_prior^(-1) * (x - x0) to the underlying likelihood 'PM'
 // Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
 // comm = PM->comm is taken;
-// 'modelled_data' is filled from PM, 'DataSens' is not filled.
+// 'modelled_data' is formed by complementing: {x | PM->modelled_data}.
+// 'data_sens', 'data_sens_loc' are complemented likewise.
+// 'BDC' is complemented by block C_prior, handled by rank-0.
 // If PM is PROXY, then PM_Posterior can delegate to it the training procedures.
 //---------------------------------------------------------------------------
 class PM_Posterior : public Sim_small_interface, public Proxy_train_interface
@@ -427,10 +479,9 @@ public:
 	PM_Posterior(PhysModel *pm, HMMPI::Mat C, HMMPI::Mat d, const bool is_posterior_diag = false);	// comm = PM->comm, con = PM->con (copy as ParamsInterface), 'is_posterior_diag' = true if PM_PosteriorDiag is to be created further
 	PM_Posterior(const PM_Posterior &p);						// copy CTOR will copy PM if it is PM_Proxy*, and will borrow the pointer otherwise
 	virtual ~PM_Posterior();			// deletes 'con'
-	virtual double ObjFunc(const std::vector<double> &params);
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);
 	virtual void WriteLimits(const std::vector<double> &p, std::string fname) const;
 	virtual int ParamsDim() const noexcept;
@@ -462,7 +513,9 @@ public:
 // *** Here, the prior covariance C is DIAGONAL; for components  "i" where C_ii = 0, weak prior is assumed
 // Member-functions should be called on all ranks; results should be accessed on comm-RANKS-0
 // comm = PM->comm is taken;
-// 'modelled_data' is filled from PM, 'DataSens' is not filled.
+// 'modelled_data' is formed by complementing: {x | PM->modelled_data}.
+// 'data_sens', 'data_sens_loc' are complemented likewise.
+// 'BDC' is complemented by block C_prior, handled by rank-0.
 // If PM is PROXY, then PM_PosteriorDiag can delegate to it the training procedures.
 //---------------------------------------------------------------------------
 class PM_PosteriorDiag : public PM_Posterior
@@ -480,10 +533,9 @@ public:
 	PM_PosteriorDiag(PhysModel *pm, const HMMPI::Mat &C_diag, HMMPI::Mat d);		// comm = PM->comm, con = PM->con (copy as ParamsInterface)
 	PM_PosteriorDiag(const PM_PosteriorDiag &p);			// copy CTOR will copy PM if it is PM_Proxy*, and will borrow the pointer otherwise
 	virtual ~PM_PosteriorDiag();
-	virtual double ObjFunc(const std::vector<double> &params);
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);									//  not implemented
+	virtual double obj_func_work(const std::vector<double> &params);
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);		//  not implemented
 	virtual std::string proc_msg() const;
 	virtual const HMMPI::Mat &cov_prior() const {return c_pr;};
@@ -543,7 +595,7 @@ public:
 	bool do_optimize_krig = false;		// defines whether OptimizeKrig should be run inside AddData
 	std::string mat_eff_rank;			// info on effective rank of the full kriging matrix, if available (filled by RecalcVals)
 
-	PM_Proxy(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_params *config);		// easy CTOR
+	PM_Proxy(MPI_Comm c, PhysModel *pm, const HMMPI::BlockDiagMat *bdc, Parser_1 *K, KW_item *kw, _proxy_params *config);		// easy CTOR
 	PM_Proxy(const PM_Proxy &p);								// copy CTOR; _NOTE_ PM is not copied, so make sure it is not deleted while the newly created proxy is still in use!
 	const PM_Proxy &operator=(const PM_Proxy &b) = delete;
 	virtual PM_Proxy *Copy() const {return new PM_Proxy(*this);};								// the pointer should be _DELETED_ in the end
@@ -566,9 +618,9 @@ public:
 																							// Nfval_pts shows how many points with func. vals should be selected (however, all points with grads are taken)
 																							// if proxy (X_0) is empty, all points with func. vals are taken
 																							// X0 can be defined on comm-RANKS-0 only
-	virtual double ObjFunc(const std::vector<double> &params);
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 	virtual std::vector<double> ObjFuncHess_l(const std::vector<double> &params, int l);			// calculates l-th column of Hessian
 	virtual std::vector<int> Data_ind() const {throw HMMPI::Exception("Illegal call to PM_Proxy::Data_ind");};
 	std::string Train(std::vector<std::vector<double>> pop, std::vector<size_t> grad_ind, int Nfval_pts);	// trains the proxy (i.e. adds to the existing proxy state) based on design points pop[len][full_dim], and PM->ObjFuncMPI_ACT("pop") calculated in parallel via MPI
@@ -589,7 +641,6 @@ class PM_DataProxy : public PM_Proxy
 private:
 	HMMPI::Mat Gr_loc;							// stores local gradients [re]used in ObjFuncHess_l
 	std::vector<double> resid_loc;				// stores local residual = 2 * C^(-1) * (d_m - d_o) [re]used in ObjFuncHess_l
-	HMMPI::Mat DataSens_loc;					// stores local sensitivities, calculated in ObjFuncGrad, used in ObjFuncFisher, ObjFuncFisher_dxi
 	size_t data_size;							// size of modelled data, sync on all MPI_COMM_WORLD ranks
 
 	void process_data_size(const std::vector<double> &d);	// size of "d" is taken at comm-RANKS-0, and Bcasted over MPI_COMM_WORLD, filling "data_size"
@@ -598,7 +649,6 @@ protected:
 	const char dump_CinvZ[100] = "proxy_dump_CinvZ_%d_rnk%d_pr%d.txt";
 	const char dump_Ity[100] = "proxy_dump_Ity_%d_rnk%d_pr%d.txt";
 
-	const HMMPI::BlockDiagMat *BDC;				// block-diagonal covariance matrix (MPI-distributed with "comm")
 	HMMPI::Mat d0;								// vector of observed data (MPI-distributed with "comm"); possibly, perturbed for RML
 	HMMPI::Mat d0_orig;							// vector of observed data (MPI-distributed with "comm"); original, not perturbed
 	HMMPI::RandNormal *RndN;					// this random number generator may be left = 0 (unless RML is required)
@@ -615,10 +665,9 @@ public:
 	const PM_DataProxy &operator=(const PM_DataProxy &b) = delete;
 	virtual PM_Proxy *Copy() const {return new PM_DataProxy(*this);};						// the pointer should be _DELETED_ in the end
 	virtual bool is_dataproxy() const {return true;};
-	virtual double ObjFunc(const std::vector<double> &params);								// these functions gather the results (incl. modelled_data, DataSens) from ALL RANKS to comm-RANKS-0
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);						// these functions gather the results (incl. modelled_data, data_sens) from ALL RANKS to comm-RANKS-0
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
 	virtual std::vector<double> ObjFuncHess_l(const std::vector<double> &params, int l);	// call this in increasing order of "l"
-	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);	// derivative of FI matrix w.r.t. x_i, call this in increasing order of "i", starting from 0; "r" is the rank where result should be accessed
 	virtual size_t ModelledDataSize() const {return data_size;};
 	virtual void PerturbData();												// RML data perturbation; #ifdef WRITE_PET_DATA && WORLD-RANK-0 == comm-RANK-0, perturbed data is written to "pet_DataProxy.txt"
@@ -729,9 +778,9 @@ public:
 	const HMMPI::Mat &Get_R() const {return R;};
 	void reset_cache() const {is_valid = 0;};									// manual cache reset (e.g. in PM_Proxy::AddData)
 
-	virtual double ObjFunc(const std::vector<double> &params);					// det(R)^(1/n)
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);			// det(R)^(1/n)
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 	virtual int ParamsDim() const noexcept {return 3;};
 };
 //---------------------------------------------------------------------------
@@ -765,9 +814,9 @@ public:
 	void take_refs(const HMMPI::Mat *f, const std::vector<double> *ys, const KrigCorr *kc) {F = f; Ys = ys; ref = kc; is_valid = false;};
 	void reset_cache() const {is_valid = false;};				// manual cache reset (e.g. in PM_Proxy::AddData)
 
-	virtual double ObjFunc(const std::vector<double> &params);
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 	virtual int ParamsDim() const noexcept {return 3;};
 };
 //---------------------------------------------------------------------------

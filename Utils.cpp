@@ -22,8 +22,24 @@ namespace HMMPI
 
 std::string MessageRE::lang = "ENG";
 char TagPrintfValBase::buff[BUFFSIZE];
-const int barrier_sleep_ms = 500;			// for MPI_BarrierSleepy
+const int barrier_sleep_ms = 500;				// for MPI_BarrierSleepy
 
+//------------------------------------------------------------------------------------------
+void MsgToFileApp(const std::string &msg)		// output to TEST_CACHE file
+{
+#ifdef TEST_CACHE
+	char fname[500];
+	int rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	sprintf(fname, TEST_CACHE, rank);
+	FILE *f = fopen(fname, "a");
+	if (f != NULL)
+	{
+		fputs(msg.c_str(), f);
+		fclose(f);
+	}
+#endif
+}
 //------------------------------------------------------------------------------------------
 bool FileExists(const std::string &fname)
 {

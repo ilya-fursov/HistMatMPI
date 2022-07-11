@@ -431,7 +431,8 @@ void KW_runOptProxy::Run()
 	if (config->r0 > 0)
 		Rk = config->r0;
 
-	K->AppText((std::string)HMMPI::MessageRE("Модель: ", "Model: ") + "POSTERIOR(" + model->type + ")\n");
+	K->AppText((std::string)HMMPI::MessageRE("Оптимизация прокси: ", "Proxy optimization: ") + "LM(" + config->LM_mat + ")\n");
+
 	int finished = 0;
 	int iter = 0;
 	time_t t0, t1;
@@ -468,7 +469,15 @@ void KW_runOptProxy::Run()
 
 		OptCtxLM optctx(config->LMmaxit, config->epsG, config->epsF, config->epsX);
 		OptCtxLM optctx_spher(config->LMmaxit_spher, config->epsG, config->epsF, config->epsX);
-		Optimizer *Opt = Optimizer::Make("LM");
+		Optimizer *Opt = nullptr;
+		if (config->LM_mat == "HESS")
+			Opt = Optimizer::Make("LM");
+		else if (config->LM_mat == "FI")
+			Opt = Optimizer::Make("LMFI");
+		else if (config->LM_mat == "FIMIX")
+			Opt = Optimizer::Make("LMFIMIX");
+		else
+			throw HMMPI::Exception("Wrong OPT_CONFIG.LM_mat in KW_runOptProxy::Run");
 
 		// optimize proxy
 		std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now(), time2, time3, time4;
@@ -517,7 +526,13 @@ void KW_runOptProxy::Run()
 
 		// recalculate simulation
 		PMproxy->ObjFunc(p);									// first, calculate the proxy o.f. (with breakdown) for reporting
-		PMecl->import_stats(PMproxy->ModelledData(), (HMMPI::Mat(p) - HMMPI::Mat(LM_start)).ToVector());	// import the proxy modelled data and the step taken
+		std::vector<double> mod_data_likelihood = PMproxy->ModelledData();	// PMproxy is posterior, so strip the prior 'modelled data'
+		if (mod_data_likelihood.size() > 0)
+		{
+			assert(mod_data_likelihood.size() >= p.size());
+			mod_data_likelihood = std::vector<double>(mod_data_likelihood.begin() + p.size(), mod_data_likelihood.end());
+		}
+		PMecl->import_stats(mod_data_likelihood, (HMMPI::Mat(p) - HMMPI::Mat(LM_start)).ToVector());	// import the proxy modelled data and the step taken
 
 		double of = PMecl->ObjFunc(p);
 		MPI_Bcast(&of, 1, MPI_DOUBLE, 0, PMecl->GetComm());		// sync SIM o.f.
@@ -603,7 +618,7 @@ void KW_runOptProxy::Run()
 									  "\n>> Best found SIM objective function (posterior) = {0:%.8g}\n", of_simbest));
 
 	model->R = model_R_cache;		// restore the original radius
-	model->type = modtype_cache;	// restore the model type TODO check!
+	model->type = modtype_cache;	// restore the model type
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -1063,7 +1078,10 @@ void KW_runOpt::Run()
 			optmsg = Opt->ReportMsgMult();
 		}
 		else
+		{
+			delete Opt;
 			throw HMMPI::Exception("Incorrect restriction type " + opt->restr);
+		}
 	}
 	else					// usual optimization
 	{
@@ -1158,13 +1176,7 @@ void KW_runGrad::Run()
 	K->AppText(PM->ObjFuncMsg());
 
 	std::vector<double> grad = PM->ObjFuncGrad_ACT(p);					// objective function gradient
-
-	// DEBUG
-//	std::cout << "full grad\n";	// DEBUG
-//	try {
-//		std::cout << HMMPI::ToString(PM->ObjFuncGrad(PM->tot_par(p))); }	// DEBUG
-//	catch (...) {
-//		std::cout << "N/A\n"; }		// DEBUG
+	const HMMPI::Mat Sens = PM->DataSens_act();
 
 	std::vector<double> aux(PM->ParamsDim_ACT(), 1);					// "direction" vector (ones)
 	double graddir1 = PM->ObjFuncGradDir_ACT(p, aux);					// objective function gradient along direction "aux"
@@ -1172,16 +1184,23 @@ void KW_runGrad::Run()
 	if (K->MPI_rank == 0)
 		graddir2 = HMMPI::InnerProd(grad, aux);
 
-	HMMPI::Mat Hess, FI;						// objective function Hessian, and Fisher Information for L = exp(-1/2*f); only works for some models
+	HMMPI::Mat Hess, FI, FImix;					// objective function Hessian, Fisher Information for L = exp(-1/2*f), FI-Hessian mix; only works for some models
 	std::vector<HMMPI::Mat> di_FI(p.size());	// dFI/dx_i
 	try
 	{
-		Hess = PM->ObjFuncHess_ACT(p);
+		Hess = PM->ObjFuncHess_ACT(p);			// models which cannot calculate ObjFuncHess, ObjFuncFisher, produce an exception, for them Hess, FI = empty
 
-		const bool TEMP_DEBUG = true;		// TODO DEBUG
-		if (!TEMP_DEBUG)
+		const bool YES_FI = true, YES_FI_MIX = true, YES_FI_DXI = false;		// switch as appropriate
+		if (YES_FI)
 		{
-			FI = PM->ObjFuncFisher_ACT(p);			// models which cannot calculate ObjFuncHess, ObjFuncFisher, produce an exception, for them Hess, FI = empty
+			FI = PM->ObjFuncFisher_ACT(p);
+		}
+		if (YES_FI_MIX)
+		{
+			FImix = PM->ObjFuncFisher_mix_ACT(p);
+		}
+		if (YES_FI_DXI)
+		{
 			for (size_t i = 0; i < p.size(); i++)
 				di_FI[i] = PM->ObjFuncFisher_dxi_ACT(p, i);
 		}
@@ -1201,8 +1220,8 @@ void KW_runGrad::Run()
 		fileS << "\ngrad(f) (objective function gradient WRT inner variables)" << std::endl;
 		fileS << HMMPI::ToString(grad, "%-20.16g");
 
-		fileS << "\nSens (sensitivity matrix for modelled data WRT inner variables)" << std::endl;
-		fileS << PM->DataSens.ToString("%-20.16g");
+		fileS << "\nSens (sensitivity matrix for modelled data WRT active inner variables)" << std::endl;
+		fileS << Sens.ToString("%-20.16g");
 
 		if (Hess.ICount() > 0)
 		{
@@ -1214,6 +1233,12 @@ void KW_runGrad::Run()
 		{
 			fileS << "\nFisher Information matrix for L = exp(-1/2*f) (WRT inner variables)" << std::endl;
 			fileS << FI.ToString("%-20.16g");
+		}
+
+		if (FImix.ICount() > 0)
+		{
+			fileS << "\nFI-Hessian mix [2*J'*FI*J + grad*T] (WRT inner variables)" << std::endl;
+			fileS << FImix.ToString("%-20.16g");
 		}
 
 		for (size_t i = 0; i < p.size(); i++)

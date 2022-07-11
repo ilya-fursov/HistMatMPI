@@ -423,12 +423,23 @@ void Mat::SetOpSwitch(int s)						// sets op_switch
 	op_switch = s;
 }
 //------------------------------------------------------------------------------------------
-Mat Mat::Tr() const				// transpose
+Mat Mat::Tr() const									// transpose, using Manual | OpenBLAS depending on 'op_switch'
 {
 	Mat res(jcount, icount, 0.0);
-	for (size_t i = 0; i < jcount; i++)
-		for (size_t j = 0; j < icount; j++)
-			res.data[i * icount + j] = data[j * jcount + i];
+
+	if (op_switch == 1)				// manual
+	{
+		for (size_t i = 0; i < jcount; i++)
+			for (size_t j = 0; j < icount; j++)
+				res.data[i * icount + j] = data[j * jcount + i];
+	}
+	else if (op_switch == 2)		// OpenBLAS
+	{
+		if (icount > 0 && jcount > 0)
+			cblas_domatcopy(CblasRowMajor, CblasTrans, icount, jcount, 1.0, data.data(), jcount, res.data.data(), icount);
+	}
+	else
+		throw Exception("Bad op_switch in Mat::Tr()");
 
 	return res;
 }
@@ -436,7 +447,7 @@ Mat Mat::Tr() const				// transpose
 double Mat::Trace() const
 {
 	if (icount != jcount)
-		throw Exception("����� Mat::Trace ��� ������������ �������", "Mat::Trace called for a non-square matrix");
+		throw Exception("Mat::Trace вызвана для неквадратной матрицы", "Mat::Trace was called for a non-square matrix");
 
 	double res = 0;
 	const double* p = data.data();
@@ -626,6 +637,24 @@ Mat Mat::Reorder(const std::vector<size_t>& ordi, const std::vector<size_t>& ord
 	return Mat(HMMPI::Reorder(data, icount, jcount, ordi, ordj), ordi.size(), ordj.size());
 }
 //------------------------------------------------------------------------------------------
+Mat Mat::Reorder(const std::vector<size_t> &ord, int dim) const		// creates submatrix with row or column indices from "ord"; use dim = 0 for applying "ord" to rows, dim = 1 for columns
+{
+	if (dim == 0)			// reorder rows
+	{
+		std::vector<size_t> ordJ(jcount);
+		std::iota(ordJ.begin(), ordJ.end(), 0);
+		return Reorder(ord, ordJ);
+	}
+	else if (dim == 1)		// reorder columns
+	{
+		std::vector<size_t> ordI(icount);
+		std::iota(ordI.begin(), ordI.end(), 0);
+		return Reorder(ordI, ord);
+	}
+	else
+		throw Exception("Wrong 'dim' in Mat::Reorder");
+}
+//------------------------------------------------------------------------------------------
 Mat Mat::Reorder(size_t i0, size_t i1, size_t j0, size_t j1) const		// creates a submatrix with indices [i0, i1)*[j0, j1)
 {
 	if (i1 > icount || j1 > jcount)
@@ -708,7 +737,11 @@ void Mat::operator-=(const Mat& m)
 Mat Mat::operator*(const Mat& m) const		// *this * m, using Manual | BLAS depending on 'op_switch'
 {
 	if (jcount != m.icount)
-		throw Exception("Inconsistent dimensions in Mat::operator*(Mat)");
+	{
+		char msg[BUFFSIZE];
+		sprintf(msg, "Inconsistent dimensions in Mat::operator*(Mat): %zu*%zu, %zu*%zu", icount, jcount, m.icount, m.jcount);
+		throw Exception(msg);
+	}
 
 	size_t sz_I = icount;
 	size_t sz_J = m.jcount;
@@ -743,31 +776,6 @@ Mat Mat::operator*(const Mat& m) const		// *this * m, using Manual | BLAS depend
 		throw Exception("Bad op_switch in Mat::operator*(Mat)");
 
 	return res;
-}
-//------------------------------------------------------------------------------------------
-std::vector<double> Mat::operator*(const std::vector<double>& v) const		// *this * v, using Manual | BLAS depending on 'op_switch'
-{
-	if (jcount != v.size())
-		throw Exception("Inconsistent dimensions in Mat::operator*(vector)");
-
-	if (op_switch == 1)
-	{
-		Mat res = (*this) * Mat(v);
-		return res.ToVector();
-	}
-	else if (op_switch == 2)
-	{
-		std::vector<double> res(icount, 0.0);
-		const int lda = jcount;
-		const double alpha = 1;
-		const double beta = 0;
-		if (icount > 0 && jcount > 0)
-			cblas_dgemv(CblasRowMajor, CblasNoTrans, icount, jcount, alpha, data.data(), lda, v.data(), 1, beta, res.data(), 1);
-
-		return res;
-	}
-	else
-		throw Exception("Bad op_switch in Mat::operator*(vector)");
 }
 //------------------------------------------------------------------------------------------
 std::vector<double> Mat::MultvecR(const std::vector<double> &v) const		// *this * v, using BLAS dgemm
@@ -1280,6 +1288,60 @@ Mat operator%(Mat m, const std::vector<double>& v)	// Mat * diag
 			m.data[i * m.jcount + j] *= v[j];
 
 	return m;
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> operator*(const Mat &m, const std::vector<double> &v)		// m * v, where v and result are columns, using Manual | BLAS depending on 'op_switch'
+{
+	if (m.jcount != v.size())
+		throw Exception("Inconsistent dimensions in Mat * vector");
+
+	if (m.op_switch == 1)
+	{
+		Mat vec(v);					// column
+		vec.SetOpSwitch(1);
+		Mat res = m * vec;
+		return res.ToVector();
+	}
+	else if (m.op_switch == 2)
+	{
+		std::vector<double> res(m.icount, 0.0);
+		const int lda = m.jcount;
+		const double alpha = 1;
+		const double beta = 0;
+		if (m.icount > 0 && m.jcount > 0)
+			cblas_dgemv(CblasRowMajor, CblasNoTrans, m.icount, m.jcount, alpha, m.data.data(), lda, v.data(), 1, beta, res.data(), 1);
+
+		return res;
+	}
+	else
+		throw Exception("Bad op_switch in Mat * vector");
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> operator*(const std::vector<double> &v, const Mat &m)		// v * m, where v and result are rows, using Manual | BLAS depending on 'op_switch'
+{
+	if (m.icount != v.size())
+		throw Exception("Inconsistent dimensions in vector * Mat");
+
+	if (m.op_switch == 1)
+	{
+		Mat vec(v, 1, v.size());	// row
+		vec.SetOpSwitch(1);
+		Mat res = vec * m;
+		return res.ToVector();
+	}
+	else if (m.op_switch == 2)
+	{
+		std::vector<double> res(m.jcount, 0.0);
+		const int lda = m.jcount;
+		const double alpha = 1;
+		const double beta = 0;
+		if (m.icount > 0 && m.jcount > 0)
+			cblas_dgemv(CblasRowMajor, CblasTrans, m.icount, m.jcount, alpha, m.data.data(), lda, v.data(), 1, beta, res.data(), 1);
+
+		return res;
+	}
+	else
+		throw Exception("Bad op_switch in vector * Mat");
 }
 //------------------------------------------------------------------------------------------
 Mat operator/(Mat A, Mat b)

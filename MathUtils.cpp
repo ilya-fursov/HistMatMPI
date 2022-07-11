@@ -1038,7 +1038,12 @@ void DiagBlockNum::div(const std::vector<double> &vec1, int start, std::vector<d
 		throw Exception("Index 'start' and the block size are not appropriate in DiagBlockNum::div");
 
 	for (int i = start; i < end; i++)
-		vec2[i] = vec1[i] / d[i-start];
+	{
+		if (d[i-start] != 0)
+			vec2[i] = vec1[i] / d[i-start];
+		else
+			vec2[i] = 0;		// special case: ZERO SIGMA!
+	}
 }
 //------------------------------------------------------------------------------------------
 void DiagBlockNum::div(const Mat &m1, int start, Mat &m2) const
@@ -1050,7 +1055,7 @@ void DiagBlockNum::div(const Mat &m1, int start, Mat &m2) const
 		throw Exception("Number of columns in m1, m2 do not match in DiagBlockNum::div(2)");
 
 	std::vector<double> dinv(d.size());
-	std::transform(d.begin(), d.end(), dinv.begin(), [](double x){return 1/x;});	// invert the diagonal
+	std::transform(d.begin(), d.end(), dinv.begin(), [](double x){return (x != 0 ? 1/x : 0);});		// invert the diagonal, also handling the special case (ZERO SIGMA)
 
 	Mat m1_loc(d.size(), m1.JCount(), 0);
 	memcpy(m1_loc.ToVectorMutable().data(), m1.ToVector().data() + start*m1.JCount(), d.size()*m1.JCount()*sizeof(double));		// m1_loc = m1(start:start+block, :)
@@ -1096,7 +1101,9 @@ void DiagBlockMat::div(const std::vector<double> &vec1, int start, std::vector<d
 		throw Exception("Index 'start' and the block size are not appropriate in DiagBlockMat::div");
 
 	Mat v1(std::vector<double>(vec1.begin()+start, vec1.begin()+end));
-	Mat v2 = M / v1;
+	SolverDGESV Invert;
+	Mat v2 = Invert.Solve(M, v1);
+
 	memcpy(vec2.data() + start, v2.ToVector().data(), (end-start)*sizeof(double));
 }
 //------------------------------------------------------------------------------------------
@@ -1111,7 +1118,9 @@ void DiagBlockMat::div(const Mat &m1, int start, Mat &m2) const
 	Mat m1_loc(size(), m1.JCount(), 0);
 	memcpy(m1_loc.ToVectorMutable().data(), m1.ToVector().data() + start*m1.JCount(), size()*m1.JCount()*sizeof(double));		// m1_loc = m1(start:start+block, :)
 
-	Mat m2_loc = M / std::move(m1_loc);
+	SolverDGESV Invert;
+	Mat m2_loc = Invert.Solve(M, std::move(m1_loc));
+
 	memcpy(m2.ToVectorMutable().data() + start*m1.JCount(), m2_loc.ToVector().data(), size()*m1.JCount()*sizeof(double));		// m2(start:start+block, :) = m2_loc
 }
 //------------------------------------------------------------------------------------------
@@ -1141,6 +1150,28 @@ DiagBlockMat::DiagBlockMat(Mat m) : M(std::move(m))
 //------------------------------------------------------------------------------------------
 // BlockDiagMat
 //------------------------------------------------------------------------------------------
+//#define TEST_BDC_TOR
+//------------------------------------------------------------------------------------------
+void BlockDiagMat::write_test_tor(std::string msg) const	// reports from ctors and dtors
+{
+	int RNK;
+	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
+
+	char fname[BUFFSIZE];
+	sprintf(fname, "BDC_test_ctors_dtors_%d.txt", RNK);
+
+	FILE *F = fopen(fname, "a");
+	fprintf(F, "%p\t%s\n", this, msg.c_str());
+	fclose(F);
+}
+//------------------------------------------------------------------------------------------
+BlockDiagMat::BlockDiagMat(MPI_Comm c) : last_r(0), comm(c), sz(0), finalized(false)
+{
+#ifdef TEST_BDC_TOR
+	write_test_tor("BDC +++ empty ctor");
+#endif
+}
+//------------------------------------------------------------------------------------------
 BlockDiagMat::BlockDiagMat(MPI_Comm c, const HMMPI::CorrelCreator *Corr, const HMMPI::StdCreator *Std) : last_r(0), comm(c), sz(0), finalized(false)
 {
 	// make BlockDiagMat covariance matrix : both diagonal blocks and dense blocks are added
@@ -1158,7 +1189,7 @@ BlockDiagMat::BlockDiagMat(MPI_Comm c, const HMMPI::CorrelCreator *Corr, const H
 	int cblock = 0;					// index of the block to be processed
 	int Nblocks = Blocks.size();	// number of blocks in corr. matrix
 	if (Sigma.size() != full_sz)
-		throw HMMPI::Exception(HMMPI::stringFormatArr("Number of std's ({0:%ld}) does not match the size of correlation matrix ({1:%ld}) in BlockDiagMat::Create", std::vector<size_t>{Sigma.size(), full_sz}));
+		throw HMMPI::Exception(HMMPI::stringFormatArr("Number of std's ({0:%zu}) does not match the size of correlation matrix ({1:%zu}) in BlockDiagMat CTOR", std::vector<size_t>{Sigma.size(), full_sz}));
 
 	int rank = -1, size = -1;
 	if (c != MPI_COMM_NULL)
@@ -1187,13 +1218,6 @@ BlockDiagMat::BlockDiagMat(MPI_Comm c, const HMMPI::CorrelCreator *Corr, const H
 					AddBlock(cov_block, i);											// add dense block
 				}
 
-//				if (rank == i)		// DEBUG
-//				{
-//					int rank_w;		// DEBUG
-//					MPI_Comm_rank(MPI_COMM_WORLD, &rank_w);		// DEBUG
-//					std::cout << "rank_w " << rank_w << ", block " << j << ", indices " << start << " -- " << end << "\n";	// DEBUG
-//				}
-
 				start = end;
 			}
 			if (Nblocks_rank == 0)
@@ -1203,12 +1227,45 @@ BlockDiagMat::BlockDiagMat(MPI_Comm c, const HMMPI::CorrelCreator *Corr, const H
 		}
 	}
 	Finalize();
+
+#ifdef TEST_BDC_TOR
+	write_test_tor("BDC +++ EASY ctor");
+#endif
+}
+//------------------------------------------------------------------------------------------
+BlockDiagMat::BlockDiagMat(const HMMPI::Mat &Pr, const BlockDiagMat &b)	: last_r(0), comm(b.GetComm()), sz(0), finalized(false)
+{									// this CTOR prepends the existing object 'b' by the new block 'Pr' (a full matrix, or diagonal) on rank-0
+	// first, insert 'Pr'
+	int nj = Pr.JCount();
+	if (comm != MPI_COMM_NULL)
+		MPI_Bcast(&nj, 1, MPI_INT, 0, comm);
+	if (nj == 1)					// sync
+		AddBlock(Pr.ToVector(), 0);	// diagonal block
+	else
+		AddBlock(Pr, 0);			// dense block
+
+	for (size_t i = 0; i < b.Blocks.size(); i++)		// sequentially add the blocks from 'b', all ranks work differently!
+	{
+		DiagBlock *block = b.Blocks[i]->Copy();
+		Blocks.push_back(block);
+		sz += block->size();
+	}
+	last_r = b.last_r;
+	Finalize();
+
+#ifdef TEST_BDC_TOR
+	write_test_tor("BDC +++ prepending ctor");
+#endif
 }
 //------------------------------------------------------------------------------------------
 BlockDiagMat::~BlockDiagMat()
 {
 	for (auto &i : Blocks)
 		delete i;
+
+#ifdef TEST_BDC_TOR
+	write_test_tor("BDC --- destructor");
+#endif
 }
 //------------------------------------------------------------------------------------------
 int BlockDiagMat::size() const
@@ -1227,7 +1284,7 @@ std::vector<int> BlockDiagMat::Data_ind() const
 	return data_ind;
 }
 //------------------------------------------------------------------------------------------
-void BlockDiagMat::AddBlock(std::vector<double> v, int r)
+void BlockDiagMat::AddBlock(std::vector<double> v, int r)	// block = diag(v) is added to rank 'r'; 'v' should exist at least on rank 'r'
 {
 	if (comm == MPI_COMM_NULL)
 		return;
@@ -1256,7 +1313,7 @@ void BlockDiagMat::AddBlock(std::vector<double> v, int r)
 	finalized = false;
 }
 //------------------------------------------------------------------------------------------
-void BlockDiagMat::AddBlock(HMMPI::Mat m, int r)
+void BlockDiagMat::AddBlock(HMMPI::Mat m, int r)	// block = 'm' is added to rank 'r'; 'm' should exist at least on rank 'r'
 {
 	if (comm == MPI_COMM_NULL)
 		return;
@@ -1319,7 +1376,7 @@ std::vector<double> BlockDiagMat::operator*(const std::vector<double> &v) const
 		throw Exception("Vector size mismatch in BlockDiagMat::operator*");
 
 	std::vector<double> res(sz);
-	double start = 0;
+	int start = 0;
 	for (size_t i = 0; i < Blocks.size(); i++)
 	{
 		Blocks[i]->mult(v, start, res);
@@ -1337,7 +1394,7 @@ std::vector<double> BlockDiagMat::operator/(const std::vector<double> &v) const
 		throw Exception("Vector size mismatch in BlockDiagMat::operator/");
 
 	std::vector<double> res(sz);
-	double start = 0;
+	int start = 0;
 	for (size_t i = 0; i < Blocks.size(); i++)
 	{
 		Blocks[i]->div(v, start, res);
@@ -1352,10 +1409,14 @@ Mat BlockDiagMat::operator/(const Mat &m) const
 	if (!finalized)
 		throw Exception("Calling operator/(2) on a non-finalized BlockDiagMat");
 	if ((int)m.ICount() != sz)
-		throw Exception("Matrix row-size mismatch in BlockDiagMat::operator/(2)");
+	{
+		char msg[BUFFSIZE];
+		sprintf(msg, "Matrix row-size mismatch in BlockDiagMat::operator/(2), sz = %d, mat = %zu*%zu", sz, m.ICount(), m.JCount());
+		throw Exception(msg);
+	}
 
 	Mat res(sz, m.JCount(), 0);
-	double start = 0;
+	int start = 0;
 	for (size_t i = 0; i < Blocks.size(); i++)
 	{
 		Blocks[i]->div(m, start, res);
@@ -1373,7 +1434,7 @@ std::vector<double> BlockDiagMat::operator%(const std::vector<double> &v) const
 		throw Exception("Vector size mismatch in BlockDiagMat::operator%");
 
 	std::vector<double> res(sz);
-	double start = 0;
+	int start = 0;
 	for (size_t i = 0; i < Blocks.size(); i++)
 	{
 		Blocks[i]->chol_mult(v, start, res);
@@ -1387,6 +1448,23 @@ double BlockDiagMat::InvTwoSideVecMult(const std::vector<double> &v) const
 {
 	std::vector<double> div = *this / v;		// MAT^(-1) * v
 	return InnerProd(v, div);					// v' * MAT^(-1) * v
+}
+//------------------------------------------------------------------------------------------
+void BlockDiagMat::PrintToFile(std::string tag) const		// print the contents to files, each rank outputs to its own file; 'tag' is a suffix
+{
+#ifdef TEST_BDC_TOR
+	int RNK;
+	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
+
+	char fname[BUFFSIZE];
+	sprintf(fname, file_rpt.c_str(), tag.c_str(), RNK);
+
+	FILE *F = fopen(fname, "w");
+	for (size_t i = 0; i < Blocks.size(); i++)
+		fprintf(F, "%s", Blocks[i]->ToString().c_str());
+
+	fclose(F);
+#endif
 }
 //------------------------------------------------------------------------------------------
 // SolverGauss
@@ -1904,8 +1982,37 @@ double SpherCoord::arccot(double a, double b) const
 	return pi/2 - atan(a/b);
 }
 //------------------------------------------------------------------------------------------
+std::vector<double> SpherCoord::calc_cos(const std::vector<double> &v) const		// calculates cos(v_i)
+{
+	const size_t N = v.size();
+	std::vector<double> res(N);
+	for (size_t i = 0; i < N; i++)
+		res[i] = cos(v[i]);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+std::vector<double> SpherCoord::calc_sin(const std::vector<double> &v) const		// calculates sin(v_i)
+{
+	const size_t N = v.size();
+	std::vector<double> res(N);
+	for (size_t i = 0; i < N; i++)
+		res[i] = sin(v[i]);
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+SpherCoord::SpherCoord(double R0, const std::vector<double> &c0) :
+		Cos(&SpherCoord::calc_cos), Sin(&SpherCoord::calc_sin),
+		c(c0), dim(c0.size()), R(R0), radius(0), pi(acos(-1)), pi2(2*acos(-1))
+{
+}
+//------------------------------------------------------------------------------------------
 std::vector<double> SpherCoord::spher_to_cart(const std::vector<double> &p) const
 {
+	std::vector<double> vcos = Cos.Get(this, p);
+	std::vector<double> vsin = Sin.Get(this, p);
+
 	assert(dim >= 2);
 	if (p.size()+1 != (size_t)dim)
 		throw Exception("Inconsistent dimensions in SpherCoord::spher_to_cart");
@@ -1914,8 +2021,8 @@ std::vector<double> SpherCoord::spher_to_cart(const std::vector<double> &p) cons
 	double prod = 1;
 	for (int i = 0; i < dim-1; i++)
 	{
-		res[i] = R*prod*cos(p[i]) + c[i];
-		prod *= sin(p[i]);
+		res[i] = R*prod*vcos[i] + c[i];
+		prod *= vsin[i];
 	}
 	res[dim-1] = R*prod + c[dim-1];
 
@@ -1956,6 +2063,9 @@ std::vector<double> SpherCoord::cart_to_spher(std::vector<double> x) const
 //------------------------------------------------------------------------------------------
 Mat SpherCoord::dxdp(const std::vector<double> &p) const
 {
+	std::vector<double> vcos = Cos.Get(this, p);
+	std::vector<double> vsin = Sin.Get(this, p);
+
 	assert(dim >= 2);
 	if (p.size()+1 != (size_t)dim)
 		throw Exception("Inconsistent dimensions in SpherCoord::dxdp");
@@ -1965,8 +2075,8 @@ Mat SpherCoord::dxdp(const std::vector<double> &p) const
 	std::vector<double> prod(dim-1, 0.0);	// will accumulate product for each column
 	for (int i = 0; i < dim-1; i++)			// row
 	{
-		double sini = sin(p[i]);
-		double cosi = cos(p[i]);
+		double sini = vsin[i];
+		double cosi = vcos[i];
 		for (int j = 0; j < i; j++)			// column
 		{
 			res(i, j) = R*prod[j]*cosi;
@@ -1987,6 +2097,9 @@ Mat SpherCoord::dxdp(const std::vector<double> &p) const
 //------------------------------------------------------------------------------------------
 Mat SpherCoord::dxdp_k(const std::vector<double> &p, int k) const
 {
+	std::vector<double> vcos = Cos.Get(this, p);
+	std::vector<double> vsin = Sin.Get(this, p);
+
 	assert(dim >= 2);
 	if (p.size()+1 != (size_t)dim)
 		throw Exception("Inconsistent dimensions in SpherCoord::dxdp_k");
@@ -1998,8 +2111,8 @@ Mat SpherCoord::dxdp_k(const std::vector<double> &p, int k) const
 	std::vector<double> prod(dim-1, 0.0);	// will accumulate product for each column
 	for (int i = 0; i < dim-1; i++)			// row
 	{
-		double sini = sin(p[i]);
-		double cosi = cos(p[i]);
+		double sini = vsin[i];
+		double cosi = vcos[i];
 		for (int j = 0; j < i; j++)			// column
 		{
 			if (i > k)
@@ -2032,6 +2145,65 @@ Mat SpherCoord::dxdp_k(const std::vector<double> &p, int k) const
 	}
 
 	for (int j = 0; j < dim-1; j++)			// last row, i = dim-1
+		res(dim-1, j) = R*prod[j];
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+Mat SpherCoord::dxdp_k_upper(const std::vector<double> &p, int k) const			// d/dp(dx/dp_k) with elements (i,j) where only elements j<=k are filled
+{																				// <-> T(i,j,k)
+	std::vector<double> vcos = Cos.Get(this, p);
+	std::vector<double> vsin = Sin.Get(this, p);
+
+	assert(dim >= 2);
+	if (p.size()+1 != (size_t)dim)
+		throw Exception("Inconsistent dimensions in SpherCoord::dxdp_k_upper");
+	if (k < 0 || k >= dim-1)
+		throw Exception("Index 'k' out of range in SpherCoord::dxdp_k_upper");
+
+	Mat res(dim, k+1, 0.0);
+	double prodsin = 1;						// accumulates product of sines, and probably one cosine
+	std::vector<double> prod(k+1, 0.0);		// will accumulate product for each column
+	for (int i = 0; i < dim-1; i++)			// row
+	{
+		double sini = vsin[i];
+		double cosi = vcos[i];
+
+		int lim = i;
+		if (k+1 < lim)
+			lim = k+1;
+
+		for (int j = 0; j < lim; j++)			// column
+		{
+			if (i > k)
+				res(i, j) = R*prod[j]*cosi;
+			else if (i == k)
+				res(i, j) = -R*prod[j]*sini;
+
+			if (i != k)
+				prod[j] *= sini;
+			else
+				prod[j] *= cosi;
+		}
+
+		if (i <= k)
+			prod[i] = prodsin;
+		if (i == k)
+			res(i, i) = -R*prod[i]*cosi;		// now, for j = i
+
+		if (i < k)
+		{
+			prod[i] *= cosi;
+			prodsin *= sini;
+		}
+		else if (i == k)
+		{
+			prod[i] *= -sini;
+			prodsin *= cosi;
+		}
+	}
+
+	for (int j = 0; j <= k; j++)				// last row, i = dim-1
 		res(dim-1, j) = R*prod[j];
 
 	return res;

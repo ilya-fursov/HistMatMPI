@@ -752,7 +752,7 @@ protected:
 	std::vector<NonlinearSystemSolver*> nonlin;		// -"- MakeNonlinSolver()
 
 public:
-	std::string algorithm;		// CMAES, LM, LMFI
+	std::string algorithm;		// CMAES, LM, LMFI, LMFIMIX
 	std::string fin_diff;		// OH1, OH2, OH4, OH8
 	std::string nonlin_solver;	// FIXEDPOINT; (gsl) NEWTON, GNEWTON, HYBRIDPOWELL; (kinsol) KIN_NEWTON, KIN_NEWTON_LS, KIN_FP, KIN_PICARD; for nonlinear solver the other options are: 'maxit', 'epsG', ['epsX' - for KINSOL]
 	int maxit;					// max iterations (both for LM optimization, and Newton non-linear solver)
@@ -778,13 +778,14 @@ protected:
 public:
 	int MaxIter;			// stopping criteria for outer loop: maximum iterations
 	double MaxHours;		// and maximum time (hours)
-	std::string LMstart;	// CURR, SIMBEST - defines how the starting point for LM is taken; (INIT, ALL = {INIT, SIMBEST, CURR, LM_Nrand random points} -- obsolete)
+	std::string LMstart;	// CURR, SIMBEST - defines how the starting point for LM is taken
 	double r0;		// starting step for RESTRICTED STEP case (internal representation); RESTRICTED STEP is used whenever r0 > 0
 	double rmin;	// minimum step for RESTRICTED STEP case
 	double tau1;	// 0.25, for RESTRICTED STEP case
 	double tau2;	// 0.75, for RESTRICTED STEP case
 	double delta;	// small gap for spherical coordinates (RESTRICTED STEP case)
 	std::string restr;		// restriction type: CUBE, SPHERE
+	std::string LM_mat;		// HESS, FI, FIMIX (for LM iterations)
 	int LMmaxit;			// stopping criteria for each inner (LM) loop
 	int LMmaxit_spher;		// max iterations for LM optimization on sphere (only for restr = SPHERE)
 	double epsG;

@@ -58,7 +58,7 @@ protected:
 	RegListSpat *RLS;
 
 #ifdef PUNQADJ
-	std::vector<double> gradient;		// filled inside ObjFunc along with DataSens
+	std::vector<double> gradient;		// filled inside ObjFunc along with data_sens
 	bool adjoint_run;					// if true, DATA file will be modified (ad hoc) for adjoint run; normally should be set to false
 #endif
 
@@ -110,9 +110,9 @@ public:
 	virtual ~PhysModelHM();
 	std::string IndexMsg() const;	// ñîîáùåíèå ïðî èíäåêñû â index_arr
 	virtual bool CheckLimits(const std::vector<double> &params) const;
-	virtual double ObjFunc(const std::vector<double> &params);			// calculates objective function by running eclipse model with index = RNK; fills ModelledData if w1 != 0
+	virtual double obj_func_work(const std::vector<double> &params);	// calculates objective function by running eclipse model with index = RNK; fills ModelledData if w1 != 0
 																		// simulation is only done on comm-RANKS-0; o.f. and modelled_data are Bcasted to other ranks as well
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);		// works only for #define PUNQADJ
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);		// works only for #define PUNQADJ
 	virtual size_t ModelledDataSize() const;
 	virtual std::string ObjFuncMsg() const;
 	void Constraints(HMMPI::Vector2<double> &matrC, std::vector<double> &vectb);
@@ -184,7 +184,7 @@ public:
 	const PMEclipse &operator=(const PMEclipse &p) = delete;
 	virtual int ParamsDim() const noexcept;
 	virtual ~PMEclipse();
-	virtual double ObjFunc(const std::vector<double> &params);				// calculates objective function by running the simulation model; fills modelled_data; simulation is only done on comm-RANKS-0
+	virtual double obj_func_work(const std::vector<double> &params);		// calculates objective function by running the simulation model; fills modelled_data; simulation is only done on comm-RANKS-0
 	virtual size_t ModelledDataSize() const;					// only works for TEXTSMRY case, otherwise produces error
 	virtual std::string ObjFuncMsg() const {return obj_func_msg;};
 	virtual void PerturbData();		// data perturbation for RML (and sync between ranks in MPI_COMM_WORLD);
@@ -237,9 +237,9 @@ public:
 	virtual ~PMpConnect();
 	virtual int ParamsDim() const noexcept;
 	virtual size_t ModelledDataSize() const;
-	virtual double ObjFunc(const std::vector<double> &params);					// calculates objective function [and gradient] by running the simulation model;
+	virtual double obj_func_work(const std::vector<double> &params);			// calculates objective function [and gradient] by running the simulation model;
 																				// modelled_data is also filled; simulation is only done on comm-RANKS-0
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);	// gradient of objective function; internally, run_simulation() is called
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);	// gradient of objective function; internally, run_simulation() is called
 	virtual std::string ObjFuncMsg() const {return obj_func_msg;};
 	virtual void SetIntTag(int tag){smpl_tag = tag;};
 
@@ -271,7 +271,7 @@ public:
 	const PMConc &operator=(const PMConc &p) = delete;
 	virtual int ParamsDim() const noexcept;
 	virtual size_t ModelledDataSize() const {return nonzero_sigma_ind.size();};
-	virtual double ObjFunc(const std::vector<double> &params);				// calculates objective function by running the simulation model;
+	virtual double obj_func_work(const std::vector<double> &params);		// calculates objective function by running the simulation model;
 																			// modelled_data is also filled; simulation is only done on comm-RANKS-0
 	virtual std::string ObjFuncMsg() const {return obj_func_msg;};
 
@@ -292,9 +292,9 @@ public:
 	PM_Rosenbrock(int d) : dim(d) {name = "PM_Rosenbrock";};		// model with given dimension
 	PM_Rosenbrock(Parser_1 *K, KW_item *kw, MPI_Comm c);			// LIMITS (and dim) are taken from "K"; "kw" is used only to handle prerequisites
 	virtual ~PM_Rosenbrock();
-	virtual double ObjFunc(const std::vector<double> &params);
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);
 	virtual int ParamsDim() const noexcept {return dim;};
@@ -307,10 +307,10 @@ public:
 // Model with linear forward operator (Gx-d0)^t * 1/C * (Gx-d0)
 // Covariance matrix can be either diagonal or dense
 // Currently works only for LIMITS (not PARAMETERS) to avoid parameters casting to external representation
-class PM_Linear : public PhysModel
+class PM_Linear : public PhysModel, public HMMPI::CorrelCreator, public HMMPI::StdCreator, public HMMPI::DataCreator
 {
 private:
-	std::vector<double> cov_diag();	// get diagonal of covariance matrix - DiagCov or FullCov
+	std::vector<double> cov_diag() const;	// get diagonal of covariance matrix - DiagCov or FullCov
 
 protected:
 	HMMPI::RandNormal *RndN;		// this random number generator may be left = 0 (unless RML is required)
@@ -329,9 +329,9 @@ public:
 		RndN(rn), G(std::move(g)), d0_orig(std::move(d)), DiagCov(std::move(c)), FullCov(std::move(fc)), holding_chol(false){d0 = d0_orig; name = "PM_Linear";};
 	PM_Linear(Parser_1 *K, KW_item *kw, MPI_Comm c);		// easy constructor; all data are taken from keywords of "K"; "kw" is used only to handle prerequisites
 	virtual ~PM_Linear();
-	virtual double ObjFunc(const std::vector<double> &params);
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher(const std::vector<double> &params);
 	virtual HMMPI::Mat ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r = 0);
 	virtual int ParamsDim() const noexcept {return G.JCount();};
@@ -339,6 +339,9 @@ public:
 	virtual void PerturbData();		// perturb data for RML using 'DiagCov' or 'FullCov'; new data are stored in 'd0'; #ifdef WRITE_PET_DATA, perturbed data are written to file "pet_data_LIN.txt" on RNK-0
 									// perturbed data is always written to "MatVecVec_RML.txt" on RNK-0
 									// no MPI is used here, so make sure srand() seed is sync between ranks
+	virtual std::vector<HMMPI::Mat> CorrBlocks() const;
+	virtual std::vector<double> Std() const;
+	virtual std::vector<double> Data() const;
 };
 //---------------------------------------------------------------------------
 // Model with arbitrary forward operator F(x), obj. func. = (F(x)-d0)^t * 1/C * (F(x)-d0)
@@ -359,9 +362,9 @@ public:
 	PM_Func(int param_dim, const std::vector<double> &data, const std::vector<double> &c);
 	PM_Func(Parser_1 *K, KW_item *kw, MPI_Comm c) : PhysModel(K, kw, c), Npar(0){};		// auxiliary CTOR
 	virtual ~PM_Func();
-	virtual double ObjFunc(const std::vector<double> &params);
-	virtual std::vector<double> ObjFuncGrad(const std::vector<double> &params);
-	virtual HMMPI::Mat ObjFuncHess(const std::vector<double> &params);
+	virtual double obj_func_work(const std::vector<double> &params);
+	virtual std::vector<double> obj_func_grad_work(const std::vector<double> &params);
+	virtual HMMPI::Mat obj_func_hess_work(const std::vector<double> &params);
 
 	virtual int ParamsDim() const noexcept {return Npar;};
 	virtual size_t ModelledDataSize() const {return d0.size();};

@@ -1952,7 +1952,7 @@ KW_optimization::KW_optimization()
 	DEFPAR(restr, "CUBE");
 
 	FinalizeParams();
-	EXPECTED[0] = std::vector<std::string>{"CMAES", "LM", "LMFI"};
+	EXPECTED[0] = std::vector<std::string>{"CMAES", "LM", "LMFI", "LMFIMIX"};
 	EXPECTED[1] = std::vector<std::string>{"OH1", "OH2", "OH4", "OH8"};
 	EXPECTED[2] = std::vector<std::string>{"FIXEDPOINT", "NEWTON", "GNEWTON", "HYBRIDPOWELL", "KIN_NEWTON", "KIN_NEWTON_LS", "KIN_FP", "KIN_PICARD"};
 	EXPECTED[10] = std::vector<std::string>{"CUBE", "SPHERE"};
@@ -1971,7 +1971,7 @@ OptContext *KW_optimization::MakeContext()
 {
 	if (algorithm == "CMAES")
 		return K;				// not added to "ctx" since it should not be deleted
-	else if (algorithm == "LM" || algorithm == "LMFI")
+	else if (algorithm == "LM" || algorithm == "LMFI" || algorithm == "LMFIMIX")
 	{
 		OptCtxLM *res = new OptCtxLM(maxit, epsG, epsF, epsX);
 		ctx.push_back(res);
@@ -2016,6 +2016,7 @@ KW_opt_config::KW_opt_config()
 	DEFPAR(tau2, 0.75);
 	DEFPAR(delta, 1e-5);
 	DEFPAR(restr, "CUBE");
+	DEFPAR(LM_mat, "HESS");			// HESS, FI, FIMIX (for LM iterations)
 	DEFPAR(LMmaxit, 50);
 	DEFPAR(LMmaxit_spher, 500);		// max iterations for LM optimization on sphere (only for restr = SPHERE)
 	DEFPAR(epsG, 1e-10);
@@ -2025,6 +2026,7 @@ KW_opt_config::KW_opt_config()
 	FinalizeParams();
 	EXPECTED[2] = std::vector<std::string>{"CURR", "SIMBEST"};
 	EXPECTED[8] = std::vector<std::string>{"CUBE", "SPHERE"};
+	EXPECTED[9] = std::vector<std::string>{"HESS", "FI", "FIMIX"};
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

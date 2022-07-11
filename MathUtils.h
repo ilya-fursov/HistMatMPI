@@ -170,7 +170,7 @@ public:
 
 	// math
 	// when many operations are used in one line, try to maximize the number of rvalues to minimize copying
-	Mat Tr() const;							// transpose
+	Mat Tr() const;							// transpose, using Manual | OpenBLAS depending on 'op_switch'
 	double Trace() const;					// square matrix trace
 	double Sum() const;						// sum of all elements
 	double Max(size_t &i, size_t &j) const;		// returns the max element and its index (i, j)
@@ -185,13 +185,13 @@ public:
 	friend Mat operator&&(const Mat &m1, const Mat &m2);	// returns extended matrix by appending "m2" to the right of "m1": [m1, m2]
 	friend Mat operator||(Mat m1, const Mat &m2);			// returns extended matrix by appending "m2" below "m1": [m1; m2]
 	Mat Reorder(const std::vector<size_t> &ordi, const std::vector<size_t> &ordj) const;	// creates matrix with indices from "ordi" and "ordj" (indices may be repeated)
+	Mat Reorder(const std::vector<size_t> &ord, int dim) const;			// creates submatrix with row or column indices from "ord"; use dim = 0 for applying "ord" to rows, dim = 1 for columns
 	Mat Reorder(size_t i0, size_t i1, size_t j0, size_t j1) const;		// creates a submatrix with indices [i0, i1)*[j0, j1)
 	Mat operator+(Mat m) const;				// *this + m; explicit RL associativity allows avoiding unnecessary copying, e.g. (a + (b + (c + d))) instead of a + b + c + d
 	Mat operator-(Mat m) const;				// *this - m
 	void operator+=(const Mat &m);			// *this += m
 	void operator-=(const Mat &m);			// *this -= m
 	Mat operator*(const Mat &m) const;		// *this * m, using Manual | BLAS depending on 'op_switch'
-	std::vector<double> operator*(const std::vector<double> &v) const;		// *this * v, using Manual | BLAS depending on 'op_switch'
 	std::vector<double> MultvecR(const std::vector<double> &v) const;		// *this * v, using BLAS dgemm
 	std::vector<double> MultvecL(const std::vector<double> &v) const;		// *this * v, using BLAS dgemm; left multiplication with transposition is employed, i.e. (x'*A')'
 	Mat Autocorr() const;					// calculates vector of the same size as input, its values at [k] = sample autocorrelations at lag k (*this should be a vector)
@@ -218,6 +218,8 @@ public:
 	friend Mat operator*(double d, Mat m);	// d * m
 	friend Mat operator%(const std::vector<double> &v, Mat m);	// diag(v) * m -- multiplication by a diagonal matrix from left
 	friend Mat operator%(Mat m, const std::vector<double> &v);	// m * diag(v) -- multiplication by a diagonal matrix from right
+	friend std::vector<double> operator*(const Mat &m, const std::vector<double> &v);		// m * v, where v and result are columns, using Manual | BLAS depending on 'op_switch'
+	friend std::vector<double> operator*(const std::vector<double> &v, const Mat &m);		// v * m, where v and result are rows, using Manual | BLAS depending on 'op_switch'
 	friend Mat operator/(Mat A, Mat b);		// A^(-1) * b - i.e. solution of A*x = b, uses Gaussian elimination, with pivoting; 'b' may contain multiple right hand sides
 };
 //------------------------------------------------------------------------------------------
@@ -465,6 +467,8 @@ public:
 	virtual void div(const Mat &m1, int start, Mat &m2) const = 0;												// m2 = BLOCK / m1, sub-matrices with rows [start, start + block_size) are used
 	virtual void chol_mult(const std::vector<double> &vec1, int start, std::vector<double> &vec2) const = 0;	// vec2 = chol(BLOCK) * vec1, sub-vectors [start, start + block_size) are used
 	virtual int size() const = 0;
+	virtual std::string ToString() const = 0;			// for reporting
+	virtual DiagBlock *Copy() const = 0; 				// creates a copy of 'this'; should be DELETED manually in the end!
 };
 //------------------------------------------------------------------------------------------
 // block = diagonal matrix
@@ -481,6 +485,8 @@ public:
 	virtual void chol_mult(const std::vector<double> &vec1, int start, std::vector<double> &vec2) const;
 	DiagBlockNum(std::vector<double> v) : d(std::move(v)){};
 	virtual int size() const {return (int) d.size();};
+	virtual std::string ToString() const {return Mat(d).ToString();};
+	virtual DiagBlock *Copy() const {return new DiagBlockNum(*this);}; 			// creates a copy of 'this'; should be DELETED manually in the end!
 };
 //------------------------------------------------------------------------------------------
 // block = dense matrix
@@ -497,17 +503,22 @@ public:
 	virtual void chol_mult(const std::vector<double> &vec1, int start, std::vector<double> &vec2) const;
 	DiagBlockMat(Mat m);
 	virtual int size() const {return (int) M.ICount();};
+	virtual std::string ToString() const {return M.ToString();};
+	virtual DiagBlock *Copy() const {return new DiagBlockMat(*this);}; 			// creates a copy of 'this'; should be DELETED manually in the end!
 };
 //------------------------------------------------------------------------------------------
-// class for block-diagonal matrix
-// the matrix is MPI-distributed (block-wise), but all the arithmetic member-functions work independently on all ranks, no result collection is done;
+// Class for block-diagonal matrix.
+// The matrix is MPI-distributed (block-wise), but all the arithmetic member-functions work independently on all ranks, no result collection is done.
 // HOW TO WORK: 1) construct-1, 2) AddBlock's, 3) Finalize, 4) anything else
 // OR:          1) construct-2 (easy), 2) anything else
-// all functions should be called on ALL RANKS in communicator
+// All functions should be called on ALL RANKS in communicator.
 class BlockDiagMat : public ManagedObject
 {
 private:
 	int last_r;						// rank to which last block was added; sync between ranks
+	const std::string file_rpt = "BDC_report_%.100s_rank%d.txt";		// file name template for reporting
+
+	void write_test_tor(std::string msg) const;		// reports from ctors and dtors
 protected:
 	std::vector<DiagBlock*> Blocks;	// MPI-distributed
 	std::vector<int> data_ind;		// vector of size = MPI_Size + 1, stores the beginnings and ends of all "data points" on each rank; sync between ranks
@@ -516,8 +527,9 @@ protected:
 	bool finalized;					// sync between ranks (comm)
 
 public:
-	BlockDiagMat(MPI_Comm c) : last_r(0), comm(c), sz(0), finalized(false) {};
+	BlockDiagMat(MPI_Comm c);
 	BlockDiagMat(MPI_Comm c, const HMMPI::CorrelCreator *Corr, const HMMPI::StdCreator *Std);	// easy constructor: it creates a fully prepared object
+	BlockDiagMat(const HMMPI::Mat &Pr, const BlockDiagMat &b);	// this CTOR prepends the existing object 'b' by the new block 'Pr' (a full matrix, or diagonal) on rank-0
 	~BlockDiagMat();
 	BlockDiagMat(const BlockDiagMat &b) = delete;
 	const BlockDiagMat &operator=(const BlockDiagMat &b) = delete;
@@ -525,16 +537,17 @@ public:
 	std::vector<int> Data_ind() const;				// returns 'data_ind'; this is sync between ranks (comm)
 	MPI_Comm GetComm() const {return comm;};		// communicator
 
-	void AddBlock(std::vector<double> v, int r);	// block = diag(v) is added to rank 'r'; in sequential (contiguous) calls to AddBlock(), 'r' should be incremented by 0 or 1
-													// 'v' should exist at least on rank 'r'
-	void AddBlock(HMMPI::Mat m, int r);		// block = 'm' is added to rank 'r'; in sequential (contiguous) calls to AddBlock(), 'r' should be incremented by 0 or 1
-											// 'm' should exist at least on rank 'r'
+													// In sequential (contiguous) calls to AddBlock(...), 'r' (sync!) should be incremented by 0 or 1
+	void AddBlock(std::vector<double> v, int r);	// block = diag(v) is added to rank 'r'; 'v' should exist at least on rank 'r'
+	void AddBlock(HMMPI::Mat m, int r);				// block =     'm' is added to rank 'r'; 'm' should exist at least on rank 'r'
+
 	void Finalize();												// (does some checks, fills 'data_ind') should be called after adding all blocks, prior to main work
 	std::vector<double> operator*(const std::vector<double> &v) const;		// MAT * v, each rank does its own part, the full output vector is not created; 'v' is MPI-distributed
 	std::vector<double> operator/(const std::vector<double> &v) const;		// MAT / v, each rank does its own part, the full output vector is not created; 'v' is MPI-distributed
 	Mat operator/(const Mat &m) const;										// MAT / m, each rank does its own part, the full output matrix is not created; 'm' is row-wise MPI-distributed; columns of 'm' are multiple right hand sides
 	std::vector<double> operator%(const std::vector<double> &v) const;		// chol(MAT) * v, each rank does its own part, the full output vector is not created; 'v' is MPI-distributed
 	double InvTwoSideVecMult(const std::vector<double> &v) const;			// v' * MAT^(-1) * v, the MPI-local part of the "result" is returned; if necessary, it should be MPI_Reduced afterwards
+	void PrintToFile(std::string tag) const;		// print the contents to files, each rank outputs to its own file; 'tag' is a suffix
 };
 //------------------------------------------------------------------------------------------
 // *** classes for solving linear equations
@@ -625,6 +638,12 @@ class SpherCoord
 protected:
 	double arccot(double a, double b) const;	// arccot(a/b), also handling the case b == 0
 
+	std::vector<double> calc_cos(const std::vector<double> &v) const;		// calculates cos(v_i)
+	std::vector<double> calc_sin(const std::vector<double> &v) const;		// calculates sin(v_i)
+
+	Cache<SpherCoord, std::vector<double>, std::vector<double>> Cos;		// trigonometric caches
+	Cache<SpherCoord, std::vector<double>, std::vector<double>> Sin;
+
 public:
 	const std::vector<double> c;				// sphere center (size = dim)
 	const int dim;
@@ -634,11 +653,12 @@ public:
 	const double pi;
 	const double pi2;
 
-	SpherCoord(double R0, const std::vector<double> &c0) : c(c0), dim(c0.size()), R(R0), radius(0), pi(acos(-1)), pi2(2*acos(-1)) {};
+	SpherCoord(double R0, const std::vector<double> &c0);
 	std::vector<double> spher_to_cart(const std::vector<double> &p) const;
 	std::vector<double> cart_to_spher(std::vector<double> x) const;	// this function also calculates 'radius'
 	Mat dxdp(const std::vector<double> &p) const;					// dx/dp
 	Mat dxdp_k(const std::vector<double> &p, int k) const;			// d/dp(dx/dp_k)
+	Mat dxdp_k_upper(const std::vector<double> &p, int k) const;	// d/dp(dx/dp_k) with elements (i,j) where only elements j<=k are filled (using symmetry for speed)
 
 	bool periodic_swap(const HMMPI::BoundConstr *bc, std::vector<double> &p) const;		// if the range for the last component is [0, 2*pi] and p.last is on the boundary, swapping 0 <-> 2*pi is done for p.last
 																						// returns 'true' if swapping was done

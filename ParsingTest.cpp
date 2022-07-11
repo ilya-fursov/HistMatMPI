@@ -466,20 +466,40 @@ void KW_rundebug::Run()
 
 	HMMPI::Rand R(123);
 
-	HMMPI::Mat M1 = R.RandU(15, 5);
-	std::cout << "-----M1-----\n";
-	std::cout << M1.ToString();
+	double time_M = 0, time_BL = 0;
+	std::chrono::high_resolution_clock::time_point time1, time2;
 
-	HMMPI::Mat M2 = M1;
-	M1.SetOpSwitch(1);
-	M2.SetOpSwitch(2);
+	size_t Ni = 7, Nj = 4;
 
-	M1 = 4*std::move(M1);
-	M2 = 4*std::move(M2);
+	for (int i = 0; i < 12; i++)
+	{
+		std::cout << Ni << " * " << Nj << "\n";
+		HMMPI::Mat M1 = R.RandN(Ni, Nj);
 
-	std::cout << "-----4*M1-----\n";
-	std::cout << M1.ToString();
-	std::cout << "-----4*M2-----\n";
-	std::cout << M2.ToString();
+		//std::cout << "\n-----M-----\n";
+		//std::cout << M1.ToString();
+
+		M1.SetOpSwitch(1);
+		time1 = std::chrono::high_resolution_clock::now();
+		HMMPI::Mat M2 = M1.Tr();
+		time2 = std::chrono::high_resolution_clock::now();
+		time_M = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
+		//std::cout << "\n-----M^t, manu-----\n";
+		//std::cout << M2.ToString();
+
+		M1.SetOpSwitch(2);
+		time1 = std::chrono::high_resolution_clock::now();
+		HMMPI::Mat M3 = M1.Tr();
+		time2 = std::chrono::high_resolution_clock::now();
+		time_BL = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
+		//std::cout << "\n-----M^t, BLAS-----\n";
+		//std::cout << M3.ToString();
+		std::cout << "diff = " << (M2-M3).Norm2() << "\n";
+		std::cout << "time manual " << time_M << "\ntime BLAS   " << time_BL << "\n\n";
+
+		Ni = Ni*2 + 1;
+		Nj = Nj*2 + 1;
+	}
+
 }
 //------------------------------------------------------------------------------------------

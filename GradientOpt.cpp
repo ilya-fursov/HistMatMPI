@@ -597,12 +597,16 @@ std::string SUNIter::msg(const std::vector<double> &x) const
 //---------------------------------------------------------------------------
 // Optimizer
 //---------------------------------------------------------------------------
-Optimizer *Optimizer::Make(std::string type)
-{
+Optimizer *Optimizer::Make(std::string type)	// Factory for producing optimizer instances; currently supported 'types': LM, LMFI, LMFIMIX, CMAES
+{												// *** DELETE the pointer in the end! ***
 	if (type == "CMAES")
 		return new OptCMAES;
 	else if (type == "LM")
 		return new OptLM;
+	else if (type == "LMFI")
+		return new OptLMFI;
+	else if (type == "LMFIMIX")
+		return new OptLMFImix;
 	else
 		throw HMMPI::Exception(HMMPI::stringFormatArr("Неправильный тип алгоритма {0:%s} в Optimizer::Make",
 													  "Incorrect algorithm type {0:%s} in Optimizer::Make", type));
@@ -657,7 +661,10 @@ std::vector<double> Optimizer::RunOptRestrict(PhysModel *pm, const std::vector<d
 	// *****
 	// * B *	spherical optimization, x1 -> p1 -> p1' -> x2
 	// *****
-	PM_Spherical Spher(pm, R, pm->act_par(x0), delta);
+	const HMMPI::BlockDiagMat *bdc_del, *bdc_work;
+	bdc_del = pm->GetBDC(&bdc_work);
+	PM_Spherical Spher(pm, bdc_work, R, pm->act_par(x0), delta);
+
 	bool finished = false;								// controls the meta-iterations
 	int c = 0;											// counts meta-iterations
 	std::vector<double> p1 = Spher.SC().cart_to_spher(pm->act_par(x1));
@@ -731,13 +738,18 @@ std::vector<double> Optimizer::RunOptRestrict(PhysModel *pm, const std::vector<d
 					  HMMPI::stringFormatArr("(f1, f2) = ({0:%g}, {1:%g}), ", std::vector<double>{of1, of2}) +
 					  HMMPI::stringFormatArr("результат: f{0:%d}\n", "result: f{0:%d}\n", restrict_choice);
 
+	delete bdc_del;
+
 	return x_opt_mult;
 }
 //---------------------------------------------------------------------------
 std::vector<double> Optimizer::RunOptRestrictCube(PhysModel *pm, const std::vector<double> &x0, const double R, const OptContext *ctx)
 {
 	reset_mult_stats();
-	PM_CubeBounds Cube(pm, R, x0);
+
+	const HMMPI::BlockDiagMat *bdc_del, *bdc_work;
+	bdc_del = pm->GetBDC(&bdc_work);
+	PM_CubeBounds Cube(pm, bdc_work, R, x0);
 
 	x_opt_mult = RunOpt(&Cube, x0, ctx);
 	mult_count = 1;
@@ -761,6 +773,8 @@ std::vector<double> Optimizer::RunOptRestrictCube(PhysModel *pm, const std::vect
 			restrict_choice = 2;
 			break;
 		}
+
+	delete bdc_del;
 
 	return x_opt_mult;
 }
@@ -788,13 +802,6 @@ void OptLM::func(const real_1d_array &x, double &f, void *ptr)
 	std::vector<double> xin = std::vector<double>(xdata, xdata + fulldim);
 
 	high_resolution_clock::time_point time1 = high_resolution_clock::now(), time_of;
-
-//	{	// DEBUG
-//		int rank;
-//		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-//		if (rank == 0)
-//			std::cout << "xin = " << HMMPI::ToString(xin);	// DEBUG
-//	}	// DEBUG
 
 	f = this_obj->pm_work->ObjFunc(xin);
 	time_of = high_resolution_clock::now();
@@ -1028,10 +1035,8 @@ std::string OptLM::ReportMsgMult()
 }
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
-void OptLMFI::hess(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr)
+void OptLMFI::fi(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr)
 {
-	// TODO HERE!
-
 	const OptLMFI *this_obj = static_cast<const OptLMFI*>(ptr);
 	int fulldim = x.length();
 	this_obj->make_checks(fulldim);
@@ -1046,7 +1051,8 @@ void OptLMFI::hess(const alglib::real_1d_array &x, double &f, alglib::real_1d_ar
 	std::vector<double> gr = this_obj->pm_work->ObjFuncGrad(xin);
 	time_grad = high_resolution_clock::now();
 
-	HMMPI::Mat Hess = this_obj->pm_work->ObjFuncHess(xin);
+	HMMPI::Mat FI = this_obj->pm_work->ObjFuncFisher(xin);				// === Using 2*FI instead of Hess ===
+	FI = 2*std::move(FI);
 	time_hess = high_resolution_clock::now();
 
 	this_obj->tfunc += duration_cast<duration<double>>(time_of-time1).count();			// update the time stats
@@ -1058,18 +1064,62 @@ void OptLMFI::hess(const alglib::real_1d_array &x, double &f, alglib::real_1d_ar
 	{
 		MPI_Bcast(&f, 1, MPI_DOUBLE, 0, comm);
 		HMMPI::Bcast_vector(gr, 0, comm);
-		Hess.Bcast(0, comm);
+		FI.Bcast(0, comm);
 	}
 
 	assert(gr.size() == (size_t)fulldim);
-	assert(Hess.ICount() == (size_t)fulldim && Hess.JCount() == (size_t)fulldim);
+	assert(FI.ICount() == (size_t)fulldim && FI.JCount() == (size_t)fulldim);
 
 	real_1d_array g_work;
 	g_work.setcontent(fulldim, gr.data());
 	g = g_work;
 
 	real_2d_array h_work;
-	h_work.setcontent(fulldim, fulldim, Hess.Serialize());
+	h_work.setcontent(fulldim, fulldim, FI.Serialize());
+	h = h_work;
+}
+//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
+void OptLMFImix::fimix(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr)
+{
+	const OptLMFImix *this_obj = static_cast<const OptLMFImix*>(ptr);
+	int fulldim = x.length();
+	this_obj->make_checks(fulldim);
+	const double *xdata = x.getcontent();
+	std::vector<double> xin = std::vector<double>(xdata, xdata + fulldim);
+
+	high_resolution_clock::time_point time1 = high_resolution_clock::now(), time_of, time_grad, time_hess;
+
+	f = this_obj->pm_work->ObjFunc(xin);
+	time_of = high_resolution_clock::now();
+
+	std::vector<double> gr = this_obj->pm_work->ObjFuncGrad(xin);
+	time_grad = high_resolution_clock::now();
+
+	HMMPI::Mat FImix = this_obj->pm_work->ObjFuncFisher_mix(xin);				// === Using FImix instead of Hess ===
+	time_hess = high_resolution_clock::now();
+
+	this_obj->tfunc += duration_cast<duration<double>>(time_of-time1).count();			// update the time stats
+	this_obj->tgrad += duration_cast<duration<double>>(time_grad-time_of).count();		// update the time stats
+	this_obj->thess += duration_cast<duration<double>>(time_hess-time_grad).count();	// update the time stats
+
+	MPI_Comm comm = this_obj->pm_work->GetComm();		// MPI-synchronisation
+	if (comm != MPI_COMM_NULL)
+	{
+		MPI_Bcast(&f, 1, MPI_DOUBLE, 0, comm);
+		HMMPI::Bcast_vector(gr, 0, comm);
+		FImix.Bcast(0, comm);
+	}
+
+	assert(gr.size() == (size_t)fulldim);
+	assert(FImix.ICount() == (size_t)fulldim && FImix.JCount() == (size_t)fulldim);
+
+	real_1d_array g_work;
+	g_work.setcontent(fulldim, gr.data());
+	g = g_work;
+
+	real_2d_array h_work;
+	h_work.setcontent(fulldim, fulldim, FImix.Serialize());
 	h = h_work;
 }
 //---------------------------------------------------------------------------

@@ -168,7 +168,7 @@ public:
 
 	Optimizer() : best_of(0), mult_count(0), restrict_choice(0) {};
 	virtual ~Optimizer(){};
-	static Optimizer *Make(std::string type);			// Factory for producing optimizer instances; currently supported 'types': LM, CMAES; *** DELETE the pointer in the end! ***
+	static Optimizer *Make(std::string type);	// Factory for producing optimizer instances; currently supported 'types': LM, LMFI, LMFIMIX, CMAES; *** DELETE the pointer in the end! ***
 	virtual std::vector<double> RunOpt(PhysModel *pm, std::vector<double> x0, const OptContext *ctx) = 0;	// Optimises "pm" starting from "x0" (full-dim); "ctx" - user's context
 																											// MPI: inputs and outputs are sync on all pm-comm-ranks
 																											// input and output vectors are full-dim, inner variables
@@ -269,12 +269,25 @@ public:						// some quantities reported after optimization
 class OptLMFI : public OptLM
 {
 protected:
-	static void hess(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr);
+	static void fi(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr);
 
-	virtual void (*get_hess() const)(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr){return hess;};
+	virtual void (*get_hess() const)(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr){return fi;};
 public:
 	OptLMFI() : OptLM() {name = "OptLMFI";};
 };
 //---------------------------------------------------------------------------
+// class OptLMFImix - same as OptLM, except that it uses FImix (~ Gauss-Newton) instead of Hessian
+//---------------------------------------------------------------------------
+class OptLMFImix : public OptLM
+{
+protected:
+	static void fimix(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr);
+
+	virtual void (*get_hess() const)(const alglib::real_1d_array &x, double &f, alglib::real_1d_array &g, alglib::real_2d_array &h, void *ptr){return fimix;};
+public:
+	OptLMFImix() : OptLM() {name = "OptLMFImix";};
+};
+//---------------------------------------------------------------------------
+
 
 #endif /* GRADIENTOPT_H_ */

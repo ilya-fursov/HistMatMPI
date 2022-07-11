@@ -210,9 +210,9 @@ void PM_Proxy::reset_kc_ks_cache() const
 		e.reset_ks_cache();
 }
 //---------------------------------------------------------------------------
-PM_Proxy::PM_Proxy(MPI_Comm c, PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_params *config) : PhysModel(c), first_call(true), PM(pm), dump_flag(-1), train_from_dump(-1)
+PM_Proxy::PM_Proxy(MPI_Comm c, PhysModel *pm, const HMMPI::BlockDiagMat *bdc, Parser_1 *K, KW_item *kw, _proxy_params *config) : PhysModel(c, bdc), first_call(true), PM(pm), dump_flag(-1), train_from_dump(-1)
 {
-	name = "PM_ProxyKrig";
+	name = "PM_Proxy";
 	con = pm->GetConstr();
 
 	starts = std::vector<KrigStart>(1, KrigStart(K, kw, config));
@@ -399,7 +399,7 @@ std::string PM_Proxy::AddData(std::vector<std::vector<double>> X0, ValCont *VC, 
 	return msg;
 }
 //---------------------------------------------------------------------------
-double PM_Proxy::ObjFunc(const std::vector<double> &params)
+double PM_Proxy::obj_func_work(const std::vector<double> &params)
 {
 	assert(starts.size() == 1 && ends.size() == 1);
 	starts[0].ObjFuncCommon(params);
@@ -407,7 +407,7 @@ double PM_Proxy::ObjFunc(const std::vector<double> &params)
 	return ends[0].ObjFuncPrivate();
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_Proxy::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_Proxy::obj_func_grad_work(const std::vector<double> &params)
 {
 	assert(starts.size() == 1 && ends.size() == 1);
 	starts[0].ObjFuncGradCommon(params);
@@ -415,7 +415,7 @@ std::vector<double> PM_Proxy::ObjFuncGrad(const std::vector<double> &params)
 	return ends[0].ObjFuncGradPrivate();
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_Proxy::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_Proxy::obj_func_hess_work(const std::vector<double> &params)
 {
 	size_t dim = params.size();
 	HMMPI::Mat Hess(dim, dim, 0);			// result
@@ -516,11 +516,12 @@ std::string PM_Proxy::Train(std::vector<std::vector<double>> pop, std::vector<si
 		}
 		else
 		{
-			PM->DataSens.Bcast(0, comm);
-			int sens_len = PM->DataSens.Length();
+			HMMPI::Mat Sens = PM->DataSens();
+			Sens.Bcast(0, comm);
+			int sens_len = Sens.Length();
 			if (sens_len == 0)
-				throw HMMPI::Exception("No DataSens available when trying to train DATAPROXY by gradients in PM_Proxy::Train");	// sync error
-			grads_M[i] = PM->DataSens;
+				throw HMMPI::Exception("No 'data_sens' available when trying to train DATAPROXY by gradients in PM_Proxy::Train");	// sync error
+			grads_M[i] = Sens;
 		}
 	}
 
@@ -672,7 +673,7 @@ void PM_DataProxy::data_ind_count_displ(std::vector<int> &counts, std::vector<in
 	}
 }
 //---------------------------------------------------------------------------
-PM_DataProxy::PM_DataProxy(PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_params *config, const HMMPI::BlockDiagMat *bdc, const std::vector<double> &d) : PM_Proxy(bdc->GetComm(), pm, K, kw, config), BDC(bdc)
+PM_DataProxy::PM_DataProxy(PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_params *config, const HMMPI::BlockDiagMat *bdc, const std::vector<double> &d) : PM_Proxy(bdc->GetComm(), pm, bdc, K, kw, config)
 {																		// easy CTOR; to be called on all ranks of MPI_COMM_WORLD
 	name = "PM_DataProxy";												// 'bdc' (block diagonal covariance) should be created in advance, it will provide "comm" for PM_DataProxy
 	int rank = 0, size;													// 'd' - observed data (only supply it on comm-RANKS-0)
@@ -705,19 +706,20 @@ PM_DataProxy::PM_DataProxy(PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_param
 	MPI_Scatterv(d.data(), counts.data(), displs.data(), MPI_DOUBLE, locd0.data(), locd0.size(), MPI_DOUBLE, 0, comm);
 	d0 = std::move(locd0);
 	d0_orig = d0;				// d0 is not perturbed yet
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
-PM_DataProxy::PM_DataProxy(const PM_DataProxy &p) : PM_Proxy(p), BDC(p.BDC), RndN(p.RndN)
+PM_DataProxy::PM_DataProxy(const PM_DataProxy &p) : PM_Proxy(p), RndN(p.RndN)
 {
 	Gr_loc = p.Gr_loc;
 	resid_loc = p.resid_loc;
-	DataSens_loc = p.DataSens_loc;
 	data_size = p.data_size;
 	d0 = p.d0;
 	d0_orig = p.d0_orig;
 }
 //---------------------------------------------------------------------------
-double PM_DataProxy::ObjFunc(const std::vector<double> &params)
+double PM_DataProxy::obj_func_work(const std::vector<double> &params)
 {
 	if (comm == MPI_COMM_NULL)
 		return 0;
@@ -755,7 +757,7 @@ double PM_DataProxy::ObjFunc(const std::vector<double> &params)
 	return res;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_DataProxy::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_DataProxy::obj_func_grad_work(const std::vector<double> &params)
 {
 	if (comm == MPI_COMM_NULL)
 		return std::vector<double>(params.size(), 0);
@@ -794,18 +796,11 @@ std::vector<double> PM_DataProxy::ObjFuncGrad(const std::vector<double> &params)
 	MPI_Comm_rank(comm, &rank);
 	assert(counts[rank] == int(params.size()*d0.ICount()));
 
-	DataSens = HMMPI::Mat();
+	data_sens = HMMPI::Mat();
 	if (rank == 0)
-		DataSens = HMMPI::Mat(smry_len, params.size(), 0);
-	DataSens_loc = Gr.Tr();									// both N and A parameters are kept!
-	MPI_Gatherv(DataSens_loc.ToVector().data(), params.size()*d0.ICount(), MPI_DOUBLE, DataSens.ToVectorMutable().data(), counts.data(), displs.data(), MPI_DOUBLE, 0, comm);
-//	if (rank == 0)
-//	{
-//		std::vector<int> seq(smry_len);
-//		std::iota(seq.begin(), seq.end(), 0);
-//		DataSens = DataSens.Reorder(seq, act_ind);			// leave only active params
-//	}
-	// take full-dim DataSens!
+		data_sens = HMMPI::Mat(smry_len, params.size(), 0);
+	data_sens_loc = Gr.Tr();								// both N and A parameters are kept!
+	MPI_Gatherv(data_sens_loc.ToVector().data(), params.size()*d0.ICount(), MPI_DOUBLE, data_sens.ToVectorMutable().data(), counts.data(), displs.data(), MPI_DOUBLE, 0, comm);
 
 	return res;
 }
@@ -874,31 +869,13 @@ std::vector<double> PM_DataProxy::ObjFuncHess_l(const std::vector<double> &param
 	return res;
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_DataProxy::ObjFuncFisher(const std::vector<double> &params)
-{
-	int rank;
-	MPI_Comm_rank(comm, &rank);
-
-	ObjFuncGrad(params);	// calculate DataSens_loc
-
-	HMMPI::Mat CinvSens = *BDC / DataSens_loc;
-	HMMPI::Mat FI_local = DataSens_loc.Tr() * CinvSens;		// fulldim x fulldim matrix on each rank			TODO add BLAS?
-
-	HMMPI::Mat res;
-	if (rank == 0)
-		res = HMMPI::Mat(params.size(), params.size(), 0);
-	MPI_Reduce(FI_local.ToVector().data(), res.ToVectorMutable().data(), params.size()*params.size(), MPI_DOUBLE, MPI_SUM, 0, comm);	// element-wise summation of matrices
-
-	return res;
-}
-//---------------------------------------------------------------------------
 HMMPI::Mat PM_DataProxy::ObjFuncFisher_dxi(const std::vector<double> &params, const int i, int r)
 {
 	if (i == 0)
-		ObjFuncGrad(params);						// calculate DataSens_loc
+		ObjFuncGrad(params);						// calculate data_sens_loc
 	HMMPI::Mat diS = ObjFuncSens_dxi(params, i);	// Sens derivative (local part)
 
-	HMMPI::Mat M1 = diS.Tr() * (*BDC / DataSens_loc);			// TODO add BLAS?
+	HMMPI::Mat M1 = diS.Tr() * (*BDC / data_sens_loc);
 	M1 += M1.Tr();
 
 	HMMPI::Mat res;
@@ -1274,6 +1251,8 @@ PM_SimProxy::PM_SimProxy(PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_params 
 #ifdef PROXY_DEBUG
 	std::cout << "[" << RNK << "] DEBUG PM_SimProxy starts count " << starts.size() << ", ENDS count " << ends.size() << "\n";
 #endif
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
 PM_SimProxy::PM_SimProxy(const PM_SimProxy &p) : PM_DataProxy(p), block_starts(p.block_starts), start_to_block(p.start_to_block), dp_block_color(p.dp_block_color), start_Nends(p.start_Nends)
@@ -1519,7 +1498,7 @@ std::vector<double> KrigCorr::obj_func_grad(const std::vector<double> &params) c
 
 	std::vector<double> res(3);
 	for (int i = 0; i < 3; i++)
-		res[i] = exp(lndet/n)/n * (invR*d_R[i]).Trace();			// TODO add BLAS?
+		res[i] = exp(lndet/n)/n * (invR*d_R[i]).Trace();
 
 	return res;
 }
@@ -1551,12 +1530,12 @@ HMMPI::Mat KrigCorr::obj_func_hess(const std::vector<double> &params) const
 
 	std::vector<HMMPI::Mat> work(3);	// invR * dR/dt_i
 	for (int i = 0; i < 3; i++)
-		work[i] = invR*d_R[i];			// TODO add BLAS?
+		work[i] = invR*d_R[i];
 
 	HMMPI::Mat res(3, 3, 0.0);
 	for (int i = 0; i < 3; i++)
 		for (int j = i; j < 3; j++)
-			res(j, i) = res(i, j) = exp(lndet/n)/n * (work[i].Trace()*work[j].Trace()/n - (work[i]*work[j]).Trace() + (invR*d2_R(i, j)).Trace());	// TODO add BLAS?
+			res(j, i) = res(i, j) = exp(lndet/n)/n * (work[i].Trace()*work[j].Trace()/n - (work[i]*work[j]).Trace() + (invR*d2_R(i, j)).Trace());
 
 	return res;
 }
@@ -1681,17 +1660,17 @@ const HMMPI::Func1D_corr *KrigCorr::GetFuncFromCalculateR() const
 	return func == nullptr ? cfunc : func;
 }
 //---------------------------------------------------------------------------
-double KrigCorr::ObjFunc(const std::vector<double> &params)
+double KrigCorr::obj_func_work(const std::vector<double> &params)
 {
 	return obj_func(params);
 }
 //---------------------------------------------------------------------------
-std::vector<double> KrigCorr::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> KrigCorr::obj_func_grad_work(const std::vector<double> &params)
 {
 	return obj_func_grad(params);
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat KrigCorr::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat KrigCorr::obj_func_hess_work(const std::vector<double> &params)
 {
 	return obj_func_hess(params);
 }
@@ -1711,8 +1690,9 @@ const HMMPI::Mat &KrigSigma::get_U(const std::vector<double> &params) const
 #else
 		HMMPI::Mat invR = ref->Get_R().InvSY();
 #endif
-		HMMPI::Mat invR_F = invR * (*F);			// TODO add BLAS?
-		U_cache = invR - invR_F * ((F->Tr()*invR_F)/(invR_F.Tr()));		// TODO add BLAS?
+		HMMPI::Mat invR_F = invR * (*F);
+		HMMPI::SolverDGESV Invert;
+		U_cache = invR - invR_F * Invert.Solve(F->Tr()*invR_F, invR_F.Tr());
 
 		par_cache = params;
 		is_valid = true;
@@ -1726,7 +1706,7 @@ double KrigSigma::sigma2(const std::vector<double> &params) const
 	HMMPI::Mat Y = *Ys;
 	double n = Ys->size();
 
-	return InnerProd(Y, get_U(params)*Y)/n;		// TODO add BLAS? is it Mat*Vec?
+	return InnerProd(Y, get_U(params)*Y)/n;
 }
 //---------------------------------------------------------------------------
 std::vector<double> KrigSigma::sigma2_grad(const std::vector<double> &params) const
@@ -1740,7 +1720,7 @@ std::vector<double> KrigSigma::sigma2_grad(const std::vector<double> &params) co
 	HMMPI::Mat U = get_U(params);
 
 	for (int i = 0; i < 3; i++)
-		res[i] = -InnerProd(Y, U.Tr()*ref->d_R[i]*U*Y)/n;		// TODO add BLAS? more inner prods?
+		res[i] = -InnerProd(Y, U.Tr()*ref->d_R[i]*U*Y)/n;
 
 	return res;
 }
@@ -1759,7 +1739,7 @@ HMMPI::Mat KrigSigma::sigma2_Hess(const std::vector<double> &params) const
 
 	for (int i = 0; i < 3; i++)
 		for (int j = i; j < 3; j++)
-			res(j, i) = res(i, j) = 2/n*InnerProd(Y, Ut*ref->d_R[i]*Ut*ref->d_R[j]*U*Y) - InnerProd(Y, Ut*ref->d2_R(i, j)*U*Y)/n;		// TODO add BLAS? Mat*Vec here?
+			res(j, i) = res(i, j) = 2/n*InnerProd(Y, Ut*ref->d_R[i]*Ut*ref->d_R[j]*U*Y) - InnerProd(Y, Ut*ref->d2_R(i, j)*U*Y)/n;
 
 	return res;
 }
@@ -1805,7 +1785,7 @@ const KrigSigma &KrigSigma::operator=(const KrigSigma &p)
 	return *this;
 };
 //---------------------------------------------------------------------------
-double KrigSigma::ObjFunc(const std::vector<double> &params)
+double KrigSigma::obj_func_work(const std::vector<double> &params)
 {
 #ifdef OBJ_FUNC_SIGMA_2			// test mode
 	return sigma2(params);
@@ -1814,7 +1794,7 @@ double KrigSigma::ObjFunc(const std::vector<double> &params)
 #endif
 }
 //---------------------------------------------------------------------------
-std::vector<double> KrigSigma::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> KrigSigma::obj_func_grad_work(const std::vector<double> &params)
 {
 #ifdef OBJ_FUNC_SIGMA_2			// test mode
 	return sigma2_grad(params);
@@ -1828,7 +1808,7 @@ std::vector<double> KrigSigma::ObjFuncGrad(const std::vector<double> &params)
 #endif
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat KrigSigma::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat KrigSigma::obj_func_hess_work(const std::vector<double> &params)
 {
 #ifdef OBJ_FUNC_SIGMA_2			// test mode
 	return sigma2_Hess(params);

@@ -1230,7 +1230,7 @@ bool PhysModelHM::CheckLimits(const std::vector<double> &p) const
 	return res;
 }
 //---------------------------------------------------------------------------
-double PhysModelHM::ObjFunc(const std::vector<double> &p)
+double PhysModelHM::obj_func_work(const std::vector<double> &p)
 {
 	DECLKWD(incfiles, KW_incfiles, "INCFILES");
 	DECLKWD(file, KW_datafile, "DATAFILE");
@@ -1474,7 +1474,7 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 						const int Pdim = 45;
 						assert(ParamsDim() == Pdim);
 						assert(text_sigma);
-						DataSens = HMMPI::Mat(modelled_data.size(), Pdim, 0);
+						data_sens = HMMPI::Mat(modelled_data.size(), Pdim, 0);
 						gradient = std::vector<double>(Pdim);
 
 						for (int i0 = 0; i0 < Pdim; i0++)		// model parameters - 45 regions
@@ -1485,7 +1485,7 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 							for (size_t p = 0; p < Npars; p++)	// fill modelled data sensitivities
 								for (size_t t = 0; t < Nsteps; t++)
 									if (!HMMPI::IsNaN(smry_hist(t, p)) && smry_hist(t, p + Npars) != 0)
-										DataSens(count++, i0) = grads_of_region(t, p);
+										data_sens(count++, i0) = grads_of_region(t, p);
 
 							gradient[i0] = 2 * VCL->ObjFunc(SMRY, smry_hist, &grads_of_region);
 						}
@@ -1886,7 +1886,7 @@ double PhysModelHM::ObjFunc(const std::vector<double> &p)
 		return res;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PhysModelHM::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PhysModelHM::obj_func_grad_work(const std::vector<double> &params)
 {
 #ifdef PUNQADJ
 	adjoint_run = true;
@@ -1895,7 +1895,7 @@ std::vector<double> PhysModelHM::ObjFuncGrad(const std::vector<double> &params)
 
 	return gradient;		// filled in ObjFunc
 #else
-	throw HMMPI::Exception("Illegal call to PhysModelHM::ObjFuncGrad");
+	throw HMMPI::Exception("Illegal call to PhysModelHM::obj_func_grad_work");
 #endif
 }
 //---------------------------------------------------------------------------
@@ -2568,6 +2568,8 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Si
 	testf << "rank " << RNK << ", PMEclipse easy CTOR, this = " << this << "\n";
 	testf.close();
 #endif
+
+	print_comms();
 }
 //---------------------------------------------------------------------------
 PMEclipse::PMEclipse(const PMEclipse &PM) : Sim_small_interface(PM), K(PM.K), CWD(PM.CWD), log_file(PM.log_file), break_file(PM.break_file),
@@ -2612,7 +2614,7 @@ PMEclipse::~PMEclipse()
 #endif
 }
 //---------------------------------------------------------------------------
-//	PMEclipse::ObjFunc() outline, showing how execution control is managed in MPI:
+//	PMEclipse::obj_func_work() outline, showing how execution control is managed in MPI:
 //
 //	if (comm_rank == 0)
 //	{A
@@ -2654,7 +2656,7 @@ PMEclipse::~PMEclipse()
 //	if (err_msg[0] != 0)
 //		throw Exception(err_msg);		// sync exception
 //
-double PMEclipse::ObjFunc(const std::vector<double> &params)
+double PMEclipse::obj_func_work(const std::vector<double> &params)
 {
 	DECLKWD(parameters, KW_parameters, "PARAMETERS");
 	DECLKWD(templ, KW_templates, "TEMPLATES");
@@ -3279,7 +3281,7 @@ size_t PMpConnect::ModelledDataSize() const
 	return hist_cache.size();
 }
 //---------------------------------------------------------------------------
-double PMpConnect::ObjFunc(const std::vector<double> &params)					// calculates objective function [and gradient] by running the simulation model;
+double PMpConnect::obj_func_work(const std::vector<double> &params)				// calculates objective function [and gradient] by running the simulation model;
 {																				// modelled_data is also filled; simulation is only done on comm-RANKS-0
 	if (params != par_of_cache || smpl_tag != -1)		// Note: non-trivial (!= -1) smpl_tag also causes running the simulation
 	{
@@ -3303,7 +3305,7 @@ double PMpConnect::ObjFunc(const std::vector<double> &params)					// calculates 
 	return of_cache*scale;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PMpConnect::ObjFuncGrad(const std::vector<double> &params)	// gradient of objective function; internally, run_simulation() is called
+std::vector<double> PMpConnect::obj_func_grad_work(const std::vector<double> &params)	// gradient of objective function; internally, run_simulation() is called
 {
 	if (params != par_grad_cache)
 	{
@@ -3493,8 +3495,8 @@ int PMConc::ParamsDim() const noexcept
 	return parameters->init.size();
 }
 //---------------------------------------------------------------------------
-double PMConc::ObjFunc(const std::vector<double> &params)		// calculates objective function by running the simulation model;
-{																// modelled_data is also filled; simulation is only done on comm-RANKS-0
+double PMConc::obj_func_work(const std::vector<double> &params)		// calculates objective function by running the simulation model;
+{																	// modelled_data is also filled; simulation is only done on comm-RANKS-0
 	std::vector<double> out_t, out_conc;
 	run_simulation(params, out_t, out_conc);							// output is sync
 
@@ -3552,10 +3554,10 @@ PM_Rosenbrock::~PM_Rosenbrock()
 #endif
 }
 //---------------------------------------------------------------------------
-double PM_Rosenbrock::ObjFunc(const std::vector<double> &params)
+double PM_Rosenbrock::obj_func_work(const std::vector<double> &params)
 {
 	if ((int)params.size() != dim)
-		throw HMMPI::Exception("Неправильная размерность в PM_Rosenbrock::ObjFunc", "Wrong dimension in PM_Rosenbrock::ObjFunc");
+		throw HMMPI::Exception("Неправильная размерность в PM_Rosenbrock::obj_func_work", "Wrong dimension in PM_Rosenbrock::obj_func_work");
 
 	double res = 0;
 	modelled_data.resize(2*dim - 2);
@@ -3571,10 +3573,10 @@ double PM_Rosenbrock::ObjFunc(const std::vector<double> &params)
 	return res;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_Rosenbrock::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_Rosenbrock::obj_func_grad_work(const std::vector<double> &params)
 {
 	if ((int)params.size() != dim)
-		throw HMMPI::Exception("Неправильная размерность в PM_Rosenbrock::ObjFuncGrad", "Wrong dimension in PM_Rosenbrock::ObjFuncGrad");
+		throw HMMPI::Exception("Неправильная размерность в PM_Rosenbrock::obj_func_grad_work", "Wrong dimension in PM_Rosenbrock::obj_func_grad_work");
 
 	std::vector<double> res(dim);
 	for (int i = 0; i < dim; i++)
@@ -3586,21 +3588,23 @@ std::vector<double> PM_Rosenbrock::ObjFuncGrad(const std::vector<double> &params
 			res[i] += 200*(params[i] - params[i-1]*params[i-1]);
 	}
 
-	DataSens = HMMPI::Mat(2*dim-2, dim, 0);
+	data_sens = HMMPI::Mat(2*dim-2, dim, 0);
 	for (int i = 0; i < dim-1; i++)
 	{
-		DataSens(i, i) = -2*params[i];
-		DataSens(i, i+1) = 1;
-		DataSens(i+dim-1, i) = 1;
+		data_sens(i, i) = -2*params[i];
+		data_sens(i, i+1) = 1;
+		data_sens(i+dim-1, i) = 1;
 	}
+
+	data_sens_loc = data_sens;		// NOTE 'data_sens_loc' is now sync, not distributed
 
 	return res;
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_Rosenbrock::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_Rosenbrock::obj_func_hess_work(const std::vector<double> &params)
 {
 	if ((int)params.size() != dim)
-		throw HMMPI::Exception("Неправильная размерность в PM_Rosenbrock::ObjFuncHess", "Wrong dimension in PM_Rosenbrock::ObjFuncHess");
+		throw HMMPI::Exception("Неправильная размерность в PM_Rosenbrock::obj_func_hess_work", "Wrong dimension in PM_Rosenbrock::obj_func_hess_work");
 
 	HMMPI::Mat res(dim, dim, 0.0);
 	for (int i = 0; i < dim; i++)
@@ -3626,8 +3630,8 @@ HMMPI::Mat PM_Rosenbrock::ObjFuncFisher(const std::vector<double> &params)
 	for (auto &x : cov)
 		x = 1/x;
 
-	ObjFuncGrad(params);						// calculate DataSens
-	HMMPI::Mat res = cov % DataSens;
+	ObjFuncGrad(params);						// calculate data_sens
+	HMMPI::Mat res = cov % data_sens;
 	return res.Tr() * res;
 }
 //---------------------------------------------------------------------------
@@ -3674,7 +3678,7 @@ std::vector<double> PM_Rosenbrock::Data() const
 //---------------------------------------------------------------------------
 // PM_Linear
 //---------------------------------------------------------------------------
-std::vector<double> PM_Linear::cov_diag()
+std::vector<double> PM_Linear::cov_diag() const
 {
 	std::vector<double> res;
 	if (DiagCov.size() > 0)
@@ -3731,17 +3735,17 @@ PM_Linear::PM_Linear(Parser_1 *K, KW_item *kw, MPI_Comm c) : PhysModel(K, kw, c)
 		FullCov = big_diag % corr->Corr() % big_diag;
 	}
 
-#ifdef TESTCTOR
-	std::ofstream testf(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{RNK}), std::ios::app);
-	testf << "rank " << RNK << ", PM_Linear easy CTOR, FullCovariance = " << (R_small ? "FALSE" : "TRUE") << ", this = " << this << "\n";
-	testf.close();
-
 	if (!R_small && RNK == 0)
 	{
 		FILE *f0 = fopen("LINEAR_FullCovariance.txt", "w");
 		FullCov.SaveASCII(f0, "%20.16g");
 		fclose(f0);
 	}
+
+#ifdef TESTCTOR
+	std::ofstream testf(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{RNK}), std::ios::app);
+	testf << "rank " << RNK << ", PM_Linear easy CTOR, FullCovariance = " << (R_small ? "FALSE" : "TRUE") << ", this = " << this << "\n";
+	testf.close();
 #endif
 }
 //---------------------------------------------------------------------------
@@ -3754,7 +3758,7 @@ PM_Linear::~PM_Linear()
 #endif
 }
 //---------------------------------------------------------------------------
-double PM_Linear::ObjFunc(const std::vector<double> &params)
+double PM_Linear::obj_func_work(const std::vector<double> &params)
 {
 	HMMPI::Mat Gx = G * params;
 	modelled_data = Gx.ToVector();
@@ -3762,7 +3766,7 @@ double PM_Linear::ObjFunc(const std::vector<double> &params)
 	HMMPI::Mat Gxd0 = Gx - d0;
 	size_t sz = Gxd0.ICount();
 	if (DiagCov.size() != 0 && sz != DiagCov.size())
-		throw HMMPI::Exception("Неправильный размер DiagCov в PM_Linear::ObjFunc", "Wrong size of DiagCov in PM_Linear::ObjFunc");
+		throw HMMPI::Exception("Неправильный размер DiagCov в PM_Linear::obj_func_work", "Wrong size of DiagCov in PM_Linear::obj_func_work");
 
 	double res = 0;
 	if (DiagCov.size() != 0)	// diagonal covariance
@@ -3774,12 +3778,12 @@ double PM_Linear::ObjFunc(const std::vector<double> &params)
 	return res;
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_Linear::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_Linear::obj_func_grad_work(const std::vector<double> &params)
 {
 	HMMPI::Mat Gxd0 = HMMPI::Mat(G * params) - d0;
 	size_t sz = Gxd0.ICount();
 	if (DiagCov.size() != 0 && sz != DiagCov.size())
-		throw HMMPI::Exception("Неправильный размер DiagCov в PM_Linear::ObjFuncGrad", "Wrong size of DiagCov in PM_Linear::ObjFuncGrad");
+		throw HMMPI::Exception("Неправильный размер DiagCov в PM_Linear::obj_func_grad_work", "Wrong size of DiagCov in PM_Linear::obj_func_grad_work");
 
 	if (DiagCov.size() != 0)	// diagonal covariance
 		for (size_t i = 0; i < sz; i++)
@@ -3787,20 +3791,17 @@ std::vector<double> PM_Linear::ObjFuncGrad(const std::vector<double> &params)
 	else						// dense covariance
 		Gxd0 = 2*(FullCov / std::move(Gxd0));
 
-	//std::vector<int> data_ind(ModelledDataSize());		// [0, 1, 2,...] - take all indices for data
-	//std::iota(data_ind.begin(), data_ind.end(), 0);
-	//DataSens = G.Reorder(data_ind, act_ind);
-	DataSens = G;		// full-dim sensitivity!
-
+	data_sens = G;				// full-dim sensitivity!
+	data_sens_loc = data_sens;	// NOTE 'data_sens_loc' is now sync, not distributed
 	return (G.Tr()*Gxd0).ToVector();
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_Linear::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_Linear::obj_func_hess_work(const std::vector<double> &params)
 {
 	size_t Ni = G.ICount();
 	size_t Nj = G.JCount();
 	if (DiagCov.size() != 0 && Ni != DiagCov.size())
-		throw HMMPI::Exception("Неправильный размер DiagCov в PM_Linear::ObjFuncHess", "Wrong size of DiagCov in PM_Linear::ObjFuncHess");
+		throw HMMPI::Exception("Неправильный размер DiagCov в PM_Linear::obj_func_hess_work", "Wrong size of DiagCov in PM_Linear::obj_func_hess_work");
 
 	HMMPI::Mat CG = G;
 	if (DiagCov.size() != 0)	// diagonal covariance
@@ -3815,9 +3816,9 @@ HMMPI::Mat PM_Linear::ObjFuncHess(const std::vector<double> &params)
 //---------------------------------------------------------------------------
 HMMPI::Mat PM_Linear::ObjFuncFisher(const std::vector<double> &params)
 {
-	// full DataSens = G
+	// full data_sens = G
 
-	HMMPI::Mat CinvSens;				// Cov^(-1) * DataSens
+	HMMPI::Mat CinvSens;				// Cov^(-1) * data_sens
 	if (DiagCov.size() != 0)			// diagonal covariance
 	{
 		std::vector<double> Cinv(DiagCov.size());
@@ -3888,6 +3889,41 @@ void PM_Linear::PerturbData()
 	}
 }
 //---------------------------------------------------------------------------
+std::vector<HMMPI::Mat> PM_Linear::CorrBlocks() const
+{
+	HMMPI::Mat res;				// a single block to return
+
+	if (DiagCov.size() != 0)	// diagonal covariance
+	{
+		res = HMMPI::Mat(DiagCov.size(), 1, 1.0);	// unity diagonal
+	}
+	else						// dense covariance
+	{
+		std::vector<double> std0 = Std();
+		for (double &x : std0)
+			x = 1/x;			// invert the std
+
+		assert(std0.size() == FullCov.ICount() && std0.size() == FullCov.JCount());
+		res = std0 % (FullCov % std0);				// unity on diagonal
+	}
+
+	return {res};
+}
+//---------------------------------------------------------------------------
+std::vector<double> PM_Linear::Std() const
+{
+	std::vector<double> res = cov_diag();
+	for (double &x : res)
+		x = sqrt(x);
+
+	return res;
+}
+//---------------------------------------------------------------------------
+std::vector<double> PM_Linear::Data() const
+{
+	return d0.ToVector();
+}
+//---------------------------------------------------------------------------
 // PM_Func
 //---------------------------------------------------------------------------
 PM_Func::PM_Func(int param_dim, const std::vector<double> &data, const std::vector<double> &c) : Npar(param_dim), d0(data), C(c)
@@ -3908,7 +3944,7 @@ PM_Func::~PM_Func()
 #endif
 }
 //---------------------------------------------------------------------------
-double PM_Func::ObjFunc(const std::vector<double> &params)
+double PM_Func::obj_func_work(const std::vector<double> &params)
 {
 	assert(params.size() == (size_t)Npar);
 
@@ -3917,17 +3953,18 @@ double PM_Func::ObjFunc(const std::vector<double> &params)
 	return InnerProd(v, C%v);
 }
 //---------------------------------------------------------------------------
-std::vector<double> PM_Func::ObjFuncGrad(const std::vector<double> &params)
+std::vector<double> PM_Func::obj_func_grad_work(const std::vector<double> &params)
 {
 	assert(params.size() == (size_t)Npar);
 
 	HMMPI::Mat f = F(params);
 	f = 2*(f - HMMPI::Mat(d0));
-	DataSens = dF(params);
-	return ((f.Tr() % C)*DataSens).ToVector();
+	data_sens = dF(params);
+	data_sens_loc = data_sens;						// NOTE 'data_sens_loc' is now sync, not distributed
+	return ((f.Tr() % C)*data_sens).ToVector();
 }
 //---------------------------------------------------------------------------
-HMMPI::Mat PM_Func::ObjFuncHess(const std::vector<double> &params)
+HMMPI::Mat PM_Func::obj_func_hess_work(const std::vector<double> &params)
 {
 	HMMPI::Mat res;
 	HMMPI::Mat f = HMMPI::Mat(F(params)) - HMMPI::Mat(d0);
