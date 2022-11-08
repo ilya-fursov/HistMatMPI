@@ -238,20 +238,39 @@ private:
 	void close_meta();							// closes 'file_meta'
 
 protected:
-	void read_meta(std::string modname);	// reads "modname_well.meta"; fills 'vecs', 'dates', 'ind_dates', 'cumul_days', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'sec_objects', 'prop_N', 'obj_N'
-	void read_res(std::string modname);		// reads data from "modname_well.res"; makes consistency checks and fills 'Data'
+	virtual std::string get_fname_meta(std::string modname) const;		// form filename "...well.meta"
+	virtual std::string get_fname_res(std::string modname) const;		// form filename "...well.res"
+
+	void read_meta(std::string modname);	// reads "...well.meta"; fills 'vecs', 'dates', 'ind_dates', 'cumul_days', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'sec_objects', 'prop_N', 'obj_N'
+	void read_res(std::string modname);		// reads data from "...well.res"; makes consistency checks and fills 'Data'
 
 public:
+	tNavSMRY() : file_meta(NULL), prop_N(0), obj_N(0), sec_obj_N(0) {};
 	tNavSMRY(std::vector<SecObj> secobj, Date s);
 	tNavSMRY(const tNavSMRY &p) {*this = p;};
 	virtual ~tNavSMRY();
 	const tNavSMRY &operator=(const tNavSMRY &p);
 	virtual SimSMRY *Copy() const;						// _DELETE_ in the end!
-	virtual void ReadFiles(std::string modname);		// reads summary from "modname_well.meta", "modname_well.res"
+	virtual void ReadFiles(std::string modname);		// reads summary from "modname*well.meta", "modname*well.res"
 	void dump_all(std::string fname) const;				// dump contents to ASCII file (for debug)
 	virtual std::string dates_file() const;				// name of file with dates
 	virtual std::string vecs_file() const;				// name of file with vecs
 	virtual std::string data_file() const;				// name of file with data
+};
+//--------------------------------------------------------------------------------------------------
+// Extension of tNavSMRY for tNav-22
+//--------------------------------------------------------------------------------------------------
+class tNavSMRY22 : public tNavSMRY
+{
+protected:
+	virtual std::string get_fname_meta(std::string modname) const;		// form filename "...well.meta"
+	virtual std::string get_fname_res(std::string modname) const;		// form filename "...well.res"
+
+public:
+	tNavSMRY22(std::vector<SecObj> secobj, Date s) : tNavSMRY(secobj, s){};
+	tNavSMRY22(const tNavSMRY22 &p) {*this = p;};
+	const tNavSMRY22 &operator=(const tNavSMRY22 &p);
+	virtual SimSMRY *Copy() const;						// _DELETE_ in the end!
 };
 //--------------------------------------------------------------------------------------------------
 // Class for storing model parameters and corresponding data values (for multiple proxies on data points)

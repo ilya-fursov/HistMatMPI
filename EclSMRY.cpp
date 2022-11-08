@@ -730,12 +730,22 @@ void tNavSMRY::close_meta()						// closes 'file_meta'
 	file_meta = NULL;
 }
 //--------------------------------------------------------------------------------------------------
-void tNavSMRY::read_meta(std::string modname)	// reads "modname_well.meta"; fills 'vecs', 'dates', 'ind_dates', 'cumul_days', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'sec_objects', 'prop_N', 'obj_N'
+std::string tNavSMRY::get_fname_meta(std::string modname) const		// form filename "...well.meta"
+{
+	return "RESULTS/" + modname + "_well.meta";
+}
+//--------------------------------------------------------------------------------------------------
+std::string tNavSMRY::get_fname_res(std::string modname) const		// form filename "...well.res"
+{
+	return "RESULTS/" + modname + "_well.res";
+}
+//--------------------------------------------------------------------------------------------------
+void tNavSMRY::read_meta(std::string modname)	// reads "...well.meta"; fills 'vecs', 'dates', 'ind_dates', 'cumul_days', 'ind_obj', 'ecl_prop_ind', 'ecl_prop_transform', 'sec_objects', 'prop_N', 'obj_N'
 {
 	std::vector<std::string> name_prop, name_dates, name_obj;
 	std::vector<int> ind_prop;
 
-	open_meta("RESULTS/" + modname + "_well.meta");
+	open_meta(get_fname_meta(modname));
 	read_meta_block("[properties]", name_prop, ind_prop);
 	read_meta_block("[timesteps]", name_dates, ind_dates);
 	read_meta_block("[objects]", name_obj, ind_obj);
@@ -834,7 +844,7 @@ void tNavSMRY::read_meta(std::string modname)	// reads "modname_well.meta"; fill
 	std::string dup;
 	if (FindDuplicate(all_obj_names, dup))
 	{
-		std::string mfile = "RESULTS/" + modname + "_well.meta";
+		std::string mfile = get_fname_meta(modname);
 		char msgrus[BUFFSIZE], msgeng[BUFFSIZE];
 		sprintf(msgrus, "При чтении файла тНавигатора %.200s найдены имена скважин, совпадающие с именами групп из кл. слова GROUPS: '%.100s'", mfile.c_str(), dup.c_str());
 		sprintf(msgeng, "While reading tNavigator file %.200s, found well names which duplicate the group names from GROUPS keyword: '%.100s'", mfile.c_str(), dup.c_str());
@@ -888,9 +898,9 @@ void tNavSMRY::read_meta(std::string modname)	// reads "modname_well.meta"; fill
 	cumul_days = start.SubtractFromAll(dates);
 }
 //--------------------------------------------------------------------------------------------------
-void tNavSMRY::read_res(std::string modname)		// reads data from "modname_well.res"; makes consistency checks and fills 'Data'
+void tNavSMRY::read_res(std::string modname)		// reads data from "...well.res"; makes consistency checks and fills 'Data'
 {
-	std::string fname = "RESULTS/" + modname + "_well.res";
+	std::string fname = get_fname_res(modname);
 	FILE *f = fopen(fname.c_str(), "rb");
 	if (f != NULL)
 	{
@@ -1148,17 +1158,40 @@ void tNavSMRY::dump_all(std::string fname) const
 //--------------------------------------------------------------------------------------------------
 std::string tNavSMRY::dates_file() const		// name of file with dates
 {
-	return EraseSubstr("RESULTS/" + mod + "_well.meta", "./");
+	return EraseSubstr(get_fname_meta(mod), "./");
 }
 //--------------------------------------------------------------------------------------------------
 std::string tNavSMRY::vecs_file() const			// name of file with vecs
 {
-	return EraseSubstr("RESULTS/" + mod + "_well.meta", "./");
+	return EraseSubstr(get_fname_meta(mod), "./");
 }
 //--------------------------------------------------------------------------------------------------
-std::string tNavSMRY::data_file() const				// name of file with data
+std::string tNavSMRY::data_file() const			// name of file with data
 {
-	return EraseSubstr("RESULTS/" + mod + "_well.res", "./");
+	return EraseSubstr(get_fname_res(mod), "./");
+}
+//--------------------------------------------------------------------------------------------------
+// tNavSMRY22
+//--------------------------------------------------------------------------------------------------
+std::string tNavSMRY22::get_fname_meta(std::string modname) const		// form filename "...well.meta"
+{
+	return "RESULTS/" + modname + "/well.meta";
+}
+//--------------------------------------------------------------------------------------------------
+std::string tNavSMRY22::get_fname_res(std::string modname) const		// form filename "...well.res"
+{
+	return "RESULTS/" + modname + "/well.res";
+}
+//--------------------------------------------------------------------------------------------------
+const tNavSMRY22 &tNavSMRY22::operator=(const tNavSMRY22 &p)
+{
+	tNavSMRY::operator=(p);
+	return *this;
+}
+//--------------------------------------------------------------------------------------------------
+SimSMRY *tNavSMRY22::Copy() const
+{
+	return new tNavSMRY22(*this);
 }
 //--------------------------------------------------------------------------------------------------
 // SimProxyFile

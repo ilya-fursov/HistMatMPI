@@ -94,6 +94,10 @@ namespace HMMPI
 const int BUFFSIZE = 500;
 
 bool FileExists(const std::string &fname);						// returns 'true' if file exists
+
+int ExitStatus(int stat_val);									// get the sub-process exit code based on 'stat_val' returned from system(), using WEXITSTATUS
+																// if WIFEXITED == 0 (sub-process not exited normally), this function returns 1 to indicate something went wrong
+																// also note, the exit code is 8-bit
 //------------------------------------------------------------------------------------------
 // MessageRE - a class for displaying a message in the current language - Russian or English
 //------------------------------------------------------------------------------------------
@@ -201,39 +205,84 @@ class CmdLauncher
 private:
 	mutable std::vector<char*> mem;			// holds the memory to be freed
 
-	void clear_mem() const;			// clears 'mem'
+	void clear_mem() const;					// clears 'mem'
 
 protected:
 	const char *host_templ;			// host file template name (with %d)
 	int rank;						// rank in MPI_COMM_WORLD
 
 public:
-	void ParseCmd(std::string cmd, int &run_type, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const;
-									// Parses 'cmd' to decide whether it is a system() command, MPI/spawn command, or include-file command
-									//  	and setting the respective run_type: 0, 1, 2.
-									// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
-									// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
-									//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
-									// In the include-file case, 'main_cmd' will keep the corresponding file name.
+	class T_option									// class for handling the additional options in the beginning of the command line
+	{
+	protected:
+		std::string tok;							// token for parsing
+	public:
+		std::string name;							// name for reporting
+		int val;
+		T_option() : tok(""), name(""), val(0){};
+		virtual bool Read(std::string s) = 0; 		// attempts reading the option from "s", on success returns 'true' and overwrites 'val'
+	};
+	class T_option_num : public T_option			// reads "NUMx", val = x
+	{
+	public:
+		T_option_num(std::string t, std::string n) {tok = t; name = n;};
+		virtual bool Read(std::string s);
+	};
+	class T_option_0 : public T_option				// reads "TOK", val = 1
+	{
+	public:
+		T_option_0(std::string t) {tok = name = t;};
+		virtual bool Read(std::string s);
+	};
+
+	class Options									// structure to hold the command line options
+	{												// Developer: expand it if necessary!
+	public:
+		T_option_num Err;
+		T_option_0 Runfile;
+		T_option_num Mpi;
+		T_option_0 Tnav;
+
+		Options() : Err("ERR%d", "ERR"), Runfile("RUNFILE"), Mpi("MPI%d", "MPI"), Tnav("TNAV"){};
+		std::vector<T_option*> MakeVec();			// combines the options in one vector
+	};
+
+	static std::vector<std::string> ReadOptions(const std::vector<std::string> &toks, Options &opts);
+									// updates 'opts' from 'toks', returns the remaining part of 'toks'
+
+	Options ParseCmd(std::string cmd, std::string &main_cmd, std::vector<char*> &argv) const;
+									// Parses 'cmd', to extract: options (returned), main command (main_cmd), and
+									// its arguments (argv, NULL-terminated, their deallocation is handled internally)
+									// The available options are:
+									// 		ERRx - expected exist status / error count (currently this check is not done everywhere)
+									// 		RUNFILE (followed by exactly one filename) - run as include-file
+									// 		MPIx - launch via MPI_Comm_spawn, n=x
+									// 		TNAV - in case of MPIx run, synchronize the job finish using the *.end file
+									// Options compatibility (+ for allowed, ++ for required, - for ignored):
+									// run	ERRx	RUNFILE	MPIx	TNAV	command
+									// sys	+		-		-		-		+
+									// mpi	+		-		++		+		++
+									// file	-		++		-		-		++
+
+	static std::vector<std::string> ReportCmd(int num, Options opts, std::string main_cmd, std::vector<char*> argv);		// formatted report for SIMCMD
+
 	std::vector<std::string> HostList(int np) const;	// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
 																// 'np' (ref. on rank-0) is the number of MPI processes to be launched
 	std::string MakeHostFile(int np) const;				// creates a hostfile (returning its name on rank-0), avoiding file name conflicts in the CWD; to be called on MPI_COMM_WORLD
 																// 'np' (ref. on rank-0) is the number of MPI processes to be launched
 	int sync_tNav(std::string data_file) const noexcept;	// waits until an up-to-date tNavigator *.err file is available, returns the (mpi-sync) number of tNav errors
-	static std::string get_end_file(const std::string &data_file);	// get the end file name
-	int get_sync_flag(std::string main_cmd) const;			// returns the sync flag for 'main_cmd'
+	static std::string get_end_file(const std::string &data_file, bool tn22);	// get the end file name; flag 'tn22' indicates the tNav22 format
 
-public:
 	CmdLauncher();					// CTOR to be called on MPI_COMM_WORLD
 	~CmdLauncher();
 
 	void Run(std::string cmd, Parser_1 *K, MPI_Comm Comm = MPI_COMM_WORLD) const;
 						// Runs command "cmd" (significant at Comm-ranks-0), followed by a Barrier; should be called on all ranks of "Comm".
-						// For non-MPI command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status is non-zero.
-						// For MPI command: "Comm" must be MPI_COMM_WORLD;
+						// For ordinary command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status != ERRx.
+						// For MPI command (MPIx option): "Comm" must be MPI_COMM_WORLD;
 						// 					uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
-						//					if tNavigator is invoked, the synchronization is based on *.end file
-						// For include-file command: parser "K" executes the specified file
+						//					if tNavigator is invoked (TNAV option), the synchronization is based on *.end file
+						// For include-file command (RUNFILE option): parser "K" executes the specified file
 };
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

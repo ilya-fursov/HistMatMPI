@@ -412,6 +412,9 @@ public:
 //------------------------------------------------------------------------------------------
 class KW_simcmd : public KW_multparams
 {
+protected:
+	virtual void PrintParams() noexcept;
+
 public:
 	std::vector<std::string> cmd;
 	std::vector<std::string> cmd_work;		// after parameter substitution
@@ -1192,7 +1195,7 @@ public:
 	virtual void UpdateParams() noexcept;
 };
 //------------------------------------------------------------------------------------------
-class KW_model : public _proxy_params		// select between "SIM" (PMEclipse) and "PROXY" (PM_SimProxy), set simulator type (ECL, TNAV), and set proxy params
+class KW_model : public _proxy_params		// select between "SIM" (PMEclipse) and "PROXY" (PM_SimProxy), set simulator type (ECL, TNAV, TNAV22), and set proxy params
 {
 protected:
 	PhysModel *mod;					// may store PMEclipse for automatic deletion
@@ -1201,7 +1204,7 @@ protected:
 
 public:
 	std::string type;		// SIM, PROXY
-	std::string simulator;	// ECL, TNAV
+	std::string simulator;	// ECL, TNAV, TNAV22
 	// proxy params: R, trend, cfunc, nu, nugget
 	// 'cfunc' - here only GAUSS, MATERN
 

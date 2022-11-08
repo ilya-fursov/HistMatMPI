@@ -2541,6 +2541,8 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Si
 		smry = new HMMPI::EclSMRY;
 	else if (mod->simulator == "TNAV")
 		smry = new HMMPI::tNavSMRY(groups->sec_obj, Sdate->start);
+	else if (mod->simulator == "TNAV22")
+		smry = new HMMPI::tNavSMRY22(groups->sec_obj, Sdate->start);
 	else
 		throw HMMPI::Exception("Не распознан тип симулятора " + mod->simulator, "Unrecognized simulator type " + mod->simulator);
 

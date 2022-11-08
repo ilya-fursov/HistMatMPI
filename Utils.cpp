@@ -16,6 +16,13 @@
 #include <cstring>
 #include <chrono>
 #include <thread>
+#include <cstdio>
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+	// TODO currently not available - for WEXITSTATUS, WIFEXITED
+#else
+	#include <sys/wait.h>
+#endif
 
 namespace HMMPI
 {
@@ -50,6 +57,19 @@ bool FileExists(const std::string &fname)
 	}
 	else
 		return false;
+}
+//------------------------------------------------------------------------------------------
+int ExitStatus(int stat_val)			// get the sub-process exit code based on 'stat_val' returned from system(), using WEXITSTATUS
+{										// if WIFEXITED == 0 (sub-process not exited normally), this function returns 1 to indicate something went wrong
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)						// also note, the exit code is 8-bit
+	// TODO currently not available
+	return stat_val;
+#else
+	if (WIFEXITED(stat_val))
+		return WEXITSTATUS(stat_val);
+	else
+		return 1;
+#endif
 }
 //------------------------------------------------------------------------------------------
 // MessageRE
@@ -398,10 +418,13 @@ std::string StringListing::Print(int begin_max, int end_max) const
 {							// formatted output, 'begin_max', 'end_max' - max. number of lines to print in the beginning/end
 							// "-1" means output all lines
 	// 'one_piece' = 'true' if one chunk is printed (no lines are skipped)
-	bool one_piece = (begin_max + end_max >= (int)data.size()) || (begin_max < 0) || (end_max < 0);
+	const bool one_piece = (begin_max + end_max >= (int)data.size()) || (begin_max < 0) || (end_max < 0);
 
 	// find the max. length
-	std::vector<size_t> maxlen(n, dots.length());				// max. string length for each column
+	size_t maxlen_0 = 0;
+	if (!one_piece)
+		maxlen_0 = dots.length();
+	std::vector<size_t> maxlen(n, maxlen_0);				// max. string length for each column
 	if (one_piece)
 		for (size_t i = 0; i < data.size(); i++)
 			fill_max_length(i, maxlen);
@@ -440,62 +463,149 @@ void CmdLauncher::clear_mem() const			// clears 'mem'
 		delete [] v;
 }
 //------------------------------------------------------------------------------------------
-// Parses 'cmd' to decide whether it is a system() command, MPI/spawn command, or include-file command
-//  	and setting the respective run_type: 0, 1, 2.
-// In the MPI case also filling: N (from -n N, -np N), the main command 'main_cmd' (mpirun/mpiexec removed),
-// 		its arguments 'argv' (NULL-terminated; their deallocation is handled internally),
-//		and 'sync_flag' indicating the synchronization type required: 1 (default) - MPI_BarrierSleepy(), 2 - tNav *.end file
-// In the include-file case, 'main_cmd' will keep the corresponding file name.
-void CmdLauncher::ParseCmd(std::string cmd, int &run_type, int &N, std::string &main_cmd, std::vector<char*> &argv, int &sync_flag) const
+bool CmdLauncher::T_option_num::Read(std::string s)			// reads "NUMx", val = x
 {
+	int res;
+	int num = sscanf(s.c_str(), tok.c_str(), &res);
+	if (num == 1)
+	{
+		val = res;
+		return true;
+	}
+	else
+		return false;
+}
+//------------------------------------------------------------------------------------------
+bool CmdLauncher::T_option_0::Read(std::string s)			// reads "TOK", val = 1
+{
+	if (s == tok)
+	{
+		val = 1;
+		return true;
+	}
+	else
+		return false;
+}
+//------------------------------------------------------------------------------------------
+std::vector<CmdLauncher::T_option*> CmdLauncher::Options::MakeVec()			// combines the options in one vector
+{
+	return std::vector<CmdLauncher::T_option*>{&Err, &Runfile, &Mpi, &Tnav};
+}
+//------------------------------------------------------------------------------------------
+std::vector<std::string> CmdLauncher::ReadOptions(const std::vector<std::string> &toks, CmdLauncher::Options &opts)	// updates 'opts' from 'toks', returns the remaining part of 'toks'
+{
+	std::vector<CmdLauncher::T_option*> ovec = opts.MakeVec();
+	size_t i = 0;
+	for (i = 0; i < toks.size(); i++)
+	{
+		bool option_ok = false;
+		for (auto &x : ovec)
+			if (x->Read(toks[i]))	// found a valid option; the input 'opts' is updated automatically
+			{
+				option_ok = true;
+				break;
+			}
+		if (!option_ok)				// toks[i] is not a valid option
+			break;
+	}
+
+	// i <-> the first toks[i] which is not a valid option
+	return std::vector<std::string>(toks.begin() + i, toks.end());
+}
+//------------------------------------------------------------------------------------------
+// Parses 'cmd', to extract: options (returned), main command (main_cmd), and
+// its arguments (argv, NULL-terminated, their deallocation is handled internally)
+// The available options are:
+// 		ERRx - expected exist status / error count (currently this check is not done everywhere)
+// 		RUNFILE (followed by exactly one filename) - run as include-file
+// 		MPIx - launch via MPI_Comm_spawn, n=x
+// 		TNAV - in case of MPIx run, synchronize the job finish using the *.end file
+// Options compatibility (+ for allowed, ++ for required, - for ignored):
+// run	ERRx	RUNFILE	MPIx	TNAV	command
+// sys	+		-		-		-		+
+// mpi	+		-		++		+		++
+// file	-		++		-		-		++
+CmdLauncher::Options CmdLauncher::ParseCmd(std::string cmd, std::string &main_cmd, std::vector<char*> &argv) const
+{
+	CmdLauncher::Options res;
+
 	std::vector<std::string> toks;
 	tokenize(cmd, toks, " \t\r\n", true);
 
-	if (toks.size() == 2 && ToUpper(toks[0]) == "RUNFILE")						// include-file case
-	{
-		run_type = 2;
-		main_cmd = toks[1];
+	toks = ReadOptions(toks, res);					// parse the leading options, strip them from 'toks'
 
-		N = 1;
-		argv = std::vector<char*>();	// empty vector
-		sync_flag = 1;
+	if (toks.size() == 1 && res.Runfile.val == 1)	// include-file case
+	{
+		res.Err.val = 0;							// disable some options
+		res.Mpi.val = 0;
+		res.Tnav.val = 0;
+
+		main_cmd = toks[0];
+		argv = std::vector<char*>();				// empty vector
 	}
-	else if (toks.size() > 1 && (toks[0] == "mpirun" || toks[0] == "mpiexec"))	// MPI case
+	else if (toks.size() >= 1 && res.Mpi.val > 0)	// MPI case
 	{
-		run_type = 1;
-		N = 1;
-		int main_start = 1;				// index where the main cmd tokens start
-		if (toks.size() > 3 && (toks[1] == "-n" || toks[1] == "-np"))
-		{
-			N = StoL(toks[2]);
-			main_start = 3;
-		}
+		res.Runfile.val = 0;						// MPI disables RUNFILE
+		main_cmd = toks[0];
 
-		main_cmd = toks[main_start];
-
-		std::vector<std::string> new_toks(toks.begin() + main_start + 1, toks.end());	// fill the arguments
+		std::vector<std::string> new_toks(toks.begin() + 1, toks.end());	// fill the arguments
 		argv = std::vector<char*>(new_toks.size());
 		for (size_t i = 0; i < new_toks.size(); i++)
 		{
 			argv[i] = new char[new_toks[i].length()+1];
 			memcpy(argv[i], new_toks[i].c_str(), new_toks[i].length()+1);
 		}
-		argv.push_back(NULL);			// NULL-termination
-
-		sync_flag = get_sync_flag(main_cmd);
+		argv.push_back(NULL);						// NULL-termination
 	}
-	else								// system() case
+	else											// system() case
 	{
-		run_type = 0;
-		N = 1;
-		main_cmd = cmd;
-		argv = std::vector<char*>();	// empty vector
-		sync_flag = 1;
+		res.Runfile.val = 0;						// disable RUNFILE
+		res.Mpi.val = 0;							// disable MPI
+		res.Tnav.val = 0;							// disable TNAV
+
+		main_cmd = HMMPI::ToString(toks, "%s", " ");
+		if (main_cmd.length() > 0)
+			main_cmd.pop_back();					// remove '\n'
+		argv = std::vector<char*>();				// empty vector
 	}
 
-	if (mem.size() > 0)					// save for further deletion
+	if (mem.size() > 0)
 		clear_mem();
-	mem = argv;
+	mem = argv;										// save for further deletion
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+std::vector<std::string> CmdLauncher::ReportCmd(int num, CmdLauncher::Options opts, std::string main_cmd, std::vector<char*> argv)		// formatted report for SIMCMD
+{
+	std::vector<CmdLauncher::T_option*> ovec = opts.MakeVec();
+	std::vector<std::string> res(ovec.size() + 2);
+
+	char buff[HMMPI::BUFFSIZE];
+	sprintf(buff, "%2d)", num);
+	res[0] = buff;
+
+	for (size_t i = 0; i < ovec.size(); i++)
+	{
+		sprintf(buff, "=%d", ovec[i]->val);
+		if (ovec[i]->val > 0)
+			res[i+1] = ovec[i]->name + buff;
+		else
+			res[i+1] = "";
+	}
+
+	sprintf(buff, "%%.%ds", HMMPI::BUFFSIZE - 5);		// buff <- format for strings
+	if (argv.size() > 0)
+		argv.pop_back();								// remove the final NULL
+	std::string args = HMMPI::ToString(argv, buff, " ");
+	if (args.length() > 0)
+		args.pop_back();
+	if (args.length() > 0)
+		args = " (" + args + ")";
+
+	res[ovec.size()+1] = main_cmd + args;
+
+	return res;
 }
 //------------------------------------------------------------------------------------------
 std::vector<std::string> CmdLauncher::HostList(int np) const	// creates a list of hosts; to be called on MPI_COMM_WORLD; result is only valid on rank-0
@@ -557,22 +667,42 @@ std::string CmdLauncher::MakeHostFile(int np) const		// creates a hostfile (retu
 	return res;
 }
 //------------------------------------------------------------------------------------------
+// NOTE this function was not tested after adding tn22 stuff!
 int CmdLauncher::sync_tNav(std::string data_file) const noexcept
 {										// waits until an up-to-date tNavigator *.end file is available, returns the (mpi-sync) number of tNav errors
 	int res = 1;
 	if (rank == 0)
 	{
 		bool waiting = true;			// 'waiting for the file'
-		std::string end_file = get_end_file(data_file);
+		std::string end_file18 = get_end_file(data_file, false);
+		std::string end_file22 = get_end_file(data_file, true);
 		while (waiting)
 		{
+			std::string end_file;
+			bool tn22;
+			if (FileExists(data_file) && FileExists(end_file18) && FileModCompare(data_file, end_file18) < 0)	// identify the end file format on the run
+			{
+				end_file = end_file18;
+				tn22 = false;
+			}
+			else
+			{
+				end_file = end_file22;
+				tn22 = true;
+			}
+
 			if (FileExists(data_file) && FileExists(end_file) && FileModCompare(data_file, end_file) < 0)
 			{
 				std::this_thread::sleep_for(std::chrono::seconds(2));	// wait 2 seconds to avoid conflicts
 				FILE *file = fopen(end_file.c_str(), "r");
+
+				std::string token = "Errors %d";
+				if (tn22)
+					token = "Ошибок %d";								// TODO the token is currently set based on 'tn' version (misleading), not its language!
+
 				while (file != NULL && !feof(file))
 				{
-					if (fscanf(file, "Errors %d", &res) == 1)
+					if (fscanf(file, token.c_str(), &res) == 1)
 					{
 						waiting = false;
 						break;
@@ -596,7 +726,7 @@ int CmdLauncher::sync_tNav(std::string data_file) const noexcept
 	return res;
 }
 //------------------------------------------------------------------------------------------
-std::string CmdLauncher::get_end_file(const std::string &data_file)		// get the end file name
+std::string CmdLauncher::get_end_file(const std::string &data_file, bool tn22)	// get the end file name; flag 'tn22' indicates the tNav22 format
 {
 	size_t pos1 = data_file.find_last_of("/");
 	size_t pos2 = data_file.find_last_of(".");
@@ -607,20 +737,13 @@ std::string CmdLauncher::get_end_file(const std::string &data_file)		// get the 
 	if (pos2 == std::string::npos)
 		pos2 = data_file.length();
 
-	std::string res = data_file.substr(0, pos1p) + "RESULTS/" +
-					  data_file.substr(pos1p, pos2-pos1p) + ".end";
-
-	return res;
-}
-//------------------------------------------------------------------------------------------
-int CmdLauncher::get_sync_flag(std::string main_cmd) const		// returns the sync flag for 'main_cmd'
-{
-	int res = 0;
-	std::string work = ToUpper(main_cmd);
-	if (work.find("TNAV") == std::string::npos)		// whenever 'main_cmd' has 'tNav' (case-insensitive), FLAG = 2
-		res = 1;
+	std::string res;
+	if (tn22)
+		res = data_file.substr(0, pos1p) + "RESULTS/" +
+			  data_file.substr(pos1p, pos2-pos1p) + "/result.end";		// newer format
 	else
-		res = 2;
+		res = data_file.substr(0, pos1p) + "RESULTS/" +
+			  data_file.substr(pos1p, pos2-pos1p) + ".end";				// older format
 
 	return res;
 }
@@ -636,55 +759,60 @@ CmdLauncher::~CmdLauncher()
 }
 //------------------------------------------------------------------------------------------
 // Runs command "cmd" (significant at Comm-ranks-0), followed by a Barrier; should be called on all ranks of "Comm".
-// For non-MPI command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status is non-zero.
-// For MPI command: "Comm" must be MPI_COMM_WORLD;
+// For ordinary command: uses system() on Comm-ranks-0, and throws a sync exception if the exit status != ERRx.
+// For MPI command (MPIx option): "Comm" must be MPI_COMM_WORLD;
 // 					uses MPI_Comm_spawn(), the program invoked should have a synchronizing MPI_BarrierSleepy() in the end,
-//					if tNavigator is invoked, the synchronization is based on *.end file
-// For include-file command: parser "K" executes the specified file
+//					if tNavigator is invoked (TNAV option), the synchronization is based on *.end file
+// For include-file command (RUNFILE option): parser "K" executes the specified file
+
+// TODO this function was not thoroughly tested after refactoring on 02.11.2022 /added Options stuff/
 // TODO currently any CDWs are not used; may need to add them
 void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
 {
 	std::string main_cmd;
 	std::vector<char*> argv;
-	int sync_flag;
-	int np, Crank;
-	int run_type;
+	int Crank;
 
 	MPI_Comm_rank(Comm, &Crank);
+	CmdLauncher::Options Opts;
 	if (Crank == 0)
-		ParseCmd(cmd, run_type, np, main_cmd, argv, sync_flag);
-	MPI_Bcast(&run_type, 1, MPI_INT, 0, Comm);
-	MPI_Bcast(&sync_flag, 1, MPI_INT, 0, Comm);
+		Opts = ParseCmd(cmd, main_cmd, argv);						// fill the options on Comm-ranks-0
 
-	if (run_type == 0)					// non-MPI; sync here
+	std::vector<CmdLauncher::T_option*> Ovec = Opts.MakeVec();
+	for (auto op : Ovec)
+		MPI_Bcast(&op->val, 1, MPI_INT, 0, Comm);					// sync the options
+
+	if (Opts.Mpi.val == 0 && Opts.Runfile.val == 0)					// ordinary command; sync here
 	{
 		int status;
 		if (Crank == 0)
-			status = system(cmd.c_str());
+			status = ExitStatus(system(main_cmd.c_str()));
+
 		MPI_BarrierSleepy(Comm);
 		MPI_Bcast(&status, 1, MPI_INT, 0, Comm);
-		if (status)		// error status; sync
+		if (status != Opts.Err.val)									// error status; sync
 		{
 			char msg[BUFFSIZE], msgrus[BUFFSIZE];
 			if (Crank == 0)
 			{
-				sprintf(msg, "Exit status %d in command: %.400s", status, cmd.c_str());
-				sprintf(msgrus, "Exit status %d в команде: %.400s", status, cmd.c_str());
+				sprintf(msg, "Exit status %d in command: %.400s", status, main_cmd.c_str());
+				sprintf(msgrus, "Exit status %d в команде: %.400s", status, main_cmd.c_str());
 			}
 			MPI_Bcast(msg, BUFFSIZE, MPI_CHAR, 0, Comm);
 			MPI_Bcast(msgrus, BUFFSIZE, MPI_CHAR, 0, Comm);
 			throw EObjFunc(msgrus, msg);
 		}
 	}
-	else if (run_type == 1)				// MPI
+	else if (Opts.Mpi.val > 0)										// MPI; sync here
 	{
 		MPI_Comm newcomm;
 		MPI_Info info;
+		int np = Opts.Mpi.val;										// sync
 
 		if (Comm != MPI_COMM_WORLD)
 			throw Exception("Communicator should be 'MPI_COMM_WORLD' for the MPI_Comm_spawn() branch in CmdLauncher::Run()");
 
-		std::string hfile = MakeHostFile(np);		// hfile - on rank-0, np - on rank-0
+		std::string hfile = MakeHostFile(np);		// hfile - on rank-0
 		MPI_Info_create(&info);
 		if (rank == 0)
 			MPI_Info_set(info, "hostfile", hfile.c_str());
@@ -693,7 +821,7 @@ void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
 		MPI_Comm_spawn(main_cmd.c_str(), argv.data(), np, info, 0, MPI_COMM_WORLD, &newcomm, MPI_ERRCODES_IGNORE);
 
 		// SYNCHRONIZATION WITH CHILDREN
-		if (sync_flag == 1)				// sync
+		if (Opts.Tnav.val == 0)						// sync
 		{
 			MPI_BarrierSleepy(newcomm);				// default synchronization
 		}
@@ -706,7 +834,7 @@ void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
 
 			err_count = sync_tNav(data_file);		// the BARRIER
 
-			if (err_count > 0)			// sync
+			if (err_count != Opts.Err.val)			// sync
 			{
 				char msg[BUFFSIZE], msgrus[BUFFSIZE];
 				if (rank == 0)
@@ -730,7 +858,7 @@ void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
 		if (rank == 0)
 			remove(hfile.c_str());
 	}
-	else if (run_type == 2)				// include-file
+	else if (Opts.Runfile.val == 1)				// include-file case; sync here
 	{
 		Bcast_string(main_cmd, 0, Comm);		// main_cmd contains the file name
 
@@ -740,7 +868,7 @@ void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
 		K->ReadLines(dl.EliminateEmpty(), 1, HMMPI::getCWD(main_cmd));		// execute
 	}
 	else
-		throw Exception("Incorrect run_type in CmdLauncher::Run()");		// sync
+		throw Exception("Incorrect Opts in CmdLauncher::Run()");			// sync
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

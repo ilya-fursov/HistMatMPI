@@ -289,6 +289,28 @@ void KW_timelinalg_config::FinalAction() noexcept
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
+void KW_simcmd::PrintParams() noexcept
+{
+	if (K->verbosity - dec_verb >= 0)
+	{
+		HMMPI::StringListing SL(" ");
+		HMMPI::CmdLauncher Launcher;
+
+		for(size_t i = 0; i < cmd.size(); i++)
+		{
+			std::string main_cmd;
+			std::vector<char*> argv;
+			HMMPI::CmdLauncher::Options opts = Launcher.ParseCmd(cmd[i], main_cmd, argv);		// parse the commands
+			SL.AddLine(HMMPI::CmdLauncher::ReportCmd(i+1, opts, main_cmd, argv));				// add the lines
+		}
+
+		std::string MSG = HMMPI::MessageRE("Текущие значения:\n", "Current values:\n");
+		MSG += SL.Print(-1, -1);
+
+		K->AppText(MSG);
+	}
+}
+//------------------------------------------------------------------------------------------
 KW_simcmd::KW_simcmd()
 {
 	name = "SIMCMD";
@@ -3527,11 +3549,11 @@ KW_model::KW_model() : _proxy_params(), mod(0), mod_post_sim(0), mod_post_proxy(
 	name = "MODEL";
 
 	DEFPAR(type, "SIM");
-	DEFPAR(simulator, "ECL");
+	DEFPAR(simulator, "TNAV");
 	DEFPAR(R, 1.0);
 	DEFPAR(trend, 0);
-	DEFPAR(cfunc, "GAUSS");
-	DEFPAR(nu, 3.5);
+	DEFPAR(cfunc, "MATERN");
+	DEFPAR(nu, 2.5);
 	DEFPAR(nugget, 0.0);
 
 	init_pts = 1;
@@ -3540,7 +3562,7 @@ KW_model::KW_model() : _proxy_params(), mod(0), mod_post_sim(0), mod_post_proxy(
 
 	FinalizeParams();
 	EXPECTED[0] = std::vector<std::string>{"SIM", "PROXY"};
-	EXPECTED[1] = std::vector<std::string>{"ECL", "TNAV"};
+	EXPECTED[1] = std::vector<std::string>{"ECL", "TNAV", "TNAV22"};
 	EXPECTED[4] = std::vector<std::string>{"GAUSS", "MATERN"};
 }
 //------------------------------------------------------------------------------------------

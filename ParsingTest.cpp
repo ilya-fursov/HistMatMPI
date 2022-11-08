@@ -440,14 +440,6 @@ void KW_rundebug::Run()
 //		printf("%d\t%d\t%d\t-\t%.0f\t%.0f\n", (int)pts->x[i], (int)pts->y[i], (int)pts->z[i], x, y);
 //	}
 
-	auto g = [](double x) -> double {return x;};
-	auto g2 = [](double x) -> double {return x*x;};
-	auto g3 = [](double x) -> double {return x*x*x;};
-	auto g4 = [](double x) -> double {return x*x*x*x;};
-	auto g5 = [](double x) -> double {return x*x*x*x*x;};
-	int n = 10000;
-	double mu = 3;
-	double x0 = -20;
 //	std::cout << HMMPI::integr_Gauss(g,  n, x0, mu, 2) << "\n";
 //	std::cout << HMMPI::integr_Gauss(g2, n, x0, mu, 2) << "\n";
 //	std::cout << HMMPI::integr_Gauss(g3, n, x0, mu, 2) << "\n";
@@ -464,42 +456,26 @@ void KW_rundebug::Run()
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
 
-	HMMPI::Rand R(123);
+	std::string fn = "RESULTS/Bolt_U11_2022oct_WORK_0/result.end";
+	std::string token = "Ошибок %d";
+	FILE *file = fopen(fn.c_str(), "r");
+	int res;
 
-	double time_M = 0, time_BL = 0;
-	std::chrono::high_resolution_clock::time_point time1, time2;
-
-	size_t Ni = 7, Nj = 4;
-
-	for (int i = 0; i < 12; i++)
+	while (file != NULL && !feof(file))
 	{
-		std::cout << Ni << " * " << Nj << "\n";
-		HMMPI::Mat M1 = R.RandN(Ni, Nj);
-
-		//std::cout << "\n-----M-----\n";
-		//std::cout << M1.ToString();
-
-		M1.SetOpSwitch(1);
-		time1 = std::chrono::high_resolution_clock::now();
-		HMMPI::Mat M2 = M1.Tr();
-		time2 = std::chrono::high_resolution_clock::now();
-		time_M = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
-		//std::cout << "\n-----M^t, manu-----\n";
-		//std::cout << M2.ToString();
-
-		M1.SetOpSwitch(2);
-		time1 = std::chrono::high_resolution_clock::now();
-		HMMPI::Mat M3 = M1.Tr();
-		time2 = std::chrono::high_resolution_clock::now();
-		time_BL = std::chrono::duration_cast<std::chrono::duration<double>>(time2-time1).count();
-		//std::cout << "\n-----M^t, BLAS-----\n";
-		//std::cout << M3.ToString();
-		std::cout << "diff = " << (M2-M3).Norm2() << "\n";
-		std::cout << "time manual " << time_M << "\ntime BLAS   " << time_BL << "\n\n";
-
-		Ni = Ni*2 + 1;
-		Nj = Nj*2 + 1;
+		if (fscanf(file, token.c_str(), &res) == 1)
+		{
+			std::cout << token << " res=" << res << "\n";
+			break;
+		}
+		else
+		{
+			char c;
+			fscanf(file, "%c", &c);
+		}
 	}
+	fclose(file);
+
 
 }
 //------------------------------------------------------------------------------------------

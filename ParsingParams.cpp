@@ -791,6 +791,7 @@ KW_runView_tNavSmry::KW_runView_tNavSmry()
 void KW_runView_tNavSmry::Run()
 {
 	Start_pre();
+	IMPORTKWD(model, KW_model, "MODEL");
 	IMPORTKWD(dates, KW_dates, "DATES");
 	IMPORTKWD(groups, KW_groups, "GROUPS");
 	IMPORTKWD(Sdate, KW_startdate, "STARTDATE");
@@ -804,41 +805,60 @@ void KW_runView_tNavSmry::Run()
 	std::string hdr1, hdr2;
 	std::vector<double> fac;
 
-	HMMPI::tNavSMRY smry(groups->sec_obj, Sdate->start);
-	smry.ReadFiles(config->model);
-	HMMPI::Mat M = smry.ExtractSummary(dates->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN());
+	HMMPI::tNavSMRY *smry = nullptr;
 
-	if (msg_dat_short != "")
+	if (model->simulator == "TNAV")
+		smry = new HMMPI::tNavSMRY(groups->sec_obj, Sdate->start);
+	else if (model->simulator == "TNAV22")
+		smry = new HMMPI::tNavSMRY22(groups->sec_obj, Sdate->start);
+	else
+		throw HMMPI::Exception("Неприемлемый параметр MODEL.simulator (" + model->simulator + ")", "MODEL.simulator (" + model->simulator + ") not supported");
+
+	try
 	{
-		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n");
-		K->TotalWarnings++;
+		smry->ReadFiles(config->model);
+		HMMPI::Mat M = smry->ExtractSummary(dates->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN());
+
+		if (msg_dat_short != "")
+		{
+			K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n");
+			K->TotalWarnings++;
+		}
+		if (msg_vec_short != "")
+		{
+			K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n");
+			K->TotalWarnings++;
+		}
+
+		const int DateWidth = 21;							// 'date' column width
+		const int wid = config->width;						// other columns width
+		props->make_headers(hdr1, hdr2, fac, DateWidth, wid);
+
+		assert(fac.size() == M.JCount());
+		assert(dates->dates.size() == M.ICount());
+		M = M % fac;										// scaling by factors
+
+		// saving to file
+		FILE *f0 = fopen(config->outfile.c_str(), "w");
+		fprintf(f0, "%s\n", hdr1.c_str());
+		fprintf(f0, "%s\n", hdr2.c_str());
+		for (size_t i = 0; i < dates->dates.size(); i++)
+		{
+			fprintf(f0, "%-*.*s", DateWidth, DateWidth, dates->dates[i].ToString().c_str());
+			for (size_t j = 0; j < M.JCount(); j++)
+				fprintf(f0, "\t%-*.*g", wid, wid-5, M(i, j));
+			fprintf(f0, "\n");
+		}
+		fclose(f0);
 	}
-	if (msg_vec_short != "")
+	catch (...)
 	{
-		K->AppText((std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n");
-		K->TotalWarnings++;
+		delete smry;
+		smry = nullptr;
+		throw;
 	}
 
-	const int DateWidth = 21;							// 'date' column width
-	const int wid = config->width;						// other columns width
-	props->make_headers(hdr1, hdr2, fac, DateWidth, wid);
-
-	assert(fac.size() == M.JCount());
-	assert(dates->dates.size() == M.ICount());
-	M = M % fac;										// scaling by factors
-
-	// saving to file
-	FILE *f0 = fopen(config->outfile.c_str(), "w");
-	fprintf(f0, "%s\n", hdr1.c_str());
-	fprintf(f0, "%s\n", hdr2.c_str());
-	for (size_t i = 0; i < dates->dates.size(); i++)
-	{
-		fprintf(f0, "%-*.*s", DateWidth, DateWidth, dates->dates[i].ToString().c_str());
-		for (size_t j = 0; j < M.JCount(); j++)
-			fprintf(f0, "\t%-*.*g", wid, wid-5, M(i, j));
-		fprintf(f0, "\n");
-	}
-	fclose(f0);
+	delete smry;
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
