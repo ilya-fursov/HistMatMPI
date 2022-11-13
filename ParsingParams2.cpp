@@ -2975,7 +2975,7 @@ std::vector<int> KW_parameters::sc_colors_textsmry()			// returns colors (for 'p
 	IMPORTKWD(textsmry, KW_textsmry, "TEXTSMRY");
 	Finish_pre();
 
-	std::vector<std::string> uniq_wells = vectors->WGname;		// all wells, without repeats
+	std::vector<std::string> uniq_wells = vectors->WGname;		// all wells/groups, without repeats
 	for (auto &w : uniq_wells)
 		w = HMMPI::ToUpper(w);
 	uniq_wells = HMMPI::Unique(uniq_wells);

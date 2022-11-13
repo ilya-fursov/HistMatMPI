@@ -1576,6 +1576,9 @@ void KW_textsmry::DataIO(int i)
 		K->AppText(missing_dates(K->StrListN()));
 		K->TotalWarnings++;
 	}
+
+	if (found_ts == 0)
+		throw HMMPI::Exception("Временные шаги из DATES не найдены", "No time steps from DATES were found");
 }
 //------------------------------------------------------------------------------------------
 std::string KW_textsmry::missing_dates(int N)	// list of missing dates, based on 'found_ts_flag'; N - number of lines for StringListing
