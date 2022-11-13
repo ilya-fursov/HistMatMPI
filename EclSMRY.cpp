@@ -1684,9 +1684,11 @@ PM_SimProxy *SimProxyFile::MakeProxy(const std::vector<Date> &dates, const std::
 	std::vector<int> b_starts = block_starts();				// the result is sync on all ranks
 	std::vector<std::vector<double>> vals = extract_proxy_vals(dates, vecs, all_sigmas, b_starts);	// fills 'datapoint_block' (sync on "comm"); all input and output parameters are only used on comm-RANKS-0
 
+	RANK0_SYNCERR_BEGIN(comm);
 	if (vals.size() == 0)
 		throw HMMPI::Exception("При заданных ECLSMRY и прочих настройках, не удалось извлечь данные для инициализации прокси-модели. Также стоит проверить, что DATES, ECLVECTORS и сигмы заданы корректно",
 							   "Given the ECLSMRY and other settings, failed to extract any data for proxy model initialisation. Also check that the DATES, ECLVECTORS and sigmas are ok");
+	RANK0_SYNCERR_END(comm);
 
 	SimProxy = new PM_SimProxy(Ecl, K, kw, model, BDC, Ecl->Data(), b_starts, datapoint_block);
 	std::vector<std::vector<double>> int_params = get_internal_parameters(parameters);				// valid on comm-RANKS-0
