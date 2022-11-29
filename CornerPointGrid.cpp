@@ -430,17 +430,6 @@ std::string CornGrid::analyze()			// finds dx0, dy0, theta0, Q0; returns a short
 	if (sum2 < 0)
 		dy0 = -dy0;
 
-
-	if (rank == 0)
-	{
-		std::cout << "\n---------------------------\n";
-		if (take_cos)	// DEBUG
-			std::cout << "\n---------------------------\nanalyze: TAKE COS!!!\n";
-		else
-			std::cout << "analyze: take sine -!\n";	// DEBUG
-		std::cout << "dy0 via sqrt: " << sum/Ny << ", signed version: " << sum2 << "\n-----------------------\n";	// DEBUG
-	}
-
 	state_found = true;
 	double shift = sqrt((coord[0] - coord[3])*(coord[0] - coord[3]) + (coord[1] - coord[4])*(coord[1] - coord[4]));
 	char msg[HMMPI::BUFFSIZE*10];
@@ -628,6 +617,68 @@ bool CornGrid::point_between_pillars(double x, double y, int i, int j, double t)
 	return is_inside;
 }
 //------------------------------------------------------------------------------------------
+bool CornGrid::point_inside_boundary_pillars(double x, double y, double t) const 		// 'true' if point (x,y) is inside all the boundary pillars at depth "t" (fraction)
+{
+	assert(grid_loaded);
+	assert(state_found);
+
+	const size_t len = 2*Nx + 2*Ny;
+	std::vector<size_t> p(len);	// global indices of the boundary pillars
+
+	size_t c = 0;
+	for (size_t i = 0; i < Nx; i++)
+	{
+		p[c] = i;				// j = 0
+		c++;
+	}
+	for (size_t j = 0; j < Ny; j++)
+	{
+		p[c] = j*(Nx+1) + Nx;	// i = Nx
+		c++;
+	}
+	for (size_t i = Nx; i > 0; i--)
+	{
+		p[c] = Ny*(Nx+1) + i;	// j = Ny
+		c++;
+	}
+	for (size_t j = Ny; j > 0; j--)
+	{
+		p[c] = j*(Nx+1);		// i = 0
+		c++;
+	}
+
+	const Mat Xt(std::vector<double>{x, y, 0});
+	int sign = 0;
+	bool is_inside = true;
+
+	for (size_t n = 0; n < len; n++)	// go through all boundary pillars
+	{
+		size_t p0 = p[n];				// consider two pillars defining the line
+		size_t p1 = p[(n+1)%len];
+
+		Mat X0(std::vector<double>{coord[p0*6]*(1-t) + coord[p0*6+3]*t, coord[p0*6+1]*(1-t) + coord[p0*6+4]*t, 0});
+		Mat X1(std::vector<double>{coord[p1*6]*(1-t) + coord[p1*6+3]*t, coord[p1*6+1]*(1-t) + coord[p1*6+4]*t, 0});
+
+		Mat V1 = X1 - X0;
+		Mat Vt = Xt - X0;
+		Mat prod_xy = VecProd(V1, Vt);	// may be zero
+		const double Prod = prod_xy(2,0);
+		if (Prod != 0)
+		{
+			if (sign*Prod < 0)
+			{
+				is_inside = false;
+				break;
+			}
+			if (sign == 0)
+				sign = (Prod > 0 ? 1: -1);
+		}
+	}
+
+	pinside_call_count++;
+	return is_inside;
+}
+//------------------------------------------------------------------------------------------
 bool CornGrid::find_cell_in_window(double x, double y, int i0, int i1, int j0, int j1, double t, int &ii, int &jj)	// iteratively searches the cell index window [i0, i1)*[j0, j1)
 {											// for the first encounter of cell [ii, jj] containing the point (x, y); uses point_between_pillars() test; returns "true" on success
 	assert(i0 >= 0 && (size_t)i1 <= Nx);
@@ -758,31 +809,7 @@ double CornGrid::calc_scaled_dist(int i1, int j1, int k1, int i2, int j2, int k2
 	return sqrt(dr1*dr1 + dr2*dr2 + dr3*dr3);
 }
 //------------------------------------------------------------------------------------------
-//void CornGrid::temp_out_pillars() const	// TODO temp!
-//{
-//	FILE *f = fopen("pillars_out.txt", "w");
-//
-//	for (size_t j = 0; j < Ny+1; j++)
-//		for (size_t i = 0; i < Nx+1; i++)	// consider pillar p = (i, j)
-//		{
-//			size_t p = j*(Nx+1) + i;
-//
-//			fprintf(f, "%.12g\t%.12g\t%.12g\t\t%.12g\t%.12g\t%.12g\n", coord[p*6], coord[p*6+1], coord[p*6+2], coord[p*6+3], coord[p*6+4], coord[p*6+5]);
-//		}
-//
-//	fclose(f);
-//}
-//void CornGrid::temp_out_zcorn() const	// TODO temp!
-//{
-//	FILE *f = fopen("zcorn_out.txt", "w");
-//
-//	for (size_t j = 0; j < zcorn.size(); j++)
-//			fprintf(f, "%.12g\n", zcorn[j]);
-//
-//	fclose(f);
-//}
-//------------------------------------------------------------------------------------------
-CornGrid::CornGrid(MPI_Comm c) : comm(c), grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), Nz_local(0), pbp_call_count(0), psspace_call_count(0),
+CornGrid::CornGrid(MPI_Comm c) : comm(c), grid_loaded(false), actnum_loaded(false), Nx(0), Ny(0), Nz(0), Nz_local(0), pbp_call_count(0), pinside_call_count(0), psspace_call_count(0),
 					   delta_Z(10.0), min_cell_height(1e-3), actnum_name("ACTNUM"), actnum_min(0), actnum_count(0), cell_coord_filled(false),
 					   state_found(false), dx0(0), dy0(0), theta0(0)
 {
@@ -862,6 +889,7 @@ std::string CornGrid::LoadCOORD_ZCORN(std::string fname, int nx, int ny, int nz,
 	Q0.Bcast(0, comm);
 
 	pbp_call_count = 0;
+	pinside_call_count = 0;
 	psspace_call_count = 0;
 	grid_loaded = true;
 	actnum_loaded = false;
@@ -993,18 +1021,44 @@ void CornGrid::SavePropertyToFile(std::string fname, std::string prop_name, cons
 	fclose(F);
 }
 //------------------------------------------------------------------------------------------
+// ZCORN numbering scheme for grid X*Y*Z cells
+// For each layer k in [0, Z):
+// A) First number the upper plane of nodes
+//     columns below = (j-)lines of pillars
+//     the square box highlights a single pillar
+//          	1   	3   	5									-
+//     0    	2   	4   	...			-- 1st line of pillars	|
+//																	| 1st (i-)line of cells
+//      				______										|
+//          	2X+1 	|2X+3| 	2X+5								|
+//     2X    	2X+2 	|2X+4| 	...			-- 2nd line of pillars	-
+//     -------------------------------
+//          	4X+1 	|4X+3| 	4X+5								-
+//     4X    	4X+2 	|4X+4| 	...			-- 2nd line of pillars	|
+//	    				------										| 2nd (i-)line of cells
+//																	|
+//          	6X+1 	6X+3 	6X+5								|
+//     6X    	6X+2 	6X+4 	...			-- 3rd line of pillars	-
+//     -------------------------------								-
+//     ...															| 3rd (i-)line of cells
+//     -------------------------------								-
+//     ...
+// B) Then number the lower plane of nodes in the same way
+//     ....
+//     ....
+//     ....
 std::string CornGrid::fill_cell_coord()				// fills "cell_coord", "cell_coord_local" from coord, zcorn_local, and grid dimensions; returns a short message
 {
 	assert(grid_loaded);
-	const size_t coord_size = 6*(Nx+1)*(Ny+1);			// VTK_VOXEL:
-	const size_t zcorn_size = 8*Nx*Ny*Nz;				// 2 --- 3				   6 --- 7
-														// |	 |	+ another face |	 |
-	assert(coord.size() == coord_size);					// 0 --- 1				   4 --- 5
-	if (rank == 0)
+	const size_t coord_size = 6*(Nx+1)*(Ny+1);			// VOXEL (as taken in HistMatMPI):
+	const size_t zcorn_size = 8*Nx*Ny*Nz;				// 0 --- 1				 4 --- 5		0 ---> I
+														// |	 |	+ lower face |	   |		|
+	assert(coord.size() == coord_size);					// 2 --- 3				 6 --- 7	    |
+	if (rank == 0)										//										J
 	{
 		assert(zcorn.size() == zcorn_size);
 		cell_coord = std::vector<double>(zcorn_size*3);	// ORDER: (x,y,z) for 8 vertices of the 1st cell, (x,y,z) for 8 vertices of the second cell,...
-	}													// Vertex order in a cell: as in VTK_VOXEL
+	}													// Vertex order in a cell: as in VOXEL above
 														// CELLS: i - fastest, k - slowest
 	const size_t zcorn_size_local = 8*Nx*Ny*Nz_local;
 	assert(zcorn_local.size() == zcorn_size_local);
@@ -1353,14 +1407,23 @@ void CornGrid::find_cell(const double x, const double y, const double z, int &i,
 			const Mat rhs(std::vector<double>{xbar, ybar});
 
 			Mat sol = Q0.Tr()*rhs;
-			i = int(sol(0,0)/dx0);			// find analytic (i,j)
+			i = int(sol(0,0)/dx0);			// find analytic (i,j), a.k.a. quick estimate
 			j = int(sol(1,0)/dy0);
 
-			if (i < 0 || i >= (int)Nx || j < 0 || j >= (int)Ny)		// check that the found (i,j) is correct
+			if (i < 0 || i >= (int)Nx || j < 0 || j >= (int)Ny)		// quick estimate led to (i,j) outside the grid
 			{
 				char msg[BUFFSIZE];
-				sprintf(msg, "Point (%.0f, %.0f) is laterally outside the grid", x, y);
-				throw Exception(msg);
+				if (!point_inside_boundary_pillars(x, y, t))		// the point is definitely outside
+				{
+					sprintf(msg, "Point (%.0f, %.0f, %.2f) is laterally outside the grid", x, y, z);
+					throw Exception(msg);
+				}
+				else if (!find_cell_in_window(x, y, 0, Nx, 0, Ny, t, i, j))		// attempt the full grid search
+				{
+					sprintf(msg, "Fatal error in full grid lateral search: despite identifying the point between the boundary pillars, "
+								 "failed to find a grid cell containing the point (%.0f, %.0f, %.2f)", x, y, z);
+					throw Exception(msg);
+				}
 			}
 
 			if (!point_between_pillars(x, y, i, j, t))
@@ -1376,10 +1439,10 @@ void CornGrid::find_cell(const double x, const double y, const double z, int &i,
 				if ((size_t)j1 > Ny) j1 = Ny;
 
 				if (!find_cell_in_window(x, y, i0, i1, j0, j1, t, i, j))	// windowed search
-					if(!find_cell_in_window(x, y, 0, Nx, 0, Ny, t, i, j))	// full grid search
+					if (!find_cell_in_window(x, y, 0, Nx, 0, Ny, t, i, j))	// full grid search
 					{
 						char msg[BUFFSIZE];
-						sprintf(msg, "Failure to find a grid cell containing the point (%.0f, %.0f)", x, y);
+						sprintf(msg, "Full grid lateral search: failure to find a grid cell containing the point (%.0f, %.0f, %.2f)", x, y, z);
 						throw Exception(msg);
 					}
 			}
@@ -1409,6 +1472,7 @@ void CornGrid::find_cell(const double x, const double y, const double z, int &i,
 	}
 
 	MPI_Bcast(&pbp_call_count, 1, MPI_LONG_LONG, 0, comm);
+	MPI_Bcast(&pinside_call_count, 1, MPI_LONG_LONG, 0, comm);
 	MPI_Bcast(&psspace_call_count, 1, MPI_LONG_LONG, 0, comm);
 
 	MPI_Bcast(&iserror, 1, MPI_BYTE, 0, comm);
@@ -1422,8 +1486,8 @@ std::string CornGrid::report_find_cell_stats() const		// info on the auxiliary f
 	char msg_eng[BUFFSIZE];
 	char msg_rus[BUFFSIZE];
 
-	sprintf(msg_eng, "Calls of 'point_between_pillars': %zu, calls of 'point_in_same_semispace': %zu", pbp_call_count, psspace_call_count);
-	sprintf(msg_rus, "Проверок 'point_between_pillars': %zu, проверок 'point_in_same_semispace': %zu", pbp_call_count, psspace_call_count);
+	sprintf(msg_eng, "Calls of 'point_between_pillars': %zu, calls of 'point_inside_boundary_pillars': %zu, calls of 'point_in_same_semispace': %zu", pbp_call_count, pinside_call_count, psspace_call_count);
+	sprintf(msg_rus, "Проверок 'point_between_pillars': %zu, проверок 'point_inside_boundary_pillars': %zu, проверок 'point_in_same_semispace': %zu", pbp_call_count, pinside_call_count, psspace_call_count);
 
 	return MessageRE(msg_rus, msg_eng);
 }

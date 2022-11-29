@@ -64,6 +64,7 @@ private:
 	size_t Nx, Ny, Nz;		// grid dimensions
 	size_t Nz_local;		// [DISTR] Nz on a particular rank, after distribution
 	mutable size_t pbp_call_count;		// counts point_between_pillars() calls since the last grid loading
+	mutable size_t pinside_call_count;	// counts point_inside_boundary_pillars() calls since the last grid loading
 	mutable size_t psspace_call_count;	// counts point_in_same_semispace() calls since the last grid loading
 	const double delta_Z;	// perturbation for Z in point_in_same_semispace()
 
@@ -117,6 +118,7 @@ protected:
 	void xyz_from_cell_ijk_local(int i, int j, int k, double &x, double &y, double &z) const;		// (i,j,k_local) -> (x,y,z)
 
 	bool point_between_pillars(double x, double y, int i, int j, double t) const;	// 'true' if point (x,y) is between pillars [i,j]-[i+1,j]-[i+1,j+1]-[i,j+1] at depth "t" (fraction)
+	bool point_inside_boundary_pillars(double x, double y, double t) const; 		// 'true' if point (x,y) is inside all the boundary pillars at depth "t" (fraction)
 	bool find_cell_in_window(double x, double y, int i0, int i1, int j0, int j1, double t, int &ii, int &jj);	// iteratively searches the cell index window [i0, i1)*[j0, j1)
 									// for the first encounter of cell [ii, jj] containing the point (x, y); uses point_between_pillars() test; returns "true" on success
 
