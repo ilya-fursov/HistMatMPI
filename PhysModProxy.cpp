@@ -2619,7 +2619,25 @@ std::string KrigEnd::RecalcVals()								// (after adding values) makes CinvZ ca
 	for (size_t i = 0; i < len_trend; i++)
 		Ity.push_back(0);
 
-	CinvZ = start->get_sol()->Solve(start->get_C(), Ity);
+	try
+	{
+		CinvZ = start->get_sol()->Solve(start->get_C(), Ity);
+	}
+	catch (const std::exception &e)	// in case of solution error, save the inputs to a file
+	{
+		// TODO remove from here
+		TODO
+#ifdef ERROR_TO_FILE
+		std::ofstream testf(HMMPI::stringFormatArr("ErrorLinSolver_rank_{0:%d}.txt", std::vector<int>{RNK}), std::ios::out);
+		testf << e.what() << "\n\n";
+		testf << "Matrix:\n";
+		testf << start->get_C().ToString() << "\n";
+		testf << "Vector:\n";
+		testf << HMMPI::ToString(Ity) << "\n";
+		testf.close();
+#endif
+		throw e;
+	}
 	mat_eff_rank = HMMPI::ToString(std::vector<int>{start->get_sol()->rank}, "%d");
 
 	if (dump_flag != -1)	// debug output to files

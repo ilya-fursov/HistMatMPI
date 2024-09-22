@@ -554,6 +554,8 @@ public:
 //------------------------------------------------------------------------------------------
 class Solver									// abstract class - base for all solvers
 {
+	//TODO need protected solve, and error -> file
+	TODO
 public:
 	mutable int rank;								// some solvers may occasionally fill the matrix rank
 
