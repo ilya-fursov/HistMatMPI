@@ -5,6 +5,7 @@
 #include "sobol.hpp"
 #include <cstring>
 #include <iostream>
+#include <fstream>
 #include <numeric>
 #include <limits>
 #include <cmath>
@@ -1467,9 +1468,39 @@ void BlockDiagMat::PrintToFile(std::string tag) const		// print the contents to 
 #endif
 }
 //------------------------------------------------------------------------------------------
+// Solver
+//------------------------------------------------------------------------------------------
+Mat Solver::Solve(Mat A, Mat b) const	// solves A*x = b, on error outputs A, b to file
+{
+	try
+	{
+#ifdef ERROR_TO_FILE
+		return _solve(A, b);			// note: copy A, b since may need to print them later
+#else
+		return _solve(std::move(A), std::move(b));
+#endif
+	}
+	catch (const std::exception &e)		// in case of solution error, save A, b to file
+	{
+#ifdef ERROR_TO_FILE
+		int RNK;
+		MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
+
+		std::ofstream testf(stringFormatArr("ErrorLinSolver_rank_{0:%d}.txt", std::vector<int>{RNK}), std::ios::out);
+		testf << e.what() << "\n\n";
+		testf << "Matrix:\n";
+		testf << A.ToString() << "\n";
+		testf << "Vector^t:\n";
+		testf << b.Tr().ToString() << "\n";
+		testf.close();
+#endif
+		throw e;
+	}
+}
+//------------------------------------------------------------------------------------------
 // SolverGauss
 //------------------------------------------------------------------------------------------
-Mat SolverGauss::Solve(Mat A, Mat b) const
+Mat SolverGauss::_solve(Mat A, Mat b) const
 {
 #ifdef TESTSOLVER
 	int rank00, size00;
@@ -1483,7 +1514,7 @@ Mat SolverGauss::Solve(Mat A, Mat b) const
 //------------------------------------------------------------------------------------------
 // SolverDGESV
 //------------------------------------------------------------------------------------------
-Mat SolverDGESV::Solve(Mat A, Mat b) const
+Mat SolverDGESV::_solve(Mat A, Mat b) const
 {
 #ifdef TESTSOLVER
 	int rank00, size00;
@@ -1540,7 +1571,7 @@ Mat SolverDGESV::Solve(Mat A, Mat b) const
 //------------------------------------------------------------------------------------------
 // SolverDGELS
 //------------------------------------------------------------------------------------------
-Mat SolverDGELS::Solve(Mat A, Mat b) const
+Mat SolverDGELS::_solve(Mat A, Mat b) const
 {
 #ifdef TESTSOLVER
 	int rank00, size00;
@@ -1591,7 +1622,7 @@ Mat SolverDGELS::Solve(Mat A, Mat b) const
 //------------------------------------------------------------------------------------------
 // SolverDGELSD
 //------------------------------------------------------------------------------------------
-Mat SolverDGELSD::Solve(Mat A, Mat b) const
+Mat SolverDGELSD::_solve(Mat A, Mat b) const
 {
 #ifdef TESTSOLVER
 	int rank00, size00;
@@ -1657,7 +1688,7 @@ Mat SolverDGELSD::Solve(Mat A, Mat b) const
 //------------------------------------------------------------------------------------------
 // SolverDGELSS
 //------------------------------------------------------------------------------------------
-Mat SolverDGELSS::Solve(Mat A, Mat b) const
+Mat SolverDGELSS::_solve(Mat A, Mat b) const
 {
 #ifdef TESTSOLVER
 	int rank00, size00;
@@ -1726,7 +1757,7 @@ Mat SolverDGELSS::Solve(Mat A, Mat b) const
 //------------------------------------------------------------------------------------------
 // SolverDGELSY
 //------------------------------------------------------------------------------------------
-Mat SolverDGELSY::Solve(Mat A, Mat b) const
+Mat SolverDGELSY::_solve(Mat A, Mat b) const
 {
 #ifdef TESTSOLVER
 	int rank00, size00;

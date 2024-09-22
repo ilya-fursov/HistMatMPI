@@ -552,50 +552,53 @@ public:
 //------------------------------------------------------------------------------------------
 // *** classes for solving linear equations
 //------------------------------------------------------------------------------------------
-class Solver									// abstract class - base for all solvers
+class Solver										// abstract class - base for all solvers
 {
+protected:
+	virtual Mat _solve(Mat A, Mat b) const = 0;		// solves A*x = b
+
 public:
 	mutable int rank;								// some solvers may occasionally fill the matrix rank
 
 	Solver(){rank = -1;};
 	virtual ~Solver(){};
-	virtual Mat Solve(Mat A, Mat b) const = 0;		// solves A*x = b
+	Mat Solve(Mat A, Mat b) const;					// solves A*x = b, on error outputs A, b to file
 };
 //------------------------------------------------------------------------------------------
 class SolverGauss : public Solver
 {
-public:
-	virtual Mat Solve(Mat A, Mat b) const;			// hand-written Gaussian elimination - i.e. Mat operator/
+protected:
+	virtual Mat _solve(Mat A, Mat b) const;			// hand-written Gaussian elimination - i.e. Mat operator/
 };
 //------------------------------------------------------------------------------------------
 class SolverDGESV : public Solver
 {
-public:
-	virtual Mat Solve(Mat A, Mat b) const;			// DGESV (general) solver for square matrix
+protected:
+	virtual Mat _solve(Mat A, Mat b) const;			// DGESV (general) solver for square matrix
 };
 //------------------------------------------------------------------------------------------
 class SolverDGELS : public Solver
 {
-public:
-	virtual Mat Solve(Mat A, Mat b) const;			// DGELS (least squares) solver for full rank rectangular matrix
+protected:
+	virtual Mat _solve(Mat A, Mat b) const;			// DGELS (least squares) solver for full rank rectangular matrix
 };
 //------------------------------------------------------------------------------------------
 class SolverDGELSD : public Solver
 {
-public:
-	virtual Mat Solve(Mat A, Mat b) const;			// DGELSD (least squares) solver for matrix of any rank; uses bidiagonal least squares, and divide and conquer approach
+protected:
+	virtual Mat _solve(Mat A, Mat b) const;			// DGELSD (least squares) solver for matrix of any rank; uses bidiagonal least squares, and divide and conquer approach
 };
 //------------------------------------------------------------------------------------------
 class SolverDGELSS : public Solver
 {
-public:
-	virtual Mat Solve(Mat A, Mat b) const;			// DGELSS (least squares) solver for matrix of any rank; uses the singular value decomposition
+protected:
+	virtual Mat _solve(Mat A, Mat b) const;			// DGELSS (least squares) solver for matrix of any rank; uses the singular value decomposition
 };
 //------------------------------------------------------------------------------------------
 class SolverDGELSY : public Solver
 {
-public:
-	virtual Mat Solve(Mat A, Mat b) const;			// DGELSY (least squares) solver for matrix of any rank; uses complete orthogonal factorization
+protected:
+	virtual Mat _solve(Mat A, Mat b) const;			// DGELSY (least squares) solver for matrix of any rank; uses complete orthogonal factorization
 };
 //------------------------------------------------------------------------------------------
 class Rand;

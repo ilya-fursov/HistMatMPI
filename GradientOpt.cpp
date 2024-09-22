@@ -21,7 +21,7 @@
 #include <kinsol/kinsol.h>             /* access to KINSOL func., consts. */
 #include <nvector/nvector_serial.h>    /* access to serial N_Vector       */
 #include <sunmatrix/sunmatrix_dense.h> /* access to dense SUNMatrix       */
-#include <kinsol/kinsol_direct.h>      /* access to KINDls interface      */
+//#include <kinsol/kinsol_direct.h>      /* access to KINDls interface      */
 #include <sunlinsol/sunlinsol_dense.h> /* access to dense SUNLinearSolver */
 #include <sundials/sundials_types.h>   /* defs. of realtype, sunindextype */
 #include <chrono>
@@ -459,7 +459,7 @@ std::vector<double> SUNIter::Solve(std::vector<double> x)
 	SUNContext sunctx = 0;
 	try
 	{
-		flag = SUNContext_Create(NULL, &sunctx);
+		flag = SUNContext_Create(SUN_COMM_NULL, &sunctx);
 		check_flag(&flag, "SUNContext_Create", 1);
 
 		if (!Func)
