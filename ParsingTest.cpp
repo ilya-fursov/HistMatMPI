@@ -456,25 +456,11 @@ void KW_rundebug::Run()
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
 
-	std::string fn = "RESULTS/Bolt_U11_2022oct_WORK_0/result.end";
-	std::string token = "Ошибок %d";
-	FILE *file = fopen(fn.c_str(), "r");
-	int res;
-
-	while (file != NULL && !feof(file))
-	{
-		if (fscanf(file, token.c_str(), &res) == 1)
-		{
-			std::cout << token << " res=" << res << "\n";
-			break;
-		}
-		else
-		{
-			char c;
-			fscanf(file, "%c", &c);
-		}
-	}
-	fclose(file);
+	std::string data = "$var1+var2*(tmp-xxx)^Y+log(zz)////r";
+	std::vector<std::string> toks;
+	HMMPI::tokenize(data, toks, "+-*/^()", true);
+	for (auto s : toks)
+		std::cout << s << "\n";
 
 
 }

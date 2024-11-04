@@ -1350,17 +1350,24 @@ std::string stringTagPrintf(const std::string &format, const std::map<std::strin
 				throw EObjFunc("Некорректный формат тэга '" + tag + "', ожидается: $TAG $TAG; $TAG%FMT $TAG%FMT;",
 							   "Incorrect tag format '" + tag + "', expected: $TAG $TAG; $TAG%FMT $TAG%FMT;");
 
+			// TODO in func
 			auto it = tag_val.find(tag_parts[0]);		// search for tag from "format" within the "tag_val" list
 			if (it == tag_val.end())
 				throw EObjFunc("Тэг '" + tag_parts[0] + "' не найден в списке", "Tag '" + tag_parts[0] + "' was not found in the list");
 
+			// TODO keep
 			std::string fmt = "";
 			if (tag_parts.size() == 2)
 				fmt = "%" + tag_parts[1];
 
+			// TODO new func
 			res += it->second->ToString(fmt);			// it->second is TagPrintfValBase* value corresponding to current tag
-			count++;
-			tags_left.erase(tag_parts[0]);
+
+			count++; // TODO in func
+			tags_left.erase(tag_parts[0]);	// TODO in func
+
+
+
 			bracket = "$";
 		}
 
