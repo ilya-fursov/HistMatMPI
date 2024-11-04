@@ -12,6 +12,7 @@
 #include "MathUtils.h"
 #include "Abstract.h"
 #include <mpi.h>
+#include <map>
 
 //---------------------------------------------------------------------------
 class Parser_1;

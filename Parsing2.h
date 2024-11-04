@@ -11,6 +11,7 @@
 #include <tuple>
 #include "Parsing.h"
 #include "MathUtils.h"
+#include "ExprUtils.h"
 #include "MonteCarlo.h"
 #include "EclSMRY.h"
 #include "CornerPointGrid.h"
@@ -676,7 +677,7 @@ public:
 
 	KW_templates();
 	virtual void UpdateParams() noexcept;	// some file reading
-	std::string WriteFiles(HMMPI::TagPrintfMap &par) const;	// replaces file names (orig->work), plugs in params, writes work files; returns parameters substitution message
+	std::string WriteFiles(HMMPI::TagValMap &par) const;	// replaces file names (orig->work), plugs in params, writes work files; returns parameters substitution message
 															// sets MOD and PATH in "par", fills SIMCMD->cmd_work, fills "work_file_subst"
 	void ClearFiles();						// clear work files according to 'keep'
 	void ClearFilesEcl();					// clear files produced by Eclipse, according to 'keep'		-- TODO for tNav this still doesn't work
@@ -953,7 +954,7 @@ protected:
 	std::vector<double> logmin;				// min for func=LIN, and log10(min) for func=EXP
 
 	std::vector<std::string> reserved_names;	// name[i] is not allowed to be one of these
-	HMMPI::TagPrintfMap *par_map;			// used for writing to files
+	HMMPI::TagValMap *par_map;				// used for writing to files
 
 	virtual std::string par_name(int i) const;	// parameter name
 	virtual double minrpt(int i) const {return min[i];};	// used in BoundConstr::Check for reporting; here, return external representation
@@ -981,7 +982,7 @@ public:
 
 	KW_parameters();
 	~KW_parameters();						// frees 'par_map'
-	HMMPI::TagPrintfMap *get_tag_map() const {return par_map;};
+	HMMPI::TagValMap *get_tag_map() const {return par_map;};
 	virtual std::string msg(int N) const;			// message listing "val" values, 'N' (the number of lines) is used in HMMPI::StringListing
 	virtual void Write_params_log(const std::vector<double> &p, std::string fname) const;	// "p" - internal current values to be written instead of "val"
 	const ParamsInterface *GetParamsInterface() const;		// if const ParamsInterface is enough for some work (no matter from KW_limits or KW_parameters), use this function;

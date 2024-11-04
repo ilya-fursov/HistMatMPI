@@ -1331,11 +1331,11 @@ void KW_templates::check_fnames() noexcept
 	// check that work_file's contain only $RANK parameter, if any
 	std::vector<std::string> tags;
 	for (size_t i = 0; i < work_file.size(); i++)
-		HMMPI::VecAppend(tags, HMMPI::stringExtractTags(work_file[i]));
+		HMMPI::VecAppend(tags, HMMPI::stringExtractTags(work_file[i]));		// note, stringExtractTags() extracts full expressions
 	for (size_t i = 0; i < tags.size(); i++)
 		if (tags[i] != "RANK")
-			SilentError(HMMPI::stringFormatArr("В именах файлов work_file допустим только параметр $RANK (найден ${0:%s})",
-											   "In work_file file names only $RANK parameter is allowed (found ${0:%s})", tags[i]));
+			SilentError(HMMPI::stringFormatArr("В именах файлов work_file допустим только параметр $RANK (найдено: ${0:%s})",
+											   "In work_file file names only $RANK parameter is allowed (found: ${0:%s})", tags[i]));
 
 	// check that every work file has $RANK in parallel mode
 	int size;
@@ -1442,7 +1442,7 @@ void KW_templates::UpdateParams() noexcept
 	K->AppText(HMMPI::stringFormatArr("Загружено файлов: {0:%d}\n", "Loaded files: {0:%d}\n", count));
 }
 //------------------------------------------------------------------------------------------
-std::string KW_templates::WriteFiles(HMMPI::TagPrintfMap &par) const
+std::string KW_templates::WriteFiles(HMMPI::TagValMap &par) const
 {
 	DECLKWD(simcmd, KW_simcmd, "SIMCMD");
 
@@ -2677,8 +2677,7 @@ void KW_parameters::UpdateParams() noexcept
 {
 	// replace backvals = "" by 0's
 	for (auto &s : backval)
-		if (s == "")
-			s = "0";
+		if (s == "") s = "0";
 
 	count_active();
 	check_names();
@@ -2714,8 +2713,15 @@ void KW_parameters::UpdateParams() noexcept
 	fill_norm_logmin();
 
 	// initialize 'par_map'
-	delete par_map;
-	par_map = new HMMPI::TagPrintfMap(name, val);
+	try
+	{
+		delete par_map;
+		par_map = new HMMPI::TagValMap(name, val);
+	}
+	catch(const std::exception &e)
+	{
+		SilentError(e.what());
+	}
 
 	// fill init, BoundConstr::min, BoundConstr::max
 	init = ExternalToInternal(val);
@@ -2750,7 +2756,7 @@ void KW_parameters::UpdateParams() noexcept
 		prior->SetState(HMMPI::MessageRE("PRIOR должно быть перезагружено после чтения PARAMETERS\n", "PRIOR should be reloaded after reading PARAMETERS\n"));
 }
 //------------------------------------------------------------------------------------------
-KW_parameters::KW_parameters() : ln10(log(10)), reserved_names({"", "MOD", "PATH", "RANK", "SIZE"})
+KW_parameters::KW_parameters() : ln10(log(10)), reserved_names({"", "MOD", "PATH", "RANK", "SIZE", "SMPL", "log", "exp"})
 {
 	KW_multparams::name = "PARAMETERS";
 	dec_verb = 2;

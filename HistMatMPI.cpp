@@ -10,6 +10,7 @@
 #include "mpi.h"
 #include "Abstract.h"
 #include "Utils.h"
+#include "ExprUtils.h"
 #include "Parsing.h"
 #include "Parsing2.h"
 #include "Vectors.h"
@@ -29,6 +30,8 @@ int main(int argc, char *argv[])
 
 	const std::chrono::high_resolution_clock::time_point time1 = std::chrono::high_resolution_clock::now();
 	Parser_1 kw1;
+	HMMPI::count_val_Ctors = 0;
+	HMMPI::count_val_Dtors = 0;
 
 	HMMPI::TextAttr TA;
 	try
@@ -264,6 +267,12 @@ int main(int argc, char *argv[])
 	}
 
 	MPI_Bcast(&kw1.TotalErrors, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	// DEBUG TODO
+	std::cout << "Val CTORS: " << HMMPI::count_val_Ctors <<
+			   "\tval DTORS: " << HMMPI::count_val_Dtors <<
+			   "\tdiff: " << HMMPI::count_val_Ctors - HMMPI::count_val_Dtors << "\n";
+	// DEBUG TODO
 
 	MPI_Finalize();
 	return kw1.TotalErrors;		// non-zero exit status on errors
