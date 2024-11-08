@@ -17,7 +17,6 @@
 #include <vector>
 #include <type_traits>
 #include <mpi.h>
-#include <map>
 #include <utility>
 #include <set>
 
@@ -90,7 +89,6 @@ class Parser_1;													// forward declaration for CmdLauncher::Run()
 
 namespace HMMPI
 {
-
 const int BUFFSIZE = 500;
 
 bool FileExists(const std::string &fname);						// returns 'true' if file exists
@@ -305,17 +303,20 @@ void fread_check(void *data, size_t size, size_t count, FILE *fd);		// same as "
 
 template <class ContainerT>																//  #####  ###   #  #  #####  #   #  ###  #####  #####
 void tokenize(const std::string& str, ContainerT& tokens,								//    #   #   #  # #   #      ##  #   #      #   #
-              const std::string& delimiters = " ", const bool trimEmpty = false);		//    #   #   #  ##    ####   # # #   #     #    ####
-																						//    #   #   #  # #   #      #  ##   #    #     #
+              const std::string& delimiters = " ", const bool trimEmpty = false,		//    #   #   #  ##    ####   # # #   #     #    ####
+              const bool add_delim = false);											//    #   #   #  # #   #      #  ##   #    #     #
 template <class ContainerT>																//    #    ###   #  #  #####  #   #  ###  #####  #####
 void tokenizeExact(const std::string& str, ContainerT& tokens,
-              const std::string& delimiters = " ", const bool trimEmpty = false);
+                   const std::string& delimiters = " ", const bool trimEmpty = false);
 
 template <class T>
 std::string stringFormatArr(std::string str, const std::vector<T> &data);				// writes data[] in formatted manner to str = "{0}...{1:%f}...{2}..."
 
 template <class T>
-std::string stringFormatArr(std::string str_rus, std::string str_eng, const T &item);	// simplified version of "stringFormatArr" with two format string variants and one item (not an array)
+std::string stringFormatArr(std::string str, const T &item);							// (1) Simplified version of stringFormatArr with one item (not an array)
+
+template <class T>
+std::string stringFormatArr(std::string str_rus, std::string str_eng, const T &item);	// (2) Simplified version of stringFormatArr with two format string variants and one item (not an array)
 
 // functions for I/O of vectors to files - used e.g. in SimProxyFile
 template <typename T, typename A>
@@ -340,63 +341,13 @@ void write_bin(FILE *fd, const Date &d);										// auxiliary overloads for Dat
 void read_bin(FILE *fd, Date &d);
 void write_ascii(FILE *fd, const Date &d);
 
-//------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-// classes and functions for formatted string writing with tags
-//------------------------------------------------------------------------------------------
-class TagPrintfValBase		// base class for wrappers of int, double, string
-{
-protected:
-	static char buff[BUFFSIZE];
-
-public:
-	virtual ~TagPrintfValBase(){};
-	virtual std::string ToString(std::string fmt = "") const = 0;	// essentially, = sprintf(fmt, *this); for default fmt = "", format is taken which is different for different derived classes
-};
-//------------------------------------------------------------------------------------------
-template <class T>
-class TagPrintfVal : public TagPrintfValBase		// T is expected to be: int, double, std::string
-{
-protected:
-	T val;
-
-	std::string get_fmt() const;					// format string to use by default; this function is 100% specialized for int, double, std::string
-public:
-	TagPrintfVal(T x) : val(x){};
-	virtual std::string ToString(std::string fmt = "") const;
-};
-//------------------------------------------------------------------------------------------
-// class that stores pairs <tag, value>, to be used in formatted output;
-// essentially it's an std::map with some additional handy routines
-class TagPrintfMap : public std::map<std::string, TagPrintfValBase*>
-{
-public:
-	TagPrintfMap();											// adds tags: MOD, PATH, RANK, SIZE, SMPL; for RANK, SIZE also sets values (global MPI rank and size)
-	TagPrintfMap(const std::vector<std::string> &tags, const std::vector<double> &vals);	// apart from 5 default tags, adds "tags" with "vals"
-	TagPrintfMap(const TagPrintfMap &M) = delete;			// no copies so far
-	const TagPrintfMap &operator=(const TagPrintfMap &M) = delete;
-	~TagPrintfMap();										// frees "vals"
-	void SetModPath(std::string mod, std::string path);		// sets values for MOD and PATH tags
-	void SetSize(int size);									// sets value for SIZE tag
-	void SetSmpl(int smpl);									// sets value for SMPL tag
-	void SetDoubles(const std::vector<std::string> &tags, const std::vector<double> &vals);	// sets "vals" for "tags", where "tags" is a subset of {this->first}
-	std::set<std::string> get_tag_names() const;			// returns the set of all tag names (except MOD, PATH, RANK, SIZE, SMPL)
-};
-//------------------------------------------------------------------------------------------
-std::string stringTagPrintf(const std::string &format, const std::map<std::string, TagPrintfValBase*> &tag_val, int &count, std::set<std::string> &tags_left);	// Writes vals corresponding to tags (tag_val) to appropriate tag locations in "format".
-															// In "format", tag locations may be of form $tag, $tag%fmt (e.g. %fmt = %20.16g).
-															// For simple form $tag, default format is taken depending on the corresp. vals type.
-															// The end of tag locations is marked by whitespace (excluded from the tag substring), or semicolon ";" (included into tag, and then rejected).
-															// TagPrintfMap object can be conveniently used as "tag_val".
-															// Output "count" shows how many tags were replaced by values.
-															// Tag names encountered in "format" are removed from "tags_left" set.
-std::vector<std::string> stringExtractTags(const std::string &format);		// returns array of tag names (without "$" and "%fmt" ) found in 'format'; useful to check what parameters are present in string 'format'
-//------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// BELOW ARE THE TEMPLATE DEFINITIONS ******************************************************************************************************************************************************************************************************************************************
-//------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------
+// BELOW ARE THE TEMPLATE DEFINITIONS ***********************************************************************************
+//-----------------------------------------------------------------------------------------------------------------------
 template <class ContainerT>
 void tokenize(const std::string& str, ContainerT& tokens,
-              const std::string& delimiters, const bool trimEmpty)
+              const std::string& delimiters, const bool trimEmpty,
+              const bool add_delim)		// add_delim == true <-> add the found delimiters to tokens as well
 {
    std::string::size_type pos, lastPos = 0;
    tokens = ContainerT();
@@ -420,13 +371,16 @@ void tokenize(const std::string& str, ContainerT& tokens,
                   (typename ContainerT::value_type::size_type)(pos - lastPos)));
       }
 
+      if (add_delim) tokens.push_back(typename ContainerT::value_type(str.data()+pos, 1));
       lastPos = pos + 1;
+      if (lastPos >= str.length())
+    	  break;
    }
-};
+}
 //------------------------------------------------------------------------------------------
 template <class ContainerT>
 void tokenizeExact(const std::string& str, ContainerT& tokens,
-              const std::string& delimiters, const bool trimEmpty)
+                   const std::string& delimiters, const bool trimEmpty)
 {
    std::string::size_type pos, lastPos = 0;
    tokens = ContainerT();
@@ -454,7 +408,7 @@ void tokenizeExact(const std::string& str, ContainerT& tokens,
       if (lastPos >= str.length())
     	  break;
    }
-};
+}
 //------------------------------------------------------------------------------------------
 // writes data[] in formatted manner to str = "{0}...{1:%f}...{2}..."
 template <class T>
@@ -542,7 +496,14 @@ std::string stringFormatArr(std::string str, const std::vector<T> &data)
 template <>
 std::string stringFormatArr(std::string str, const std::vector<std::string> &data);
 //------------------------------------------------------------------------------------------
-// simplified version of stringFormatArr with two format string variants and one item (not an array)
+// (1) Simplified version of stringFormatArr with one item (not an array)
+template <class T>
+std::string stringFormatArr(std::string str, const T &item)
+{
+	return stringFormatArr<T>(str, std::vector<T>{item});
+}
+//------------------------------------------------------------------------------------------
+// (2) Simplified version of stringFormatArr with two format string variants and one item (not an array)
 template <class T>
 std::string stringFormatArr(std::string str_rus, std::string str_eng, const T &item)
 {
@@ -594,27 +555,6 @@ void write_ascii(FILE *fd, const std::vector<T, A> &v)
 	fprintf(fd, "\n");
 }
 //------------------------------------------------------------------------------------------
-// class TagPrintfVal<T>
-//------------------------------------------------------------------------------------------
-template <class T>
-std::string TagPrintfVal<T>::ToString(std::string fmt) const
-{
-	if (fmt == "")
-		fmt = get_fmt();
-
-	int n = sprintf(buff, fmt.c_str(), val);
-	if (n < 0 || n >= BUFFSIZE)
-	{
-		throw Exception("Ошибка форматированной записи в TagPrintfVal<T>::ToString",
-						"Formatted output not successful in TagPrintfVal<T>::ToString");
-	}
-
-	return buff;
-}
-//------------------------------------------------------------------------------------------
-template <>
-std::string TagPrintfVal<std::string>::ToString(std::string fmt) const;		// for T = std::string a specialization is used
-//------------------------------------------------------------------------------------------
-}	// namespace HistMatMPI
+}	// namespace HMMPI
 //------------------------------------------------------------------------------------------
 #endif /* UTILS_H_ */

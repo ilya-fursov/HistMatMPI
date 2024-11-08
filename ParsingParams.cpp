@@ -234,7 +234,9 @@ void KW_runSingle::Run()
 	IMPORTKWD(model, KW_model, "MODEL");
 	IMPORTKWD(parameters, KW_parameters, "PARAMETERS");
 	DECLKWD(smry, KW_eclsmry, "ECLSMRY");
+#ifdef TEMPLATES_KEEP_NO_ASCII
 	DECLKWD(templ, KW_templates, "TEMPLATES");
+#endif
 	Finish_pre();
 
 	PhysModel *PM = model->MakeModel(this, this->CWD, true);		// make the posterior
@@ -294,7 +296,9 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 	IMPORTKWD(parameters, KW_parameters, "PARAMETERS");
 	IMPORTKWD(smry, KW_eclsmry, "ECLSMRY");
 	IMPORTKWD(seq, KW_multiple_seq, "MULTIPLE_SEQ");
+#ifdef TEMPLATES_KEEP_NO_ASCII
 	DECLKWD(templ, KW_templates, "TEMPLATES");
+#endif
 	Finish_pre();
 
 	const std::string modtype_cache = model->type;
@@ -398,7 +402,9 @@ void KW_runOptProxy::Run()
 	IMPORTKWD(parameters, KW_parameters, "PARAMETERS");
 	IMPORTKWD(config, KW_opt_config, "OPT_CONFIG");
 	IMPORTKWD(smry, KW_eclsmry, "ECLSMRY");
+#ifdef TEMPLATES_KEEP_NO_ASCII
 	DECLKWD(templ, KW_templates, "TEMPLATES");
+#endif
 	Finish_pre();
 
 	const double model_R_cache = model->R;

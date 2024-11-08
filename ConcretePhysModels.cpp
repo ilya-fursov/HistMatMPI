@@ -8,6 +8,7 @@
 #include "Abstract.h"
 #include "Utils.h"
 #include "MathUtils.h"
+#include "ExprUtils.h"
 #include "Parsing.h"
 #include "Parsing2.h"
 #include "Tracking.h"
@@ -2696,7 +2697,7 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 					throw HMMPI::EObjFunc(HMMPI::MessageRE("Параметры выходят за допустимый диапазон",
 														   "Parameters are out of range"));
 
-				HMMPI::TagPrintfMap *tmap = parameters->get_tag_map();		// object handling the parameters - fill it!
+				HMMPI::TagValMap *tmap = parameters->get_tag_map();			// object handling the parameters - fill it!
 				tmap->SetSize(comm_size);
 				std::vector<double> par_external = parameters->InternalToExternal(params);
 				tmap->SetDoubles(parameters->name, par_external);
@@ -3095,7 +3096,7 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 													   	   	   	    "Parameters are out of range: ") + HMMPI::ToString(params));
 
 			// 1. Substitute the parameters and run the model
-			HMMPI::TagPrintfMap *tmap = parameters->get_tag_map();		// object handling the parameters - fill it!
+			HMMPI::TagValMap *tmap = parameters->get_tag_map();			// object handling the parameters - fill it!
 			tmap->SetSize(parallel_size);
 			tmap->SetSmpl(smpl_tag);
 			const std::vector<double> par_external = parameters->InternalToExternal(params);
@@ -3388,7 +3389,7 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 													   "Parameters are out of range"));
 
 			// 1. Substitute the parameters and run the model
-			HMMPI::TagPrintfMap *tmap = parameters->get_tag_map();		// object handling the parameters - fill it!
+			HMMPI::TagValMap *tmap = parameters->get_tag_map();			// object handling the parameters - fill it!
 			tmap->SetSize(parallel_size);
 			const std::vector<double> par_external = parameters->InternalToExternal(params);
 			tmap->SetDoubles(parameters->name, par_external);
