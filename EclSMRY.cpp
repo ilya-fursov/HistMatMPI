@@ -99,20 +99,29 @@ Date::Date(const std::string &s)		// accepted 's' formats: DD.MM.YYYY, DD/MM/YYY
 	tokenize(s, date_time, " \t", true);
 
 	if (date_time.size() != 1 && date_time.size() != 2)
-		throw Exception("Некорректный формат даты/времени: " + s, "Incorrect date/time format: " + s);
+		throw Exception("Некорректный формат даты/времени: '" + s + "'", "Incorrect date/time format: '" + s + "'");
 
 	// parsing date
 	parse_date_time(date_time[0], "./", Day, Month, Year);
 
-	// parsing time
-	if (date_time.size() == 2)
-	{
-		int hh, mm, ss;
-		parse_date_time(date_time[1], ":", hh, mm, ss);
-		sec = ss + mm*60 + hh*3600;
+	fmt.delim_type = -1;
+	if (date_time[0].find_first_of("/") != std::string::npos) fmt.delim_type = 0;
+	if (date_time[0].find_first_of(".") != std::string::npos) {
+		if (fmt.delim_type == 0)
+			throw Exception("Несогласованные разделители (/ и .) в дате '" + s + "'", "Inconsistent delimiters (/ and .) in date '" + s + "'");
+		fmt.delim_type = 1;
 	}
-	else
+
+	// parsing time
+	if (date_time.size() == 2) {
+		int hh, mm, ss, c;
+		c = parse_date_time(date_time[1], ":", hh, mm, ss);
+		sec = ss + mm*60 + hh*3600;
+		fmt.hms = c - 1;
+	} else {
 		sec = 0;
+		fmt.hms = 0;
+	}
 }
 //--------------------------------------------------------------------------------------------------
 bool Date::operator>(const Date &rhs) const
@@ -129,21 +138,79 @@ bool Date::operator>(const Date &rhs) const
 	return false;
 }
 //--------------------------------------------------------------------------------------------------
-std::string Date::ToString() const
+void Date::add(double days)				// shift the given date-time by the time interval provided (1.0 = 1 day)
 {
-	std::string res = stringFormatArr(MessageRE("{0:%02d}.{1:%02d}.{2:%04d}", "{0:%02d}/{1:%02d}/{2:%04d}"), std::vector<int>{Day, Month, Year});
+	static const double T4 = 1461;		// days in 4-year cycle
 
-	if (sec == 0)
-		return res;
-	else
-	{
-		const int s = sec;
-		int hh, mm, ss;
-		ss = s%60;
-		mm = (s - ss)/60%60;
-		hh = (s - ss - mm*60)/3600;
-		return res + stringFormatArr(" {0:%02d}:{1:%02d}:{2:%02d}", std::vector<int>{hh, mm, ss});
+	Date t0(1, 1, Year-Year%4, 0.0);	// beginning of a 4-year cycle
+	double delta0 = diff(t0);
+
+	double dfull = delta0 + days;
+	const int n0 = floor(dfull/T4);		// number of cycles
+	double a0 = dfull - n0*T4;			// residue in the cycle
+	assert(a0 >= 0);
+
+	const size_t y0 = std::upper_bound(T4LEN.begin(), T4LEN.end(), (int)a0) - T4LEN.begin();		// number of the year in the cycle
+	assert(1 <= y0 && y0 < T4LEN.size());
+	double b0 = a0 - T4LEN[y0-1];		// residue in the year
+	assert(b0 >= 0);
+
+	const std::vector<int> *monptr = &MLEN;
+	if (y0 == 1) monptr = &MLENleap;
+	const size_t m0 = std::upper_bound(monptr->begin(), monptr->end(), (int)b0) - monptr->begin();	// number of the month in the year
+	assert(1 <= m0 && m0 < monptr->size());
+
+	double d0 = b0 - (*monptr)[m0-1];
+	assert(d0 >= 0);
+
+	Year = t0.Year + n0*4 + y0 - 1;
+	Month = m0;
+	Day = (int)d0 + 1;
+	sec = (d0 - (int)d0)*86400;
+}
+//--------------------------------------------------------------------------------------------------
+double Date::diff(const Date &y) const	// diff = *this - y, difference in days
+{
+	const int deltaD = Day - y.Day;
+	const int deltaM = MLEN[Month-1] - MLEN[y.Month-1];
+	const int deltaY = (Year - y.Year)*365;
+	const double deltaSec = (sec - y.sec)/86400;
+
+	// count leap years: this approach is valid for years 1904 to 2096
+	int leap = Year/4;
+	if (Year%4 == 0 && Month <= 2)
+		leap--;
+
+	int leap_y = y.Year/4;
+	if (y.Year%4 == 0 && y.Month <= 2)
+		leap_y--;
+
+	return deltaD + deltaM + deltaY + leap-leap_y + deltaSec;
+}
+//--------------------------------------------------------------------------------------------------
+std::string Date::ToString(const DateFmt *f) const
+{
+	const static std::string date_dot   =  "{0:%02d}.{1:%02d}.{2:%04d}";
+	const static std::string date_slash =  "{0:%02d}/{1:%02d}/{2:%04d}";
+	const static std::string time2      = " {0:%02d}:{1:%02d}";
+	const static std::string time3      = " {0:%02d}:{1:%02d}:{2:%02d}";
+	const std::vector<int> DMY = {Day, Month, Year};
+
+	const int s = (int)sec;
+	const int ss = s % 60;
+	const int mm = (s - ss) / 60 % 60;
+	const int hh = (s - ss - mm * 60) / 3600;
+	std::string res;
+
+	if (f == nullptr) {			// default formatting
+		res = stringFormatArr(MessageRE(date_dot, date_slash), DMY);
+		if (s != 0) res += stringFormatArr(time3, std::vector<int>{hh, mm, ss});
+	} else {					// user formatting
+		res = stringFormatArr(f->delim_type ? date_dot : date_slash, DMY);
+		if (f->hms == 1) res += stringFormatArr(time2, std::vector<int>{hh, mm});
+		if (f->hms == 2) res += stringFormatArr(time3, std::vector<int>{hh, mm, ss});
 	}
+	return res;
 }
 //--------------------------------------------------------------------------------------------------
 void Date::write_bin(FILE *fd) const
@@ -162,44 +229,34 @@ void Date::read_bin(FILE *fd)
 	fread_check(&sec, sizeof(sec), 1, fd);
 }
 //--------------------------------------------------------------------------------------------------
-void Date::parse_date_time(const std::string s, std::string delim, int &D, int &M, int &Y)	// can parse both DD.MM.YYYY, DD/MM/YYYY and hh:mm::ss
+int Date::parse_date_time(const std::string s, std::string delim, int &D, int &M, int &Y)	// can parse both DD.MM.YYYY, DD/MM/YYYY and hh:mm:ss
 {																							// if the last item ("YYYY" or "ss") is empty, then Y = 0
-	std::vector<std::string> parsed;
+	std::vector<std::string> parsed;														// returns the number of items filled (3 or 2)
 	tokenize(s, parsed, delim, true);
 	if (parsed.size() != 3 && parsed.size() != 2)
-		throw Exception("Некорректный формат даты/времени: " + s, "Incorrect date/time format: " + s);
-	D = StoL(parsed[0]);		// TODO good to have StoL error report detailing who called it
-	M = StoL(parsed[1]);
-	if (parsed.size() == 3)
-		Y = StoL(parsed[2]);
+		throw Exception("Некорректный формат даты/времени: '" + s + "'",
+						"Incorrect date/time format: '" + s + "'");
+
+	bool ok = true;
+	if (ok) D = StoL(parsed[0], ok);
+	if (ok) M = StoL(parsed[1], ok);
+	if (ok && parsed.size() == 3)
+		Y = StoL(parsed[2], ok);
 	else
 		Y = 0;
+
+	if (!ok)
+		throw Exception("Некорректная дата/время (ошибка с числами) '" + s + "'",
+						"Incorrect date/time (error with numbers) '" + s + "'");
+	return parsed.size();
 }
 //--------------------------------------------------------------------------------------------------
-std::vector<double> Date::SubtractFromAll(const std::vector<Date> &vec) const		// subtracts *this from all elements of 'vec'
-{																					// the resulting elementwise difference in _days_ is returned
+std::vector<double> Date::SubtractFromAll(const std::vector<Date> &vec) const	// subtracts *this from all elements of 'vec'
+{																				// the resulting elementwise difference in _days_ is returned
 	const size_t count = vec.size();
 	std::vector<double> res(count);
-	const std::vector<int> MLEN{0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};		// length of months
 
-	for (size_t i = 0; i < count; i++)
-	{
-		int deltaD = vec[i].Day - Day;
-		int deltaM = MLEN[vec[i].Month-1] - MLEN[Month-1];
-		int deltaY = (vec[i].Year - Year)*365;
-		double deltaSec = (vec[i].sec - sec)/86400;
-
-		// count leap years
-		int leap1 = Year/4;
-		int leap2 = vec[i].Year/4;
-		if (Year%4 == 0 && Month <= 2)
-			leap1--;
-		if (vec[i].Year%4 == 0 && vec[i].Month <= 2)
-			leap2--;
-
-		res[i] = deltaD + deltaM + deltaY + leap2-leap1 + deltaSec;
-	}
-
+	for (size_t i = 0; i < count; i++) res[i] = vec[i].diff(*this);
 	return res;
 }
 //--------------------------------------------------------------------------------------------------

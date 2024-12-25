@@ -25,17 +25,30 @@ class KW_parameters;
 namespace HMMPI
 {
 //--------------------------------------------------------------------------------------------------
-// classes and functions for elementary reading of Eclipse binary output
+// classes and functions for handling the simulator binary output
 //--------------------------------------------------------------------------------------------------
 enum KwdType{INTE, REAL, DOUB, CHAR, LOGI};			// keyword type
 //--------------------------------------------------------------------------------------------------
-struct Date											// 'time coordinate' of the modelled data
+struct DateFmt										// some info for date-time formatting
+{
+	int delim_type;		// 0 : "/", 1 : "."
+	int hms;			// 0 : absent, 1 : hh:mm, 2 : hh:mm:ss
+
+	DateFmt() : delim_type(0), hms(0) {};
+};
+//--------------------------------------------------------------------------------------------------
+struct Date											// e.g. 'time coordinate' of the modelled data, and other applications
 {
 protected:
 	int Day;
 	int Month;
 	int Year;
 	double sec;				// seconds
+	DateFmt fmt;			// the format is filled at parsing the string (in CTOR)
+
+	const static inline std::vector<int> MLEN     = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};	// cumulative length of months
+	const static inline std::vector<int> MLENleap = {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366};	// -"- for a leap year
+	const static inline std::vector<int> T4LEN    = {0, 366, 731, 1096, 1461};	// cumulative length of years within the 4-year cycle
 
 public:
 	Date() {Day = Month = Year = 0; sec = 0.0;};
@@ -44,14 +57,18 @@ public:
 	bool operator==(const Date &rhs) const {return Day == rhs.Day && Month == rhs.Month && Year == rhs.Year && sec == rhs.sec;};
 	bool operator>(const Date &rhs) const;
 	bool operator<(const Date &rhs) const {return !(*this > rhs) && !(*this == rhs);};
+	void add(double days);							// shift the given date-time by the time interval provided (1.0 = 1 day)
+	double diff(const Date &y) const;				// diff = *this - y, difference in days
 	double get_sec() const {return sec;};
+	const DateFmt *get_fmt() const {return &fmt;};
 
-	std::string ToString() const;
+	std::string ToString(const DateFmt *f = nullptr) const;		// a format is applied if provided
 	void write_bin(FILE *fd) const;
 	void read_bin(FILE *fd);
 
-	static void parse_date_time(const std::string s, std::string delim, int &D, int &M, int &Y);	// can parse both DD.MM.YYYY, DD/MM/YYYY and hh:mm::ss
+	static int parse_date_time(const std::string s, std::string delim, int &D, int &M, int &Y);		// can parse both DD.MM.YYYY, DD/MM/YYYY and hh:mm:ss
 																									// if the last item ("YYYY" or "ss") is empty, then Y = 0
+																									// returns the number of items filled (3 or 2)
 	std::vector<double> SubtractFromAll(const std::vector<Date> &vec) const;		// subtracts *this from all elements of 'vec'
 																					// the resulting elementwise difference in _days_ is returned
 };

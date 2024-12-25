@@ -2756,7 +2756,7 @@ void KW_parameters::UpdateParams() noexcept
 		prior->SetState(HMMPI::MessageRE("PRIOR должно быть перезагружено после чтения PARAMETERS\n", "PRIOR should be reloaded after reading PARAMETERS\n"));
 }
 //------------------------------------------------------------------------------------------
-KW_parameters::KW_parameters() : ln10(log(10)), reserved_names({"", "MOD", "PATH", "RANK", "SIZE", "SMPL", "log", "exp"})
+KW_parameters::KW_parameters() : ln10(log(10)), reserved_names({"", "MOD", "PATH", "RANK", "SIZE", "SMPL", "exp", "log", "date"})
 {
 	KW_multparams::name = "PARAMETERS";
 	dec_verb = 2;
@@ -3188,6 +3188,7 @@ void KW_startdate::UpdateParams() noexcept	// fills 'start'
 	try
 	{
 		start = HMMPI::Date(date0);
+		HMMPI::ValBase::set_start_date(start);
 	}
 	catch (const HMMPI::Exception &e)
 	{

@@ -407,7 +407,7 @@ void KW_rundebug::Run()
 //	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
 //	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-//	IMPORTKWD(pts, KW_3points, "3POINTS");
+	IMPORTKWD(pts, KW_3points, "3POINTS");
 //	IMPORTKWD(mat, KW_mat, "MAT");
 //	IMPORTKWD(matvec, KW_matvec, "MATVEC");
 //	Add_pre("GRIDDIMENS");
@@ -456,109 +456,40 @@ void KW_rundebug::Run()
 //	for (double s = 0; s <= 5; s += 0.5)
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
-	std::cout << "============= FULL =================\n";
+	const HMMPI::ValBase *x1 = new HMMPI::Val<int>(2);
+	const HMMPI::ValBase *res = x1->date();
+
+	std::cout << "============= Date test =================\n";
 	{
-		// 12.11.2024
-		std::string Expr = "(1.2+++2.3^(-1.5))*(x-z)/(+1+u)^(1/u)+y*log(3+4)+5/(z*(-var)-exp(x-y))";
-		Expr = "-3^2";
-		//Expr = "exp(-1)";
-		HMMPI::TagValMap par_map(std::vector<std::string>{"x", "y", "z", "u", "var", "w"}, std::vector<double>{8.1,9.2,10.05, 0.01, 5.125, 2});
-		std::set<std::string> tags_left = {"x", "y", "z", "u", "var", "w"};
-		int count = 0;
+		DECLKWD(sdate, KW_startdate, "STARTDATE");
 
-		std::vector<std::string> infix = HMMPI::StringToInfix(Expr);
-		std::cout << "Infix\n";
-		for (std::string s : infix) std::cout << s << "\n";
-		std::vector<const HMMPI::ValBase*> postfix = InfixToPostfix(infix, par_map, count, tags_left, Expr);
-		std::cout << "Postfix\n";
-		for (const HMMPI::ValBase* v : postfix) std::cout << v->ToString() << "| type =" << v->get_type()  << "| op_type =" << v->get_op_type() << "\n";
+		HMMPI::Date d1("19.12.2024");
+		HMMPI::Date d2("10.12.1910	18:32");
+		HMMPI::Date d3("22.03.1981 00:00");
+		HMMPI::Date d4("15.03.2094 1:0:45");
 
-		const HMMPI::ValBase *res2 = CalcPostfix(postfix, Expr);
-		std::cout << "RESULT FULL: " << res2->ToString("%.16g") << "\n";
-		std::cout << "count: " << count << "\n";
-		std::cout << "tags left:\n";
-		for (std::string s : tags_left) std::cout << s << "\n";
-		std::cout << "***\n";
-		delete res2;
-	}
+		if (sdate->GetState() == "") {	// user formatting
+			printf("|%s|, this - start = %.12g\n", d1.ToString(sdate->start.get_fmt()).c_str(), d1.diff(sdate->start));
+			printf("|%s|, this - start = %.12g\n", d2.ToString(sdate->start.get_fmt()).c_str(), d2.diff(sdate->start));
+			printf("|%s|, this - start = %.12g\n", d3.ToString(sdate->start.get_fmt()).c_str(), d3.diff(sdate->start));
+			printf("|%s|, this - start = %.12g\n", d4.ToString(sdate->start.get_fmt()).c_str(), d4.diff(sdate->start));
+			printf("\n");
 
-	std::cout << "Test -= stringTagPrintf =-\n";			// FORMATTING CHECK
-	{
-		HMMPI::TagValMap par_map(std::vector<std::string>{"x", "y", "z", "u", "var", "Smpl"}, std::vector<double>{8.1,9.2,10.05, 0.01, 5.125, 2});
-		par_map.SetModPath("Hello, ", "World!");
-		par_map.SetSize(24);
-		std::string text = "ARRPERM1 = $x+y+z               | -- 1\n"
-						   "ARRPERM2 = $x                   | -- 2\n"
-						   "ARRPERM3 = $y^x                 | -- 3\n"
-						   "ARRPERM4 = $x*y*z*z             | -- A$y\n"
-						   "ARRPERM5 = $x+y+z+y+x			| -- 5$u;\n"
-						   "ARRPERM6 = $x 					| -- 6\n"
-						   "ARRPERM7 = $(x+y)/2;            | -- $x\r\n"
-				 	 	   "ARRPERM8 = $(x+y+z+x+y+z+x+y+z) | -- $(x+y+z+x+y+z+x+y+z)\n"
-						   "ARRPERM9 = $(x+y+z+x+y+z+x+y+z)	| -- 9\n"
-						   "ARRPERM0 = $(x+y+z)/3;          | -- $z ;\n\n"
+			for (size_t i = 0; i < pts->x.size(); i++) {
+				HMMPI::Date D = sdate->start;
 
-						   "ARRPERMa = $exp(1)              | -- a\n"
-				           "ARRPERMb = $exp(1)%f            | -- b\n"
-				           "ARRPERMc = $exp(1)%.3f          | -- c\n"
-						   "ARRPERMd = $exp(1)%.9g          | -- d\n"
-						   "ARRPERMe = $exp(1)%12.9g        | -- e\n"
-				           "ARRPERMf = $exp(1)%-12.9g       | -- f\n\n"
+				printf("%s", D.ToString(D.get_fmt()).c_str());
+				D.add(pts->x[i]);
+				double delta = D.diff(sdate->start);
+				printf("\t+\t%-14.10g\t=\t%s\tdiff =\t%.10g\n", pts->x[i], D.ToString(D.get_fmt()).c_str(), delta);
+			}
 
-						   "ARRPERMA = $(x+y+z+x+y+z+x+y) 	| -- A\n"
-						   "ARRPERMB = $x^x 				| -- B\n"
-						   "ARRPERMC = $x^x  				| -- C\n"
-						   "ARRPERMD = $(x+y)/2;            | -- $z \n"
-						   "ARRPERME = $(x+y)/2;            | -- $z  ;\n"
-						   "ARRPERMF = $(x+y)/2;            | -- $z  	\n"
-						   "ARRPERMG = $(x+y)/2;            | -- $z";
-
-		std::set<std::string> tags_left = {"x", "y", "z", "u", "var", "w"};
-		int count = 0;
-
-		text = "$SIZE%+-10.6d     ";
-		std::string res = stringTagPrintf(text, par_map, count, tags_left);
-		std::cout << "Original text:\n" << text;
-		std::cout << "\n\nRESULTING TEXT:\n" << res << "\n";
-		std::cout << "count: " << count << "\n";
-		std::cout << "tags left:\n";
-		for (std::string s : tags_left) std::cout << s << "\n";
-		std::cout << "***\n";
-
-		{
-			std::cout << "------=======###### 29 nov A #####============------\n";
-
-			std::string Expr = "MOD+PATH";
-			std::set<std::string> tags_left = {"x", "y", "z", "u", "var", "w"};
-			int count = 0;
-
-			std::vector<std::string> infix = HMMPI::StringToInfix(Expr);
-			std::vector<const HMMPI::ValBase*> postfix = InfixToPostfix(infix, par_map, count, tags_left, Expr);
-			const HMMPI::ValBase *res2 = CalcPostfix(postfix, Expr);
-			std::cout << "RESULT FULL (29 nov A): " << res2->ToString() << "| type =" << res2->get_type() << "\n";
-			//const HMMPI::ValBase *res3 = CalcUnary(res2, res2);
-			//std::cout << res2->ToString("%f") << "\n";	// error!
-			std::cout << "count: " << count << "\n";
-			std::cout << "tags left:\n";
-			for (std::string s : tags_left) std::cout << s << "\n";
-			std::cout << "--==####==--\n";
-			delete res2;
-			//delete res3;
+		} else {	// default formatting
+			printf("|%s|\n", d1.ToString().c_str());
+			printf("|%s|\n", d2.ToString().c_str());
+			printf("|%s|\n", d3.ToString().c_str());
+			printf("|%s|\n", d4.ToString().c_str());
 		}
 	}
-
-	{
-		std::cout << "------=======###### 14 dec check #####============------\n";
-		std::string str1 = "Гнев,$var1 богиня,$var2+var3*X воспой Ахилл$5;еса, Пелеева сына$y^z\n"
-						   "Грозный, $(a+b)^2;который Ахеянаям $тысячи бедствий содела$(л)";
-		std::vector<std::string> tags = HMMPI::stringExtractTags(str1);
-		for (std::string s : tags) {
-			printf("|%s|\n", s.c_str());
-		}
-		std::cout << "------=======###### ============ #####============------\n";
-	}
-
-	std::cout << "Val CTORS: " << HMMPI::count_val_Ctors << "\n";
-	std::cout << "Val DTORS: " << HMMPI::count_val_Dtors << "\n";
 }
 //------------------------------------------------------------------------------------------

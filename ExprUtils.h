@@ -10,6 +10,7 @@
 
 #include "Abstract.h"
 #include "Utils.h"
+#include "EclSMRY.h"
 #include <map>
 #include <set>
 #include <cassert>
@@ -33,6 +34,8 @@ class ValBase					// Base class for wrappers Val<> of int, double, string, op[er
 protected:
 	static char buff[BUFFSIZE];
 	const static inline std::vector<std::string> types = {"int", "double", "string", "operator"};
+	static Date start_date;		// the start date and its format are used in date() operation
+
 	static int Arity(std::string s);
 	static std::string apply_width_to_format(std::string fmt, size_t &width); // Try to add 'width' to 'fmt', return the resulting 'fmt':
 		// If 'width' > 0 and 'fmt' does not specify the width, then the 'width' provided is pushed to 'fmt', and '-' flag is added.
@@ -41,11 +44,12 @@ protected:
 public:
 	const int data_type;		// 0 - int, 1 - double, 2 - string (both data-string and op-string)
 	const int arity;			// 0 - data, 1 - unary op, 2 - binary op
-								// The operator strings are: + - * / ^ neg exp log
+								// The operator strings are: + - * / ^ neg exp log date
 
 	ValBase(int type, int ar) : data_type(type), arity(ar) {count_val_Ctors++;};
 	ValBase(const ValBase &v) : data_type(v.data_type), arity(v.arity) {count_val_Ctors++;};
 	virtual ~ValBase(){count_val_Dtors++;};
+	static void set_start_date(Date D) {start_date = D;};
 
 	virtual const ValBase *Copy() const = 0;					// For the following functions returning ValBase*, the result should be deleted by the caller
 	virtual const ValBase *ToDouble() const = 0;				// promote to Val<double>
@@ -57,6 +61,7 @@ public:
 	virtual const ValBase *neg() const = 0;						// -(*this)
 	virtual const ValBase *exp() const = 0;						// exp(*this), only for Val<double>
 	virtual const ValBase *log() const = 0;						// log(*this), only for Val<double>, the natural logarithm
+	virtual const ValBase *date() const = 0;					// date(*this), only for Val<double>, returns string
 
 	std::string get_type() const {return types[arity ? 3 : data_type];};
 	virtual std::string get_op_type() const = 0;		// returns 'Val<string>::val' for operators, "" otherwise
@@ -87,6 +92,7 @@ public:
 	virtual const ValBase *neg() const;						// -(*this)
 	virtual const ValBase *exp() const;						// exp(*this), only for Val<double>
 	virtual const ValBase *log() const;						// log(*this), only for Val<double>, the natural logarithm
+	virtual const ValBase *date() const;					// date(*this), only for Val<double>, returns string
 
 	virtual std::string get_op_type() const;		// returns 'Val<string>::val' for operators, "" otherwise
 	virtual std::string ToString(std::string fmt, size_t &width) const;
@@ -122,7 +128,7 @@ const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::s
 //------------------------------------------------------------------------------------------
 std::string stringTagPrintf(const std::string &input_text, const std::map<std::string, ValBase*> &tag_val, int &count, std::set<std::string> &tags_left);
 			// Writes values corresponding to 'tags' in "input_text". The 'tag' locations may be of the form $tag, $tag%fmt (e.g. format %fmt = %20.16g).
-			// 'tag' is an arithmetic expression consisting of parameter names, numbers, operators +-*/^(), log, exp.
+			// 'tag' is an arithmetic expression consisting of parameter names, numbers, operators +-*/^(), exp, log, date.
 			// When one simply specifies: $tag, the default format is applied depending on the output value type of the expression.
 			// The end of a tag location is marked by whitespace (excluded from the tag substring), or semicolon ";" (gets attached to tag, and then rejected).
 			// If the format does not specify width ("", "%g", "%.10g") and the 'tag' is followed by many plain spaces marking the column width (space ASCII code = 32),
@@ -235,6 +241,12 @@ template <class T>
 const ValBase *Val<T>::log() const						// log(*this), only for Val<double>, the natural logarithm
 {
 	throw EObjFunc(stringFormatArr("Call Val<T>::log() is illegal for type '{0:%s}'", get_type()));
+}
+//------------------------------------------------------------------------------------------
+template <class T>
+const ValBase *Val<T>::date() const						// date(*this), only for Val<double>, returns string
+{
+	throw EObjFunc(stringFormatArr("Call Val<T>::date() is illegal for type '{0:%s}'", get_type()));
 }
 //------------------------------------------------------------------------------------------
 template <class T>

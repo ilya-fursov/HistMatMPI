@@ -14,6 +14,7 @@ namespace HMMPI
 int count_val_Ctors;	// counts for debug purposes
 int count_val_Dtors;
 char ValBase::buff[BUFFSIZE];
+Date ValBase::start_date;
 
 //------------------------------------------------------------------------------------------
 // Check if the format 'fmt' contains not-handled symbols, starting from 'pos'
@@ -65,10 +66,10 @@ void parse_printf_fmt(const std::string &fmt, std::string &flags, std::string &w
 //------------------------------------------------------------------------------------------
 // ValBase
 //------------------------------------------------------------------------------------------
-int ValBase::Arity(std::string s)	// The operator strings are: + - * / ^ neg exp log
+int ValBase::Arity(std::string s)	// The operator strings are: + - * / ^ neg exp log date
 {
 	if (s == "+" || s == "-" || s == "*" || s == "/" || s == "^") return 2;
-	else if (s == "neg" || s == "exp" || s == "log") return 1;
+	else if (s == "neg" || s == "exp" || s == "log" || s == "date") return 1;
 	else return 0;					// data string
 }
 //------------------------------------------------------------------------------------------
@@ -201,6 +202,15 @@ const ValBase *Val<double>::log() const
 {
 	assert(data_type == 1);
 	return new Val<double>(::log(val));
+}
+//------------------------------------------------------------------------------------------
+template <>
+const ValBase *Val<double>::date() const
+{
+	assert(data_type == 1);
+	Date D = start_date;
+	D.add(val);
+	return new Val<std::string>(D.ToString(D.get_fmt()));
 }
 //------------------------------------------------------------------------------------------
 template <>
@@ -346,7 +356,7 @@ std::vector<std::string> StringToInfix(const std::string &expr)		// Parses 'expr
 //------------------------------------------------------------------------------------------
 inline bool is_unary_op(const std::string &a)
 {
-	return a == "neg" || a == "exp" || a == "log";
+	return a == "neg" || a == "exp" || a == "log" || a == "date";
 }
 //------------------------------------------------------------------------------------------
 inline int op_prec(const std::string &a)	// operator's precedence
@@ -369,7 +379,7 @@ std::vector<const ValBase*> InfixToPostfix(const std::vector<std::string> &infix
 	std::stack<std::string> estack;			// 'orig_expr' is the original expression, to use in the error message.
 	std::vector<std::string> res_str;
 	res_str.reserve(infix.size());
-	static const std::vector<std::string> ops = {"+", "-", "*", "/", "^", "neg", "exp", "log"};
+	static const std::vector<std::string> ops = {"+", "-", "*", "/", "^", "neg", "exp", "log", "date"};
 
 	// 1. Form the vector of strings 'res_str'
 	for (const std::string &tok : infix) {
@@ -464,6 +474,7 @@ const ValBase *CalcUnary(const ValBase *op, const ValBase *x, const std::string 
 
 		if (optype == "exp") res = X1->exp();
 		else if (optype == "log") res = X1->log();
+		else if (optype == "date") res = X1->date();
 		else {
 			delete Xdel;
 			throw EObjFunc(stringFormatArr("Incorrect operation '{0:%s}' in CalcUnary()", optype));
