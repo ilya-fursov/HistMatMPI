@@ -1629,8 +1629,8 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 
 		// read header
 		size_t vcount = 0;
-		while (!sr.eof() && j < 2)
-		{
+		std::vector<std::string> hdr_err_1;
+		while (!sr.eof() && j < 2) {
 			std::string line;
 			std::vector<std::string> line_aux;
 
@@ -1640,16 +1640,33 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 				line = line.substr(0, ind0);
 
 			HMMPI::tokenize(line, line_aux, file_delim, true);
-			if (line_aux.size() != 0)
-			{
-				if (j == 0)
-				{
+			if (line_aux.size() != 0) {
+				if (j == 0) {
 					vcount = line_aux.size();
+					if (K->verbosity >= 1) hdr_err_1 = line_aux;
 					Hdr = HMMPI::Vector2<std::string>(2, vcount);
 				}
-				else if (vcount+1 != line_aux.size())
-					throw HMMPI::Exception("Во второй строке заголовка должно быть элементов на один (дата/время) больше, чем в первой строке",
-										   "Second line of header should have one element (date/time) more than the first line");
+				else if (vcount+1 != line_aux.size()) {
+					std::string list_err = "";
+					if (K->verbosity >= 1) {
+						const size_t L1 = hdr_err_1.size();
+						const size_t L2 = line_aux.size();
+						const size_t LM = (L1 > L2 ? L1 : L2);
+						HMMPI::StringListing list("\t");
+						std::vector<std::string> line2(2);
+						for (size_t i = 0; i < LM; i++) {
+							line2[0] = (i < L1 ? hdr_err_1[i] : "");
+							line2[1] = (i < L2 ? line_aux[i] : "");
+							list.AddLine(line2);
+						}
+						const int num = K->StrListN(1);
+						list_err += "\n" + list.Print(num, num);
+					}
+					throw HMMPI::Exception(HMMPI::stringFormatArr(HMMPI::MessageRE(
+							"Во второй строке заголовка должно быть элементов на один (дата/время) больше, чем в первой строке. Найдено: {0:%zu} и {1:%zu}",
+							"Second line of header should have one element (date/time) more than the first line. Found: {0:%zu} and {1:%zu}"),
+							std::vector<size_t>{vcount, line_aux.size()}) + list_err);
+				}
 
 				for (size_t i = 0; i < vcount; i++)
 					Hdr(j, i) = HMMPI::ToUpper(line_aux[i + j]);		// "+j" is to shift the second line, since it has one extra element in the beginning
@@ -1657,7 +1674,7 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 			}
 		}
 		if (j != 2)
-			throw HMMPI::Exception("Неправильный заголовок", "Incorrect header");
+			throw HMMPI::Exception("Ожидаются две строки в заголовке", "Two lines are expected in the header");
 
 		msg = "";
 		CheckHdrRepeats();
@@ -1669,8 +1686,7 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 
 		j = 0;						// date index
 		HMMPI::Date date0;			// previous date from TEXTSMRY
-		while (!sr.eof() && j < dcount)
-		{
+		while (!sr.eof() && j < dcount) {
 			std::string line;
 			std::vector<std::string> line_aux;
 
@@ -1680,17 +1696,13 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 				line = line.substr(0, ind0);
 
 			HMMPI::tokenize(line, line_aux, file_delim, true);
-			if (line_aux.size() != 0)		// line is not empty
-			{
+			if (line_aux.size() != 0) {		// line is not empty
 				HMMPI::Date date1;
 				int offset = 0;
-				if (line_aux.size() == vcount+1)		// only date
-				{
+				if (line_aux.size() == vcount+1) {			// only date
 					date1 = HMMPI::Date(line_aux[0]);
 					offset = 1;
-				}
-				else if (line_aux.size() == vcount+2)	// date + time
-				{
+				} else if (line_aux.size() == vcount+2) {	// date + time
 					date1 = HMMPI::Date(line_aux[0] + " " + line_aux[1]);
 					offset = 2;
 				}
@@ -1707,10 +1719,8 @@ HMMPI::Vector2<double> KW_textsmry::ReadData(std::string fname)
 				if (j >= dcount)
 					continue;
 
-				if (date1 == datesW->dates[j])			// date matches: fill the time step "j"
-				{
-					for (size_t k = 0; k < pcount; k++)
-					{
+				if (date1 == datesW->dates[j]) {		// date matches: fill the time step "j"
+					for (size_t k = 0; k < pcount; k++) {
 						if (ind[k] >= 0 && ind[k] < (int)vcount)							// ind[k] is column index
 							res(j, k) = HMMPI::StoD(line_aux[ind[k]+offset]);
 
