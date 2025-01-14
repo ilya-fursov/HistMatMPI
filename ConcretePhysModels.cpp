@@ -2222,7 +2222,8 @@ const HMMPI::SimSMRY *PhysModelHM::get_smry() const
 //---------------------------------------------------------------------------
 // PMEclipse
 //---------------------------------------------------------------------------
-void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry_mod, const HMMPI::Vector2<double> &smry_hist, const std::vector<double> &of_vec, bool text_sigma, bool only_hist)
+void PMEclipse::write_smry(std::ofstream *sw1, std::ofstream *sw2, const HMMPI::Vector2<double> &smry_mod, const HMMPI::Vector2<double> &smry_hist,
+						   const std::vector<double> &of_vec, bool text_sigma, bool only_hist)
 {
 	DECLKWD(datesW, KW_dates, "DATES");
 	DECLKWD(vect, KW_eclvectors, "ECLVECTORS");
@@ -2252,8 +2253,7 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 	headerD2 += buffM;
 	headerD3 += buffH;
 
-	for (size_t i = 0; i < Nvect; i++)
-	{
+	for (size_t i = 0; i < Nvect; i++) {
 		sprintf(workM, "mod%zu", i+1);
 		sprintf(workH, "hist%zu", i+1);
 		sprintf(workS, "sigma%zu", i+1);
@@ -2276,36 +2276,29 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 		headerH3 += buffH;
 		headerS3 += buffS;
 	}
-	if (!only_hist)
-	{
-		sw << std::string(HMMPI::MessageRE("Вектора (модельные, исторические, сигмы):\n", "Vectors summary (modelled, historical, sigmas):\n"));
-		sw << headerD1 + headerM1 + headerH1 + headerS1 + "\n" + headerD2 + headerM2 + headerH2 + headerS2 + "\n" + headerD3 + headerM3 + headerH3 + headerS3 + "\n";
-	}
-	else
-	{
-		sw << std::string(HMMPI::MessageRE("Вектора (исторические [RML], сигмы):\n", "Vectors summary (historical [RML], sigmas):\n"));
-		sw << headerD1 + headerH1 + headerS1 + "\n" + headerD2 + headerH2 + headerS2 + "\n" + headerD3 + headerH3 + headerS3 + "\n";
+	if (!only_hist) {
+		*sw1 << std::string(HMMPI::MessageRE("Вектора (модельные, исторические, сигмы):\n", "Vectors summary (modelled, historical, sigmas):\n"));
+		*sw1 << headerD1 + headerM1 + headerH1 + headerS1 + "\n" + headerD2 + headerM2 + headerH2 + headerS2 + "\n" + headerD3 + headerM3 + headerH3 + headerS3 + "\n";
+	} else {
+		*sw1 << std::string(HMMPI::MessageRE("Вектора (исторические [RML], сигмы):\n", "Vectors summary (historical [RML], sigmas):\n"));
+		*sw1 << headerD1 + headerH1 + headerS1 + "\n" + headerD2 + headerH2 + headerS2 + "\n" + headerD3 + headerH3 + headerS3 + "\n";
 	}
 
 	// b) output vectors
-	for (size_t i = 0; i < Nsteps; i++)
-	{
+	for (size_t i = 0; i < Nsteps; i++) {
 		sprintf(buffM, "%-*s", DateWidth, datesW->dates[i].ToString().c_str());
 
-		sw << buffM;
+		*sw1 << buffM;
 		if (!only_hist)
-			for (size_t j = 0; j < Nvect; j++)
-			{
+			for (size_t j = 0; j < Nvect; j++) {
 				sprintf(buffM, "\t%-*.9g", Width, smry_mod(i, j));
-				sw << buffM;
+				*sw1 << buffM;
 			}
-		for (size_t j = 0; j < Nvect; j++)
-		{
+		for (size_t j = 0; j < Nvect; j++) {
 			sprintf(buffM, "\t%-*.9g", Width, smry_hist(i, j));
-			sw << buffM;
+			*sw1 << buffM;
 		}
-		for (size_t j = 0; j < Nvect; j++)
-		{
+		for (size_t j = 0; j < Nvect; j++) {
 			double sigma = 0;
 			if (text_sigma)
 				sigma = smry_hist(i, j + Nvect);
@@ -2313,37 +2306,34 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 				sigma = vect->sigma[j];
 
 			sprintf(buffM, "\t%-*.9g", Width, sigma);
-			sw << buffM;
+			*sw1 << buffM;
 		}
-		sw << "\n";
+		*sw1 << "\n";
 	}
 
 	// c) output "of_vec" etc
-	sw << date_gap;
+	*sw1 << date_gap;
 	if (!only_hist)
-		for (size_t j = 0; j < Nvect; j++)
-		{
+		for (size_t j = 0; j < Nvect; j++) {
 			sprintf(buffM, "\t%-*.9g", Width, of_vec[j]);
-			sw << buffM;
+			*sw1 << buffM;
 		}
 
-	for (size_t j = 0; j < Nvect; j++)		// spaces
-	{
+	for (size_t j = 0; j < Nvect; j++) {	// spaces
 		sprintf(buffM, "\t%-*s", Width, "");
-		sw << buffM;
+		*sw1 << buffM;
 	}
 
-	for (size_t j = 0; j < Nvect; j++)		// correlation radii (below sigmas)
-	{
+	for (size_t j = 0; j < Nvect; j++) {	// correlation radii (below sigmas)
 		sprintf(buffM, "\t%-*.9g", Width, vect->R[j]);
-		sw << buffM;
+		*sw1 << buffM;
 	}
-	sw << "\n";
+	*sw1 << "\n";
 
-	if (!only_hist)
-	{
+	if (!only_hist) {
 		int MaxLen = Nvect;					// number of rows to be written
 		const int WidthWell = 10;			// min width for well, property columns
+		assert(sw2 != nullptr);
 		std::vector<size_t> perm = HMMPI::SortPermutation(of_vec.begin(), of_vec.end());
 		std::vector<std::string> wgname = HMMPI::Reorder(vect->WGname, perm);			// form the sorted arrays
 		std::vector<std::string> propname = HMMPI::Reorder(vect->vect, perm);
@@ -2352,8 +2342,7 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 		int Nparams = 0;
 		std::vector<std::string> parnames;												// sorted params names
 		std::vector<double> priorof;													// sorted prior o.f.
-		if (outer_post_diag != nullptr)
-		{
+		if (outer_post_diag != nullptr) {
 			Nparams = outer_post_diag->prior_contrib.size();
 			if (Nparams > MaxLen)
 				MaxLen = Nparams;
@@ -2362,20 +2351,19 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 			priorof = HMMPI::Reorder(outer_post_diag->prior_contrib, perm2);
 		}
 
-		sprintf(buffM, "\n%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "Well", WidthWell, "property", Width, "o.f.", WidthWell, "Well", WidthWell, "property", Width, "o.f. (decreasing order)");
-		sprintf(buffH, "\n%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "Скважина", WidthWell, "свойство", Width, "ц.ф.", WidthWell, "Скважина", WidthWell, "свойство", Width, "ц.ф. (по убыванию)");
+		sprintf(buffM, "%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "Well", WidthWell, "property", Width, "o.f.", WidthWell, "Well", WidthWell, "property", Width, "o.f. (decreasing order)");
+		sprintf(buffH, "%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "Скважина", WidthWell, "свойство", Width, "ц.ф.", WidthWell, "Скважина", WidthWell, "свойство", Width, "ц.ф. (по убыванию)");
 
 		sprintf(workM, "\t\t\t\t\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\n", WidthWell+4, "Parameter", Width, "prior o.f.", WidthWell+4, "Parameter", Width, "prior o.f. (decreasing order)");
 		sprintf(workH, "\t\t\t\t\t\t%-*s\t%-*s\t\t\t\t\t\t%-*s\t%-*s\n", WidthWell+12, "Параметр", Width, "апр. ц.ф.", WidthWell+12, "Параметр", Width, "апр. ц.ф. (по убыванию)");
 
-		sw << (std::string)HMMPI::MessageRE(buffH, buffM);
+		*sw2 << (std::string)HMMPI::MessageRE(buffH, buffM);
 		if (outer_post_diag != nullptr)
-			sw << (std::string)HMMPI::MessageRE(workH, workM);
+			*sw2 << (std::string)HMMPI::MessageRE(workH, workM);
 		else
-			sw << "\n";
+			*sw2 << "\n";
 
-		for (int j = 0; j < MaxLen; j++)
-		{
+		for (int j = 0; j < MaxLen; j++) {
 			// Likelihood
 			if (j < (int)Nvect)
 				sprintf(buffM, "%-*s\t%-*s\t%-*.2f\t\t\t\t\t%-*s\t%-*s\t%-*.2f", WidthWell, vect->WGname[j].c_str(), WidthWell, vect->vect[j].c_str(), Width, of_vec[j],
@@ -2383,17 +2371,16 @@ void PMEclipse::write_smry(std::ofstream &sw, const HMMPI::Vector2<double> &smry
 			else
 				sprintf(buffM, "%-*s\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\t%-*s", WidthWell, "", WidthWell, "", Width, "", WidthWell, "", WidthWell, "", Width, "");
 
-			sw << buffM;
+			*sw2 << buffM;
 			if (outer_post_diag == nullptr)
-				sw << "\n";
-			else					// Prior
-			{
+				*sw2 << "\n";
+			else {					// Prior
 				if (j < Nparams)
 					sprintf(buffM, "\t\t\t\t\t\t\t%-*s\t%-*.2f\t\t\t\t\t%-*s\t%-*.2f\n", WidthWell+4, params->name[j].c_str(), Width, outer_post_diag->prior_contrib[j],
 																			 	 	 	 WidthWell+4, parnames[Nparams-1-j].c_str(), Width, priorof[Nparams-1-j]);
 				else
 					sprintf(buffM, "\t\t\t\t\t\t\t%-*s\t%-*s\t\t\t\t\t%-*s\t%-*s\n", WidthWell+4, "", Width, "", WidthWell+4, "", Width, "");
-				sw << buffM;
+				*sw2 << buffM;
 			}
 		}
 	}
@@ -2511,7 +2498,9 @@ void PMEclipse::perturb_well()
 }
 //---------------------------------------------------------------------------
 PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Sim_small_interface(k, kw, c), K(k), CWD(cwd),
-		log_file(HMMPI::getFullPath(cwd, "ObjFuncLog.txt")), break_file(HMMPI::getFullPath(cwd, "ObjFunc_breakdown.txt")),
+		log_file_1(HMMPI::getFullPath(cwd, "ObjFuncLog_data.txt")),
+		log_file_2(HMMPI::getFullPath(cwd, "ObjFuncLog_breakdown.txt")),
+		break_file(HMMPI::getFullPath(cwd, "ObjFunc_breakdown.txt")),
 		modelled_data_size(0), cov_is_diag(false), VCL(0)
 {
 	DECLKWD(mod, KW_model, "MODEL");
@@ -2575,7 +2564,7 @@ PMEclipse::PMEclipse(Parser_1 *k, KW_item *kw, std::string cwd, MPI_Comm c) : Si
 	print_comms();
 }
 //---------------------------------------------------------------------------
-PMEclipse::PMEclipse(const PMEclipse &PM) : Sim_small_interface(PM), K(PM.K), CWD(PM.CWD), log_file(PM.log_file), break_file(PM.break_file),
+PMEclipse::PMEclipse(const PMEclipse &PM) : Sim_small_interface(PM), K(PM.K), CWD(PM.CWD), log_file_1(PM.log_file_1), log_file_2(PM.log_file_2), break_file(PM.break_file),
 		obj_func_msg(PM.obj_func_msg), cov_is_diag(PM.cov_is_diag), VCL(PM.VCL), smry(PM.smry->Copy())
 {
 	modelled_data_size = PM.modelled_data_size;
@@ -2670,8 +2659,7 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 
 	int comm_size = 0;		// parallel simulation size
 	int comm_rank = -1;
-	if (comm != MPI_COMM_NULL)
-	{
+	if (comm != MPI_COMM_NULL) {
 		MPI_Comm_size(comm, &comm_size);
 		MPI_Comm_rank(comm, &comm_rank);
 	}
@@ -2682,16 +2670,14 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 	err_msg[0] = 0;
 	int complete = 0;			// while-loop controller: 0 - running, 1 - finished, 2 - error
 
-	if (comm_rank == 0)			// processing is done on comm-RANKS-0, simulation - on all ranks
-	{
-		while (complete == 0)	// make several attempts to calculate obj. func.
-		{
-			std::ofstream sw;		// ObjFuncLog.txt
+	if (comm_rank == 0) {		// processing is done on comm-RANKS-0, simulation - on all ranks
+		while (complete == 0) {	// make several attempts to calculate obj. func.
+			std::ofstream sw1, sw2;	// ObjFuncLog_data.txt, ObjFuncLog_breakdown.txt
 			std::ofstream sw_break;	// ObjFunc_breakdown.txt
-			sw.exceptions(std::ios_base::badbit | std::ios_base::failbit);
+			sw1.exceptions(std::ios_base::badbit | std::ios_base::failbit);
+			sw2.exceptions(std::ios_base::badbit | std::ios_base::failbit);
 			sw_break.exceptions(std::ios_base::badbit | std::ios_base::failbit);
-			try					// this try-catch block is intended to separate severe errors (EObjFunc) from everything else
-			{
+			try {				// this try-catch block is intended to separate severe errors (EObjFunc) from everything else
 				// 1. Substitute the parameters and run the model
 				if (!CheckLimits(params))
 					throw HMMPI::EObjFunc(HMMPI::MessageRE("Параметры выходят за допустимый диапазон",
@@ -2719,14 +2705,12 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 					if (HMMPI::FileModCompare(f, templ->DataFileSubst()) < 0)
 						throw HMMPI::Exception(HMMPI::stringFormatArr("[{0:%d}] Файл " + f + " был изменен до изменения DATA-файла",
 																	  "[{0:%d}] File " + f + " was changed before DATA-file", RNK));	// "small error" - i.e. not EObjFunc
-				if (msg_dat_full != "")									// the warnings below are issued after potential error with files modification time
-				{
+				if (msg_dat_full != "") {							// the warnings below are issued after potential error with files modification time
 					msg_vect_file += msg_dat_full + "\n";
 					msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_dat_short + "\n";
 					warning_count++;
 				}
-				if (msg_vec_full != "")
-				{
+				if (msg_vec_full != "") {
 					msg_vect_file += msg_vec_full + "\n";
 					msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n";
 					warning_count++;
@@ -2735,16 +2719,12 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 				// 3. Get historical data
 				HMMPI::Vector2<double> smry_hist;					// historical data
 				bool text_sigma = false;
-				if (textsmry->data.Length() != 0)					// option with history from TEXTSMRY
-				{
+				if (textsmry->data.Length() != 0) {					// option with history from TEXTSMRY
 					text_sigma = true;
 					smry_hist = textsmry->pet_dat;
-				}
-				else 												// option with history from model's UNSMRY
-				{
+				} else { 											// option with history from model's UNSMRY
 					smry_hist = smry->ExtractSummary(datesW->dates, vect->vecs, msg_dat_short, msg_vec_short, msg_dat_full, msg_vec_full, K->StrListN(), "H");
-					if (msg_vec_full != "")
-					{
+					if (msg_vec_full != "") {
 						msg_vect_file += msg_vec_full + "\n";
 						msg_vect_stdout += (std::string)HMMPI::MessageRE("ПРЕДУПРЕЖДЕНИЕ: ", "WARNING: ") + msg_vec_short + "\n";
 						warning_count++;
@@ -2761,19 +2741,16 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 				double of_proxy = 0;
 				size_t count_undef = 0;
 				modelled_data = std::vector<double>();
-				for (size_t p = 0; p < Nvecs; p++)		// fill modelled_data (and calculate o.f. for NOT-TEXTSMRY case)
-				{
+				for (size_t p = 0; p < Nvecs; p++) {	// fill modelled_data (and calculate o.f. for NOT-TEXTSMRY case)
 					double of1 = 0;						// o.f. contribution of vector "p"
-					for (size_t t = 0; t < Nsteps; t++)
-					{
+					for (size_t t = 0; t < Nsteps; t++) {
 						double sigma = 0;
 						if (text_sigma)
 							sigma = smry_hist(t, p + Nvecs);
 						else
 							sigma = vect->sigma[p];
 
-						if (!HMMPI::IsNaN(smry_hist(t, p)) && sigma != 0)
-						{
+						if (!HMMPI::IsNaN(smry_hist(t, p)) && sigma != 0) {
 							of1 += pow((SMRY(t, p) - smry_hist(t, p))/sigma, 2);
 							modelled_data.push_back(SMRY(t, p));
 						}
@@ -2782,13 +2759,11 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 					}
 					of_vec[p] = of1;
 				}
-				if (text_sigma)							// of_vec with covariances is redefined here
-				{
+				if (text_sigma) {						// of_vec with covariances is redefined here
 					VCL->ObjFunc(SMRY, smry_hist, cov_is_diag);
 					of_vec = VCL->of1;
 
-					if (proxy_mod_data.size() > 0)		// adopt the proxy modelled data, if any
-					{
+					if (proxy_mod_data.size() > 0) {	// adopt the proxy modelled data, if any
 						bool is_diag_aux;
 						of_proxy = VCL->ObjFunc(mod_data_to_smry(proxy_mod_data), smry_hist, is_diag_aux);
 						of_vec_proxy = VCL->of1;
@@ -2799,42 +2774,40 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 
 				// 5. Messaging
 				// printing to file
-				if (RNK == 0)
-				{
-					if (!ignore_small_errors)
-					{
-						sw.open(log_file);
-						sw << parameters->msg(-1) << "\n";	// printing all lines to the file
+				if (RNK == 0) {
+					if (!ignore_small_errors) {
+						sw1.open(log_file_1);
+						sw2.open(log_file_2);
+						sw1 << parameters->msg(-1) << "\n";	// printing all lines to the file
 
 						// limits_msg is not reported, since problems with parameter bounds lead to an exception and immediate termination
 
-						sw << templ_msg << "\n";
-						sw << msg_vect_file;
-						write_smry(sw, SMRY, smry_hist, of_vec, text_sigma);
+						sw1 << templ_msg << "\n";
+						sw1 << msg_vect_file;
+						write_smry(&sw1, &sw2, SMRY, smry_hist, of_vec, text_sigma);
 
 						double prior = 0;
 						std::string prior_msg = form_prior(prior);
-						sw << HMMPI::stringFormatArr("\nf = {0:%.8g}\n", std::vector<double>{res + prior});
-						sw << prior_msg;
+						sw2 << HMMPI::stringFormatArr("\nf = {0:%.8g}\n", std::vector<double>{res + prior});
+						sw2 << prior_msg;
 						if (prior_msg != "")
-							sw << HMMPI::stringFormatArr("Likelihood = {0:%.8g}\n", std::vector<double>{res});
-						if (text_sigma)
-						{
+							sw2 << HMMPI::stringFormatArr("Likelihood = {0:%.8g}\n", std::vector<double>{res});
+						if (text_sigma) {
 							if (!cov_is_diag)
-								sw << (std::string)HMMPI::stringFormatArr("Была использована полная ковариационная матрица (при маленьких R в {0:%s} она становится диагональной)\n",
-																		  "Full covariance matrix was used (it becomes diagonal for small R in {0:%s})\n", vect->name);
+								sw2 << (std::string)HMMPI::stringFormatArr("Была использована полная ковариационная матрица (при маленьких R в {0:%s} она становится диагональной)\n",
+																		   "Full covariance matrix was used (it becomes diagonal for small R in {0:%s})\n", vect->name);
 							else
-								sw << (std::string)HMMPI::MessageRE("Была использована диагональная ковариационная матрица\n",
-																	"Diagonal covariance matrix was used\n");
+								sw2 << (std::string)HMMPI::MessageRE("Была использована диагональная ковариационная матрица\n",
+																	 "Diagonal covariance matrix was used\n");
 						}
-						sw << HMMPI::stringFormatArr(HMMPI::MessageRE("Использовано точек данных: {0:%zu}\nНеиспользованных значений / нулевых сигм: {1:%zu}\nВсего точек данных: {2:%zu}",
-																	  "Used data points: {0:%zu}\nUnused values / zero sigmas: {1:%zu}\nTotal data points: {2:%zu}"),
-																	  std::vector<size_t>{Nvecs*Nsteps - count_undef, count_undef, Nvecs*Nsteps});
-						sw.close();
+						sw2 << HMMPI::stringFormatArr(HMMPI::MessageRE("Использовано точек данных: {0:%zu}\nНеиспользованных значений / нулевых сигм: {1:%zu}\nВсего точек данных: {2:%zu}",
+																	   "Used data points: {0:%zu}\nUnused values / zero sigmas: {1:%zu}\nTotal data points: {2:%zu}"),
+																	   std::vector<size_t>{Nvecs*Nsteps - count_undef, count_undef, Nvecs*Nsteps});
+						sw1.close();
+						sw2.close();
 					}
 
-					if (of_vec_proxy.size() > 0)	// print the obj. func. breakdown: simulator & proxy; and dX breakdown
-					{
+					if (of_vec_proxy.size() > 0) {	// print the obj. func. breakdown: simulator & proxy; and dX breakdown
 						sw_break.open(break_file);
 						sw_break << HMMPI::stringFormatArr("Likelihood (SIM)   = {0:%.2f}\nLikelihood (PROXY) = {1:%.2f}\n", std::vector<double>{res, of_proxy});
 						sw_break << HMMPI::stringFormatArr(HMMPI::MessageRE("Использовано точек данных: {0:%zu}, нулевых сигм: {1:%zu}, всего точек: {2:%zu}\n\n",
@@ -2852,25 +2825,20 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 
 				complete = 1;
 			}
-			catch (const HMMPI::EObjFunc &e)	// immediate termination
-			{
-				if (sw.is_open())
-					sw.close();
-				if (sw_break.is_open())
-					sw_break.close();
+			catch (const HMMPI::EObjFunc &e) {	// immediate termination
+				if (sw1.is_open()) sw1.close();
+				if (sw2.is_open()) sw2.close();
+				if (sw_break.is_open()) sw_break.close();
 
 				sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
 				complete = 2;
 			}
-			catch (const std::exception &e)
-			{
-				if (sw.is_open())
-					sw.close();
-				if (sw_break.is_open())
-					sw_break.close();
+			catch (const std::exception &e) {
+				if (sw1.is_open()) sw1.close();
+				if (sw2.is_open()) sw2.close();
+				if (sw_break.is_open()) sw_break.close();
 
-				if (!ignore_small_errors)
-				{
+				if (!ignore_small_errors) {
 					sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
 					complete = 2;
 				}
@@ -2878,33 +2846,25 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 					K->AppText(HMMPI::stringFormatArr("*** ошибка: {0:%s}, симулятор будет перезапущен\n",
 													  "*** error: {0:%s}, simulator will be re-run\n", (std::string)e.what()));
 			}
-
 			HMMPI::MPI_BarrierSleepy(comm);
 			MPI_Bcast(&complete, 1, MPI_INT, 0, comm);
 
 		} // while (complete == 0)
 	}
-	else	  	  // comm_rank != 0
-	{
-		while (complete == 0)
-		{
-			try	  // try-catch block should be sync across all ranks
-			{
+	else {	  	  // comm_rank != 0
+		while (complete == 0) {
+			try {  // try-catch block should be sync across all ranks
 				HMMPI::MPI_BarrierSleepy(comm);
 				simcmd->RunCmd(comm);
 			}
-			catch (...)
-			{
-
-			}
+			catch (...) {}
 
 			HMMPI::MPI_BarrierSleepy(comm);
 			MPI_Bcast(&complete, 1, MPI_INT, 0, comm);
 		}
 	}
 
-	if (comm != MPI_COMM_NULL)
-	{
+	if (comm != MPI_COMM_NULL) {
 		HMMPI::MPI_BarrierSleepy(comm);
 
 		MPI_Bcast(&warning_count, 1, MPI_INT, 0, comm);
@@ -2915,7 +2875,6 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 		if (err_msg[0] != 0)
 			throw HMMPI::Exception(err_msg);
 	}
-
 	return res;
 }
 //---------------------------------------------------------------------------
@@ -2941,10 +2900,9 @@ void PMEclipse::PerturbData()
 
 	int size = textsmry->pet_dat.ICount()*textsmry->pet_dat.JCount();
 	std::vector<double> dat(textsmry->pet_dat.Serialize(), textsmry->pet_dat.Serialize() + size);
-	if (K->MPI_rank == 0)											// save perturbed data
-	{
+	if (K->MPI_rank == 0) {											// save perturbed data
 		std::ofstream sw(HMMPI::getFullPath(CWD, "TextSMRY_RML.txt"), std::ios::out);
-		write_smry(sw, HMMPI::Vector2<double>(), textsmry->pet_dat, std::vector<double>(), true, true);		// write only history
+		write_smry(&sw, nullptr, HMMPI::Vector2<double>(), textsmry->pet_dat, std::vector<double>(), true, true);	// write only history
 		sw.close();
 	}
 
