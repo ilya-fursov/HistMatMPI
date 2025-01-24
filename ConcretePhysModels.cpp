@@ -2612,15 +2612,26 @@ PMEclipse::~PMEclipse()
 //	{A
 //		while (complete == 0)
 //		{B
+//			reached_RunCmd = 0;
 //			try
 //			{C
+//				...		(*)
+//				...		(*)
 //				MPI_BarrierSleepy(comm);
+//				reached_RunCmd = 1;
+//				MPI_Bcast(reached_RunCmd); // send (*) was successful
 //				simcmd->RunCmd(comm);
 //				...
 //				...
+//				complete = 1;
 //			}C
-//			catch (-> immediate termination, fill err_msg)
-//			catch (-> terminate or re-run, fill err_msg)
+//			catch (-> immediate termination, fill err_msg, complete = 2)
+//			catch (-> terminate or re-run, fill err_msg, complete = 2 or 0)
+//
+//			if (!reached_RunCmd) {
+//				MPI_BarrierSleepy(comm);
+//				MPI_Bcast(reached_RunCmd); // send (*) was not successful
+//			}
 //
 //			MPI_BarrierSleepy(comm);
 //			MPI_Bcast(complete);
@@ -2630,12 +2641,15 @@ PMEclipse::~PMEclipse()
 //	{A'
 //		while (complete == 0)
 //		{B'
+//			reached_RunCmd = 0;
 //			try
 //			{C'
 //				MPI_BarrierSleepy(comm);
-//				simcmd->RunCmd(comm);
+//				MPI_Bcast(reached_RunCmd); // recv
+//				if (reached_RunCmd)
+//					simcmd->RunCmd(comm);
 //			}C'
-//			catch (...)
+//			catch (...)		// all RunCmd() exceptions on comm_rank != 0 are silenced
 //
 //			MPI_BarrierSleepy(comm);
 //			MPI_Bcast(complete);
@@ -2668,10 +2682,11 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 	int warning_count = 0;
 	char err_msg[HMMPI::BUFFSIZE];
 	err_msg[0] = 0;
-	int complete = 0;			// while-loop controller: 0 - running, 1 - finished, 2 - error
+	int complete = 0;				// while-loop controller: 0 - running, 1 - finished, 2 - error
 
 	if (comm_rank == 0) {		// processing is done on comm-RANKS-0, simulation - on all ranks
 		while (complete == 0) {	// make several attempts to calculate obj. func.
+			int reached_RunCmd = 0;	// shows if rank-0 reached RunCmd(): 0 - no, 1 - yes
 			std::ofstream sw1, sw2;	// ObjFuncLog_data.txt, ObjFuncLog_breakdown.txt
 			std::ofstream sw_break;	// ObjFunc_breakdown.txt
 			sw1.exceptions(std::ios_base::badbit | std::ios_base::failbit);
@@ -2690,6 +2705,8 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 				std::string templ_msg = templ->WriteFiles(*tmap);			// MOD and PATH for "tmap" are set here, simcmd->cmd_work is also filled here
 
 				HMMPI::MPI_BarrierSleepy(comm);
+				reached_RunCmd = 1;
+				MPI_Bcast(&reached_RunCmd, 1, MPI_INT, 0, comm);			// send
 				simcmd->RunCmd(comm);
 
 				// 2. Get modelled data
@@ -2846,6 +2863,11 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 					K->AppText(HMMPI::stringFormatArr("*** ошибка: {0:%s}, симулятор будет перезапущен\n",
 													  "*** error: {0:%s}, simulator will be re-run\n", (std::string)e.what()));
 			}
+
+			if (!reached_RunCmd) {
+				HMMPI::MPI_BarrierSleepy(comm);
+				MPI_Bcast(&reached_RunCmd, 1, MPI_INT, 0, comm);	// send
+			}
 			HMMPI::MPI_BarrierSleepy(comm);
 			MPI_Bcast(&complete, 1, MPI_INT, 0, comm);
 
@@ -2853,9 +2875,11 @@ double PMEclipse::obj_func_work(const std::vector<double> &params)
 	}
 	else {	  	  // comm_rank != 0
 		while (complete == 0) {
-			try {  // try-catch block should be sync across all ranks
+			int reached_RunCmd = 0;		// shows if rank-0 reached RunCmd(): 0 - no, 1 - yes
+			try { // try-catch block should be sync across all ranks
 				HMMPI::MPI_BarrierSleepy(comm);
-				simcmd->RunCmd(comm);
+				MPI_Bcast(&reached_RunCmd, 1, MPI_INT, 0, comm);	// recv
+				if (reached_RunCmd) simcmd->RunCmd(comm);
 			}
 			catch (...) {}
 
@@ -2967,13 +2991,11 @@ std::vector<double> PMEclipse::Data() const
 	std::vector<double> res;
 	res.reserve(Npars*Nsteps);		// some extra space may be reserved
 	for (size_t p = 0; p < Npars; p++)
-		for (size_t t = 0; t < Nsteps; t++)
-		{
+		for (size_t t = 0; t < Nsteps; t++) {
 			double sigma = smry_hist(t, p + Npars);
 			if (!HMMPI::IsNaN(smry_hist(t, p)) && sigma != 0)
 				res.push_back(smry_hist(t, p));
 		}
-
 	return res;
 }
 //---------------------------------------------------------------------------

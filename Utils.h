@@ -260,7 +260,7 @@ public:
 									// run	ERRx	RUNFILE	MPIx	TNAV	command
 									// sys	+		-		-		-		+
 									// mpi	+		-		++		+		++
-									// file	-		++		-		-		++
+									// file	+		++		-		-		++
 
 	static std::vector<std::string> ReportCmd(int num, Options opts, std::string main_cmd, std::vector<char*> argv);		// formatted report for SIMCMD
 

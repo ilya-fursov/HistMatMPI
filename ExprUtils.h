@@ -95,6 +95,7 @@ public:
 	virtual const ValBase *date() const;					// date(*this), only for Val<double>, returns string
 
 	virtual std::string get_op_type() const;		// returns 'Val<string>::val' for operators, "" otherwise
+	const T &get_val() const {return val;};
 	virtual std::string ToString(std::string fmt, size_t &width) const;
 };
 //------------------------------------------------------------------------------------------
@@ -116,15 +117,19 @@ public:
 };
 //------------------------------------------------------------------------------------------
 std::vector<std::string> StringToInfix(const std::string &expr);		// Parses 'expr' to fill an infix expression stored as vector. Unary 'plus' is replaced by "", unary 'minus' is saved as "neg".
-std::vector<const ValBase*> InfixToPostfix(const std::vector<std::string> &infix, const std::map<std::string, ValBase*> &tag_val, int &count, std::set<std::string> &tags_left, const std::string &orig_expr);
+std::vector<const ValBase*> InfixToPostfix(const std::vector<std::string> &infix, const std::map<std::string, ValBase*> &tag_val, int &count, std::set<std::string> &tags_left,
+										   const std::string &orig_expr, const std::string &comment = "", const std::string &msg_params = "");
 			// Creates a postfix expression (values + operators). The output vector stores pointers which should be deleted by the caller.
 			// 'tag_val' is used to substitute the variable values, updating the substitution 'count' and 'tags_left'.
 			// 'orig_expr' is the original expression, to use in the error message.
+			// 'comment' is an additional comment regarding the expression (e.g. its location).
+			// 'msg_params' is an additional message regarding the parameters, to use in the error message.
 const ValBase *CalcUnary(const ValBase *op, const ValBase *x, const std::string &orig_expr);					// Calculates op(x), creating a new object (to be deleted by the caller)
 const ValBase *CalcBinary(const ValBase *op, const ValBase *x, const ValBase *y, const std::string &orig_expr);	// Calculates op(x, y), creating a new object (to be deleted by the caller)
-const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::string &orig_expr);	// Calculates postfix expression 'expr',
+const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::string &orig_expr, const std::string &comment = "");	// Calculates postfix expression 'expr',
 			// returns a new object (to be deleted by the caller). All the items (pointers) in 'expr' are deleted.
 			// 'orig_expr' is the original expression, to use in the error message.
+			// 'comment' is an additional comment regarding the expression (e.g. its location).
 //------------------------------------------------------------------------------------------
 std::string stringTagPrintf(const std::string &input_text, const std::map<std::string, ValBase*> &tag_val, int &count, std::set<std::string> &tags_left);
 			// Writes values corresponding to 'tags' in "input_text". The 'tag' locations may be of the form $tag, $tag%fmt (e.g. format %fmt = %20.16g).

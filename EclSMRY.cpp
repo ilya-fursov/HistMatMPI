@@ -1410,69 +1410,101 @@ SimProxyFile::~SimProxyFile()
 	delete BDC;
 }
 //--------------------------------------------------------------------------------------------------
-std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const std::vector<double> &pval, const std::vector<std::string> &backval, const SimSMRY *smry)
+std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const std::vector<double> &pval, const std::vector<std::string> &backval, const std::vector<std::string> &func, const SimSMRY *smry)
 {
 	datapoint_block.clear();
 	datapoint_modcount.clear();
 	std::string msg = "";
 
 	int err = 0;		// for exceptions synchronising
-	try
-	{
-		if (Rank == 0)
-		{
+	try {
+		if (Rank == 0) {
 			assert(block_ind.size() == params.size());
 			assert(data_dates.size() == data_vecs.size());
 			assert(block_ind.size() == data.size());
 
 			// 1. handle parameters
-			if (pname.size() != pval.size() || pname.size() != backval.size())
-				throw Exception("pname.size() != pval.size() || pname.size() != backval.size()");
+			if (pname.size() != pval.size() || pname.size() != backval.size() || pname.size() != func.size())
+				throw Exception("pname.size() != pval.size() || pname.size() != backval.size() || pname.size() != func.size()");
 			if (pname.size() == 0)
 				throw Exception("Попытка добавить модель с пустым списком параметров", "Attempt to add a model with empty parameters list");
 
-			std::vector<size_t> perm_param = SortPermutation(pname.begin(), pname.end());		// permutation indices
-			std::vector<std::string> pname_sorted = Reorder(pname, perm_param);				// sorted array of new params names
-			std::vector<double> pval_sorted = Reorder(pval, perm_param);					// corresp. params vals
-			std::vector<std::string> bv_sorted = Reorder(backval, perm_param);				// corresp. back vals
+			const std::vector<size_t> perm_param = SortPermutation(pname.begin(), pname.end());		// permutation indices
+			const std::vector<std::string> pname_sorted = Reorder(pname, perm_param);				// sorted array of new params names
+			const std::vector<double> pval_sorted = Reorder(pval, perm_param);						// corresp. params vals
+			const std::vector<std::string> bv_sorted = Reorder(backval, perm_param);				// corresp. backvals
+			const std::vector<std::string> func_sorted = Reorder(func, perm_param);					// corresp. funcs
 
 			if (!std::includes(pname_sorted.begin(), pname_sorted.end(), par_names.begin(), par_names.end()))
 				throw Exception("Попытка добавить модель с параметрами, которые не являются надмножеством параметров сохраненных ранее моделей",
 								"Attempt to add a model with parameters which are not a superset of parameters of previously saved models");
 			std::string dup;
 			if (FindDuplicate(pname_sorted, dup))
-				throw Exception((std::string)"Adding a model with duplicate parameter " + dup + " in SimProxyFile::AddModel");
+				throw Exception(stringFormatArr("Добавление модели с повторяющимся параметром '{0:%s}' в SimProxyFile::AddModel()",
+												"Adding a model with duplicate parameter '{0:%s}' in SimProxyFile::AddModel()", dup));
 
-			std::vector<size_t> par_subind = GetSubvecIndSorted(par_names, pname_sorted);		// resulting indices may contain "-1", as par_names <= pname_sorted
+			std::vector<size_t> par_subind = GetSubvecIndSorted(par_names, pname_sorted);	// resulting indices may contain "-1", as par_names <= pname_sorted
 
-			size_t dim = pval_sorted.size();										// new dimension
+			const size_t dim = pval_sorted.size();											// new dimension
 			assert(par_subind.size() == dim);
-			std::vector<std::vector<double>> params_new(params.size() + 1);			// new array of parameter values: added one model
-			for (size_t i = 0; i < params.size(); i++)								// transfer the previous params values
-			{
-				params_new[i] = std::vector<double>(dim);
-				for (size_t j = 0; j < dim; j++)						// go through new params
-				{
+			std::vector<std::vector<double>> params_new(params.size() + 1, std::vector<double>(dim));	// new array of parameter values: added one model
+
+			std::vector<int> count_err(dim, 0);							// count the "non-positive" errors for "EXP" new params
+			int count_err_total = 0;
+			for (size_t i = 0; i < params.size(); i++) {				// transfer the previous params values, i = [0, Np) - model number
+				for (size_t j = 0; j < dim; j++) {						// go through new params
 					if (par_subind[j] != (size_t)-1)
 						params_new[i][j] = params[i][par_subind[j]];	// take from old param value
-					else
-					{
+					else {												// new param: engage backval
 						bool is_num = false;
-						double val = StoD(bv_sorted[j], is_num);		// is_num = true if whole string is a number
-						if (is_num)
-							params_new[i][j] = val;						// take from back value number
-						else
-						{
-							const auto it = FindBinary(par_names.begin(), par_names.end(), bv_sorted[j]);		// binary search in a SORTED range [first, last); returns "last" if not found
+						double val = StoD(bv_sorted[j], is_num);		// is_num = true if the whole string is a number
+						if (!is_num) {									// backval is not a number ... keep processing it
+							const auto it = FindBinary(par_names.begin(), par_names.end(), bv_sorted[j]);	// binary search in a SORTED range [first, last); returns "last" if not found
 							const size_t ind = it - par_names.begin();
-							if (ind >= par_names.size())
-								throw Exception("Параметр '" + bv_sorted[j] + "', указанный в столбце 'backval', не найден в списке параметров ECLSMRY",
-												"Parameter '" + bv_sorted[j] + "' specified in 'backval' column was not found in the ECLSMRY parameters list");
-							params_new[i][j] = params[i][ind];			// take from back value of 'bv_sorted[j]'
+							if (ind < par_names.size()) val = params[i][ind];		// backval is a single parameter
+							else {													// backval is an expression (if not, then it has no sense)
+								TagValMap tmap(par_names, params[i]);
+								int count_dummy = 0;
+								std::set<std::string> set_dummy;
+								std::string comment = stringFormatArr(" [см. backval для параметра '{0:%s}' в PARAMETERS]",
+																	  " [see backval for parameter '{0:%s}' in PARAMETERS]", pname_sorted[j]);
+								std::string msg_params = MessageRE(", записанных в ECLSMRY", " stored in ECLSMRY");
+
+								// bv_sorted[j] is the expression
+								std::vector<std::string> infix = StringToInfix(bv_sorted[j]); // bv_sorted[j] is the expression
+								std::vector<const ValBase*> postfix = InfixToPostfix(infix, tmap, count_dummy, set_dummy, bv_sorted[j], comment, msg_params);
+								const ValBase *res_postfix = CalcPostfix(postfix, bv_sorted[j], comment);
+								const Val<double> *res_double = dynamic_cast<const Val<double>*>(res_postfix);
+								if (res_double == nullptr)
+									throw Exception(stringFormatArr("Выражение '{0:%s}' при вычислении не дает число (double)",
+																	"Evaluating the expression '{0:%s}' does not result in a number (double)", bv_sorted[j]) + comment);
+								val = res_double->get_val();
+								delete res_postfix;
+							}
 						}
+						assert (func_sorted[j] == "EXP" || func_sorted[j] == "LIN");
+						if (func_sorted[j] == "EXP" && val <= 0) {		// check "EXP"
+							count_err[j] += 1;
+							count_err_total += 1;
+						}
+						params_new[i][j] = val;
 					}
 				}
 			}
+			if (count_err_total) {
+				std::string errmsg = "";
+				char msgrus[BUFFSIZE*2];
+				char msgeng[BUFFSIZE*2];
+				for (size_t j = 0; j < dim; j++)
+					if (count_err[j] > 0) {
+						sprintf(msgrus, "При применении backval = '%.500s' для параметра '%.100s' (тип EXP) получились значения <= 0 для %d модели(ей) из ECLSMRY", bv_sorted[j].c_str(), pname_sorted[j].c_str(), count_err[j]);
+						sprintf(msgeng, "When engaging backval = '%.500s' for parameter '%.100s' (EXP type), values <= 0 were obtained for %d model(s) in ECLSMRY", bv_sorted[j].c_str(), pname_sorted[j].c_str(), count_err[j]);
+						if (msg.size() > 0) msg += "\n";
+						msg += MessageRE(msgrus, msgeng);
+					}
+				throw Exception(msg);
+			}
+
 			params_new[params.size()] = std::move(pval_sorted);			// transfer the params values from the model which we are adding
 
 			par_names = std::move(pname_sorted);

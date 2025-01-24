@@ -523,7 +523,7 @@ std::vector<std::string> CmdLauncher::ReadOptions(const std::vector<std::string>
 // run	ERRx	RUNFILE	MPIx	TNAV	command
 // sys	+		-		-		-		+
 // mpi	+		-		++		+		++
-// file	-		++		-		-		++
+// file	+		++		-		-		++
 CmdLauncher::Options CmdLauncher::ParseCmd(std::string cmd, std::string &main_cmd, std::vector<char*> &argv) const
 {
 	CmdLauncher::Options res;
@@ -535,8 +535,7 @@ CmdLauncher::Options CmdLauncher::ParseCmd(std::string cmd, std::string &main_cm
 
 	if (toks.size() == 1 && res.Runfile.val == 1)	// include-file case
 	{
-		res.Err.val = 0;							// disable some options
-		res.Mpi.val = 0;
+		res.Mpi.val = 0;							// disable some options
 		res.Tnav.val = 0;
 
 		main_cmd = toks[0];
@@ -859,12 +858,22 @@ void CmdLauncher::Run(std::string cmd, Parser_1 *K, MPI_Comm Comm) const
 	}
 	else if (Opts.Runfile.val == 1)				// include-file case; sync here
 	{
-		Bcast_string(main_cmd, 0, Comm);		// main_cmd contains the file name
+		int error_cache = K->TotalErrors, delta;		// save the current error count
 
+		Bcast_string(main_cmd, 0, Comm);		// main_cmd contains the file name
 		DataLines dl;
 		K->AppText("\n");
 		dl.LoadFromFile(main_cmd);				// read the file
 		K->ReadLines(dl.EliminateEmpty(), 1, HMMPI::getCWD(main_cmd));		// execute
+
+		delta = K->TotalErrors - error_cache;	// check if the error count has increased
+		MPI_Allreduce(MPI_IN_PLACE, &delta, 1, MPI_INT, MPI_MAX, Comm);
+		if (delta != Opts.Err.val) {
+			char msg[BUFFSIZE], msgrus[BUFFSIZE];
+			sprintf(msg, "Running the file '%.300s' finished with %d error(s)", main_cmd.c_str(), delta);
+			sprintf(msgrus, "Исполнение файла '%.300s' завершилось с %d ошибкой(ами)", main_cmd.c_str(), delta);
+			throw EObjFunc(msgrus, msg);
+		}
 	}
 	else
 		throw Exception("Incorrect Opts in CmdLauncher::Run()");			// sync

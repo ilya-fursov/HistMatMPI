@@ -960,7 +960,7 @@ protected:
 	virtual double minrpt(int i) const {return min[i];};	// used in BoundConstr::Check for reporting; here, return external representation
 	virtual double maxrpt(int i) const {return max[i];};
 	void check_names() noexcept;			// check names for repeats, empty names, and MOD, PATH, RANK, SIZE
-	void check_backvals() noexcept;			// check symbolic backvals
+	void check_backvals() noexcept;			// preliminary check of backvals
 	virtual void fill_norm_logmin() noexcept;
 	virtual void UpdateParams() noexcept;	// count active params, check names, check min <= val <= max, check min < max, check min > 0 for func=EXP, fill 'norm' and 'logmin', report
 											// also, initialize 'par_map'; fill init, BoundConstr::min, BoundConstr::max (internal representation)

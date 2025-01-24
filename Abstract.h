@@ -18,7 +18,7 @@
 //#define TESTCTOR
 #define WRITE_PET_DATA			// write perturbed data for LIN, DATAPROXY, ECLIPSE
 #define WRITE_PLOT_DATA			// write [y | X] to file in RUNPLOT
-#define WRITE_PROXY_VALS		// write proxy values before and after updates to PM_Proxy::dump_vals -- used mostly for debug and analysis
+//#define WRITE_PROXY_VALS		// write proxy values before and after updates to PM_Proxy::dump_vals -- used mostly for debug and analysis
 //#define PROXY_CAP_DROP			// enables ApplyValuesCap/ApplyValuesDrop; be careful: if this code was disabled for a long time, it may have become inconsistent with the surrounding code
 
 #define obj_func_file "obj_func.txt"

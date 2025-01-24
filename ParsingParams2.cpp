@@ -2635,26 +2635,42 @@ void KW_parameters::check_names() noexcept
 			SilentError(HMMPI::stringFormatArr("Параметр не может иметь имя '{0:%s}'", "Parameter cannot have name '{0:%s}'", name[i]));
 }
 //------------------------------------------------------------------------------------------
-void KW_parameters::check_backvals() noexcept			// check symbolic backvals
+void KW_parameters::check_backvals() noexcept			// preliminary check of backvals
 {
-	std::vector<std::string> uniq = HMMPI::Unique(backval);
-	std::vector<std::string> notfound;
-	for (size_t i = 0; i < uniq.size(); i++)
-	{
+	std::string msg = "";	// final error message
+	char msgrus[HMMPI::BUFFSIZE], msgeng[HMMPI::BUFFSIZE];
+	static const std::vector<std::string> Rmsg = {"Для параметра '%.200s' (тип EXP) backval %.200s <= 0",
+												  "Для параметра '%.200s' backval содержит (ссылается на) '%.200s', которого нет в PARAMETERS"};
+	static const std::vector<std::string> Emsg = {"For parameter '%.200s' (EXP type) backval %.200s <= 0",
+												  "For parameter '%.200s' backval contains (references) '%.200s', which is absent in PARAMETERS"};
+	static const std::vector<std::string> ops = {"+", "-", "*", "/", "^", "neg", "exp", "log", "date", "(", ")", ""};	// same list as in InfixToPostfix(), plus "(", ")", "empty"
+
+	auto UpdateErr = [&](const std::string &par, const std::string &str, int i, std::string &msg) -> void {				// updates the current error message 'msg'
+		assert(i == 0 || i == 1);
+		sprintf(msgrus, Rmsg[i].c_str(), par.c_str(), str.c_str());
+		sprintf(msgeng, Emsg[i].c_str(), par.c_str(), str.c_str());
+		std::string newmsg = HMMPI::MessageRE(msgrus, msgeng);
+		if (msg == "") msg += newmsg;
+		else msg += "\n" + newmsg;
+	};
+	for (size_t i = 0; i < backval.size(); i++) {		// preliminary (though not exhaustive) check of all backvals
 		bool is_num = false;
-		HMMPI::StoD(uniq[i], is_num);		// is_num = true if whole string is a number
-		if (!is_num)						// symbolic backval
-		{
-			const auto it = std::find(name.begin(), name.end(), uniq[i]);		// returns "last" if not found
-			const size_t ind = it - name.begin();
-			if (ind >= name.size())
-				notfound.push_back("'" + uniq[i] + "'");
+		double bv = HMMPI::StoD(backval[i], is_num);	// is_num = true if whole string is a number
+		if (is_num) {				// number
+			if (func[i] == "EXP" && bv <= 0) UpdateErr(name[i], backval[i], 0, msg);
+		} else {					// expression
+			std::vector<std::string> expr = HMMPI::StringToInfix(backval[i]);		// note, unary 'plus' is replaced by "", unary 'minus' is saved as "neg"
+			for (const std::string &v : expr) {
+				if (std::find(ops.begin(), ops.end(), v) != ops.end()) continue;	// found an operator
+
+				HMMPI::StoD(v, is_num);
+				if (is_num) continue;												// found a number
+
+				if (std::find(name.begin(), name.end(), v) == name.end()) UpdateErr(name[i], v, 1, msg);	// failed to find the parameter!
+			}
 		}
 	}
-	if (notfound.size() > 0)
-		SilentError((std::string)HMMPI::MessageRE("Некоторые выражения из backval не были найдены в основном списке параметров: ",
-												  "Some expressions from backval have not been found in the main parameters list: ") +
-												  HMMPI::ToString(HMMPI::vec_c_str_dodgy(notfound), "%s", ", "));
+	if (msg != "") SilentError(msg);
 }
 //------------------------------------------------------------------------------------------
 void KW_parameters::fill_norm_logmin() noexcept

@@ -369,7 +369,6 @@ std::string PM_Proxy::AddData(std::vector<std::vector<double>> X0, ValCont *VC, 
 	std::vector<std::vector<double>> x_0(X0.begin(), X0.begin() + vals_count);		// points for func. values
 	std::vector<std::vector<double>> x_1(X0.begin() + vals_count, X0.end());		// points for func. gradients
 	std::vector<size_t> inds = PointsSubset(x_0, Nfval_pts);
-	HMMPI::Bcast_vector(inds, 0, comm);
 
 	x_0 = HMMPI::Reorder(x_0, inds);
 	AddPoints(x_0, x_1);

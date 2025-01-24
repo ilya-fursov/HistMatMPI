@@ -407,7 +407,7 @@ void KW_rundebug::Run()
 //	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
 //	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-	IMPORTKWD(pts, KW_3points, "3POINTS");
+//	IMPORTKWD(pts, KW_3points, "3POINTS");
 //	IMPORTKWD(mat, KW_mat, "MAT");
 //	IMPORTKWD(matvec, KW_matvec, "MATVEC");
 //	Add_pre("GRIDDIMENS");
@@ -456,40 +456,6 @@ void KW_rundebug::Run()
 //	for (double s = 0; s <= 5; s += 0.5)
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
-	const HMMPI::ValBase *x1 = new HMMPI::Val<int>(2);
-	const HMMPI::ValBase *res = x1->date();
 
-	std::cout << "============= Date test =================\n";
-	{
-		DECLKWD(sdate, KW_startdate, "STARTDATE");
-
-		HMMPI::Date d1("19.12.2024");
-		HMMPI::Date d2("10.12.1910	18:32");
-		HMMPI::Date d3("22.03.1981 00:00");
-		HMMPI::Date d4("15.03.2094 1:0:45");
-
-		if (sdate->GetState() == "") {	// user formatting
-			printf("|%s|, this - start = %.12g\n", d1.ToString(sdate->start.get_fmt()).c_str(), d1.diff(sdate->start));
-			printf("|%s|, this - start = %.12g\n", d2.ToString(sdate->start.get_fmt()).c_str(), d2.diff(sdate->start));
-			printf("|%s|, this - start = %.12g\n", d3.ToString(sdate->start.get_fmt()).c_str(), d3.diff(sdate->start));
-			printf("|%s|, this - start = %.12g\n", d4.ToString(sdate->start.get_fmt()).c_str(), d4.diff(sdate->start));
-			printf("\n");
-
-			for (size_t i = 0; i < pts->x.size(); i++) {
-				HMMPI::Date D = sdate->start;
-
-				printf("%s", D.ToString(D.get_fmt()).c_str());
-				D.add(pts->x[i]);
-				double delta = D.diff(sdate->start);
-				printf("\t+\t%-14.10g\t=\t%s\tdiff =\t%.10g\n", pts->x[i], D.ToString(D.get_fmt()).c_str(), delta);
-			}
-
-		} else {	// default formatting
-			printf("|%s|\n", d1.ToString().c_str());
-			printf("|%s|\n", d2.ToString().c_str());
-			printf("|%s|\n", d3.ToString().c_str());
-			printf("|%s|\n", d4.ToString().c_str());
-		}
-	}
 }
 //------------------------------------------------------------------------------------------

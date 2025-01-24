@@ -268,7 +268,7 @@ void KW_runSingle::Run()
 		if (smry->GetState() == "")				// adding summary to ECLSMRY
 		{
 			K->AppText(HMMPI::MessageRE("Модель " + model->type + " добавляется в ECLSMRY\n", "Adding model " + model->type + " to ECLSMRY\n"));
-			std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->val, parameters->backval, PMecl->get_smry());
+			std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->val, parameters->backval, parameters->func, PMecl->get_smry());
 			std::string msg2 = smry->Save();
 			K->AppText(msg1);
 			K->AppText(msg2);
@@ -347,7 +347,7 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 		K->AppText(HMMPI::stringFormatArr("o.f. = {0}\n", std::vector<double>{of}));
 
 		K->AppText(HMMPI::MessageRE("Модель " + model->type + " добавляется в ECLSMRY\n", "Adding model " + model->type + " to ECLSMRY\n"));
-		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(params[i]), parameters->backval, PMecl->get_smry());
+		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(params[i]), parameters->backval, parameters->func, PMecl->get_smry());
 		std::string msg2 = smry->Save();
 		K->AppText(msg1);
 		K->AppText(msg2);
@@ -588,7 +588,7 @@ void KW_runOptProxy::Run()
 										  "\nSIM calculation ({0:%.3f} sec)\n", std::chrono::duration_cast<std::chrono::duration<double>>(time3-time2).count()));
 		K->AppText(HMMPI::stringFormatArr("Целевая функция (posterior) = {0:%.8g}\n", "Objective function (posterior) = {0:%.8g}\n", of));
 
-		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(p), parameters->backval, PMecl->get_smry());
+		std::string msg1 = smry->get_Data().AddModel(parameters->name, parameters->InternalToExternal(p), parameters->backval, parameters->func, PMecl->get_smry());
 		std::string msg2 = smry->Save();
 		time4 = std::chrono::high_resolution_clock::now();
 		K->AppText(HMMPI::stringFormatArr("Модель SIM добавляется в ECLSMRY  ({0:%.3f} сек)\n",

@@ -344,13 +344,16 @@ public:
 					{MPI_Comm_rank(c, &Rank);};		// "c" will be used as PM_SimProxy->comm; avoid using MPI_COMM_NULL!
 	SimProxyFile(const SimProxyFile &s) = delete;
 	~SimProxyFile();
-	std::string AddModel(const std::vector<std::string> &pname, const std::vector<double> &pval, const std::vector<std::string> &backval, const SimSMRY *smry);		// imports the model (parameter names, _EXTERNAL_ parameter values, eclipse summary)
-															// "backval" [_EXTERNAL_/parameter_name] is from KW_parameters, lengths of "pname", "pval", "backval" should be the same
-															// "pname" should be the superset of 'par_names'; "pname" should contain unique elements
-															// smry.dates, smry.vecs should be supersets of last block of 'data_dates', 'data_vecs'; smry.dates, smry.vecs should contain unique elements
-															// all input and "output" is only referenced on comm-RANKS-0
-															// the function returns a non-empty message if the added model was popped out (NOTE: even in this case 'par_names' get updated)
-															// the function also fills Xmin, Xavg
+	std::string AddModel(const std::vector<std::string> &pname, const std::vector<double> &pval, const std::vector<std::string> &backval, const std::vector<std::string> &func, const SimSMRY *smry);
+													// Imports the model (parameter names, _EXTERNAL_ parameter values, simulator summary).
+													// "backval" [_EXTERNAL_/parameter_name/expression] is from KW_parameters,
+													// "func" is from KW_parameters (used for positiveness check for EXP),
+													// lengths of "pname", "pval", "backval", "func" should be the same.
+													// "pname" should be the superset of 'par_names'; "pname" should contain unique elements
+													// smry.dates, smry.vecs should be supersets of last block of 'data_dates', 'data_vecs'; smry.dates, smry.vecs should contain unique elements
+													// all input and "output" is only referenced on comm-RANKS-0
+													// the function returns a non-empty message if the added model was popped out (NOTE: even in this case 'par_names' get updated)
+													// the function also fills Xmin, Xavg
 	std::string AddSimProxyFile(const SimProxyFile *smry_0);	// appends the proxy file 'smry_0' to 'this'
 																// currently, both proxy files should contain 1 block, and have the same parameters names, same dates and vecs
 																// all input and "output" is only referenced on comm-RANKS-0

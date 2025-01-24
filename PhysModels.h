@@ -775,7 +775,7 @@ public:
 	void set_init(const std::vector<double> &v) {init = v;};
 	void take_refs(const HMMPI::Mat *d) {D = d; is_valid = 0;};
 	const HMMPI::Func1D_corr *CalculateR(const std::vector<double> &par) const;		// calculates R, returns the 1D function used; par = {nugget, r, nu}
-	const HMMPI::Func1D_corr *GetFuncFromCalculateR() const;							// returns the same Func1D_corr* as was returned by the last CalculateR()
+	const HMMPI::Func1D_corr *GetFuncFromCalculateR() const;						// returns the same Func1D_corr* as was returned by the last CalculateR()
 	const HMMPI::Mat &Get_R() const {return R;};
 	void reset_cache() const {is_valid = 0;};									// manual cache reset (e.g. in PM_Proxy::AddData)
 

@@ -373,12 +373,13 @@ inline bool not_both_unary(const std::string &a, const std::string &b)
 	return !is_unary_op(a) || !is_unary_op(b);
 }
 //------------------------------------------------------------------------------------------
-std::vector<const ValBase*> InfixToPostfix(const std::vector<std::string> &infix, const std::map<std::string, ValBase*> &tag_val, int &count, std::set<std::string> &tags_left, const std::string &orig_expr)
+std::vector<const ValBase*> InfixToPostfix(const std::vector<std::string> &infix, const std::map<std::string, ValBase*> &tag_val, int &count, std::set<std::string> &tags_left,
+										   const std::string &orig_expr, const std::string &comment, const std::string &msg_params)
 // Creates a postfix expression (values + operators). The output vector stores pointers which should be deleted by the caller.
 {											// 'tag_val' is used to substitute the variable values, updating the substitution 'count' and 'tags_left'.
 	std::stack<std::string> estack;			// 'orig_expr' is the original expression, to use in the error message.
-	std::vector<std::string> res_str;
-	res_str.reserve(infix.size());
+	std::vector<std::string> res_str;		// 'comment' is an additional comment regarding the expression (e.g. its location).
+	res_str.reserve(infix.size());			// 'msg_params' is an additional message regarding the parameters, to use in the error message.
 	static const std::vector<std::string> ops = {"+", "-", "*", "/", "^", "neg", "exp", "log", "date"};
 
 	// 1. Form the vector of strings 'res_str'
@@ -397,8 +398,9 @@ std::vector<const ValBase*> InfixToPostfix(const std::vector<std::string> &infix
 				else res_str.push_back(it);
 			}
 			if (!found)
-				throw EObjFunc(stringFormatArr("Синтаксическая ошибка, не хватает '(' в выражении '{0:%s}'",
-											   "Syntax error, missing '(' in expression '{0:%s}'", orig_expr));
+				throw EObjFunc(stringFormatArr(MessageRE("Синтаксическая ошибка, не хватает '(' в выражении '{0:%s}'{1:%s}",
+											   	   	     "Syntax error, missing '(' in expression '{0:%s}'{1:%s}"),
+														 std::vector<std::string>{orig_expr, comment}));
 		}
 		else if (std::find(ops.begin(), ops.end(), tok) != ops.end()) {			// process an operator
 			while (estack.size() > 0 && op_prec(estack.top()) >= op_prec(tok) && not_both_unary(estack.top(), tok)) {
@@ -436,18 +438,20 @@ std::vector<const ValBase*> InfixToPostfix(const std::vector<std::string> &infix
 		}
 
 		if (it == "(")
-			throw EObjFunc(stringFormatArr("Синтаксическая ошибка, не хватает ')' в выражении '{0:%s}'",
-										   "Syntax error, missing ')' in expression '{0:%s}'", orig_expr));
+			throw EObjFunc(stringFormatArr(MessageRE("Синтаксическая ошибка, не хватает ')' в выражении '{0:%s}'{1:%s}",
+										   	   	     "Syntax error, missing ')' in expression '{0:%s}'{1:%s}"),
+													 std::vector<std::string>{orig_expr, comment}));
 
 		auto var = tag_val.find(it);			// search for variable in the 'tag_val' list
 		if (var == tag_val.end()) {				// variable not found!
 			if (infix.size() == 1)				// expression = single parameter
-				throw EObjFunc(stringFormatArr("Параметр '{0:%s}' не найден в списке параметров",
-											   "Parameter '{0:%s}' was not found in the parameters list", it));
+				throw EObjFunc(stringFormatArr(MessageRE("Параметр '{0:%s}'{1:%s} не найден в списке параметров{2:%s}",
+											   	   	     "Parameter '{0:%s}'{1:%s} was not found in the parameters list{2:%s}"),
+														 std::vector<std::string>{it, comment, msg_params}));
 			else
-				throw EObjFunc(stringFormatArr(MessageRE("Входящий в выражение '{0:%s}' параметр '{1:%s}' не найден в списке параметров",
-											   	   	   	 "Parameter '{1:%s}' from expression '{0:%s}' was not found in the parameters list"),
-											   	   	   	 std::vector<std::string>{orig_expr, it}));
+				throw EObjFunc(stringFormatArr(MessageRE("Входящий в выражение '{0:%s}' параметр '{1:%s}'{2:%s} не найден в списке параметров{3:%s}",
+											   	   	   	 "Parameter '{1:%s}' from expression '{0:%s}'{2:%s} was not found in the parameters list{3:%s}"),
+											   	   	   	 std::vector<std::string>{orig_expr, it, comment, msg_params}));
 		}
 		res.push_back(var->second->Copy());		// found variable -> add its value
 		count++;
@@ -520,10 +524,10 @@ const ValBase *CalcBinary(const ValBase *op, const ValBase *x, const ValBase *y,
 	return res;
 }
 //------------------------------------------------------------------------------------------
-const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::string &orig_expr)	// Calculates postfix expression 'expr',
+const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::string &orig_expr, const std::string &comment)	// Calculates postfix expression 'expr',
 {										// returns a new object (to be deleted by the caller). All the items (pointers) in 'expr' are deleted.
 	std::stack<const ValBase*> estack;	// 'orig_expr' is the original expression, to use in the error message.
-
+										// 'comment' is an additional comment regarding the expression (e.g. its location).
 	for (const ValBase *it : expr) {
 		const ValBase *res = nullptr;
 
@@ -531,9 +535,9 @@ const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::s
 		else if (it->arity == 1) {
 			if (estack.size() < 1)
 				throw EObjFunc(stringFormatArr(MessageRE(
-					"Синтаксическая ошибка, не хватает аргумента(ов) в выражении '{1:%s}' // stack size < 1 on reaching unary operation '{0:%s}' in CalcPostfix()",
-					"Syntax error, missing operand(s) in expression '{1:%s}' // stack size < 1 on reaching unary operation '{0:%s}' in CalcPostfix()"),
-														 std::vector<std::string>{it->get_op_type(), orig_expr}));
+					"Синтаксическая ошибка, не хватает аргумента(ов) в выражении '{1:%s}'{2:%s} // stack size < 1 on reaching unary operation '{0:%s}' in CalcPostfix()",
+					"Syntax error, missing operand(s) in expression '{1:%s}'{2:%s} // stack size < 1 on reaching unary operation '{0:%s}' in CalcPostfix()"),
+														 std::vector<std::string>{it->get_op_type(), orig_expr, comment}));
 			const ValBase *X1 = estack.top();
 			estack.pop();
 			res = CalcUnary(it, X1, orig_expr);
@@ -543,9 +547,9 @@ const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::s
 		} else if (it->arity == 2) {
 			if (estack.size() < 2)
 				throw EObjFunc(stringFormatArr(MessageRE(
-					"Синтаксическая ошибка, не хватает аргумента(ов) в выражении '{1:%s}' // stack size < 2 on reaching binary operation '{0:%s}' in CalcPostfix()",
-					"Syntax error, missing operand(s) in expression '{1:%s}' // stack size < 2 on reaching binary operation '{0:%s}' in CalcPostfix()"),
-											   	   	   	 std::vector<std::string>{it->get_op_type(), orig_expr}));
+					"Синтаксическая ошибка, не хватает аргумента(ов) в выражении '{1:%s}'{2:%s} // stack size < 2 on reaching binary operation '{0:%s}' in CalcPostfix()",
+					"Syntax error, missing operand(s) in expression '{1:%s}'{2:%s} // stack size < 2 on reaching binary operation '{0:%s}' in CalcPostfix()"),
+											   	   	   	 std::vector<std::string>{it->get_op_type(), orig_expr, comment}));
 			const ValBase *Y1 = estack.top();	// estack = {... X1 Y1}
 			estack.pop();
 			const ValBase *X1 = estack.top();
@@ -558,8 +562,9 @@ const ValBase *CalcPostfix(const std::vector<const ValBase*> &expr, const std::s
 		} else throw EObjFunc(stringFormatArr("Wrong arity {0:%d} in CalcPostfix()", it->arity));
 	}
 	if (estack.size() != 1)
-		throw EObjFunc(stringFormatArr("Final stack size = {0:%zu} (must be 1) in CalcPostfix(). "
-									   "Syntax error? Expression: '", estack.size()) + orig_expr + "'");
+		throw EObjFunc(stringFormatArr("Финальный размер стека = {0:%zu} (требуется 1) в CalcPostfix(). Синтаксическая ошибка? Выражение: '",
+									   "Final stack size = {0:%zu} (must be 1) in CalcPostfix(). Syntax error? Expression: '",
+									   estack.size()) + orig_expr + "'" + comment);
 	return estack.top();	// the single final element of estack is returned and should be deleted by the caller
 }
 //------------------------------------------------------------------------------------------
