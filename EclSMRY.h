@@ -295,6 +295,21 @@ public:
 // To export data: SaveToBinary(), SaveToAscii(), MakeProxy()
 // NOTE that the parameter values stored here are external representation
 // All functions should be called on all ranks (although some of them internally will work only on comm-RANKS-0)
+// Note about the blocks: there are two ways to define them, model-wise and data-point-wise:
+// ^
+// |
+// m  ||||||
+// o  ||||||         model-block 0
+// d  ||||||
+// e  ||||||||||||
+// l  ||||||||||||   model-block 1
+// s  ||||||||||||
+// |  .     .
+// |  point point
+// |  block block
+// |  0     1
+// |
+// *- data-points -->
 //--------------------------------------------------------------------------------------------------
 class SimProxyFile
 {
@@ -321,12 +336,16 @@ private:
 													// all input and output parameters are only used on comm-RANKS-0
 	std::vector<int> block_starts() const;	// returns Nblock+1 array of indices in [0, Np) showing where each block starts
 											// the result is sync on all ranks
+	void recalc_blocks(int last_block);			// for 'block_ind' with some elements marked as '-1', removes them, recalculates 'block_ind',
+												// and clears the elements of 'data_dates', 'data_vecs' where appropriate.
+												// 'last_block' is the last block index in the old 'block_ind' as of before setting any '-1' marks.
+	void print_debug_1(const std::string &msg) const;		// print some stuff for debugging adding the models
 protected:
 	MPI_Comm comm;									// should be the same comm as in PM_SimProxy
 	int Rank;
 													// All the data below are stored on comm-RANKS-0 only
 	std::vector<int> block_ind;						// Np-length array, block_ind[i] stores index of block to which model "i" corresponds, Np - number of design points (models)
-
+															// array 'block_ind' should be [non-strictly] increasing
 	std::vector<std::string> par_names;				// sorted parameter names (names as in KW_parameters)
 	std::vector<std::vector<double>> params;		// Np x full_dim array of [external] parameter values, Np - number of design points (models)
 
@@ -352,14 +371,8 @@ public:
 													// "pname" should be the superset of 'par_names'; "pname" should contain unique elements
 													// smry.dates, smry.vecs should be supersets of last block of 'data_dates', 'data_vecs'; smry.dates, smry.vecs should contain unique elements
 													// all input and "output" is only referenced on comm-RANKS-0
-													// the function returns a non-empty message if the added model was popped out (NOTE: even in this case 'par_names' get updated)
+													// the function returns a non-empty message if any [early] models are deleted (NOTE: in any case 'par_names' get updated)
 													// the function also fills Xmin, Xavg
-	std::string AddSimProxyFile(const SimProxyFile *smry_0);	// appends the proxy file 'smry_0' to 'this'
-																// currently, both proxy files should contain 1 block, and have the same parameters names, same dates and vecs
-																// all input and "output" is only referenced on comm-RANKS-0
-																// models from 'smry_0' which are too close to the existing models, are skipped (similar to AddModel())
-																// the function returns a message counting the added/skipped models
-																// Xmin, Xavg are not updated
 
 	void PopModel();								// pops the last added model; *NOTE* 'par_names' is not changed!; should be called on all ranks
 	void SaveToBinary(const std::string &fname) const;			// saves to binary file (only comm-RANKS-0 is working, but call it on all ranks)
@@ -384,6 +397,5 @@ public:
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 }	// namespace HMMPI
-
 
 #endif /* ECLSMRY_H_ */

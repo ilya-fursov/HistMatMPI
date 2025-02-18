@@ -456,6 +456,26 @@ void KW_rundebug::Run()
 //	for (double s = 0; s <= 5; s += 0.5)
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
+	std::vector<double> u(10), v(5), w(15), y, z;
+	std::iota(u.begin(), u.end(), 1.1);
+	std::iota(v.begin(), v.end(), -2.2);
+	std::iota(w.begin(), w.end(), 0.03);
+	{
+		//std::cout << "DEBUG-A\n";
+		std::vector<std::vector<double>> XX = {u, y, v, z, w};
+		std::vector<std::vector<double>> YY = HMMPI::SqueezeVec(std::move(XX));
+		//std::cout << "DEBUG-B\n";
 
+		FILE *t = fopen("file_06feb.txt", "w");
+		fprintf(t, "YY\n");
+		HMMPI::write_ascii(t, YY);
+		//std::cout << "DEBUG-C\n";
+		fprintf(t, "XX\n");
+		HMMPI::write_ascii(t, XX);
+		//std::cout << "DEBUG-D\n";
+		fclose(t);
+	}
+
+	//std::cout << HMMPI::ToString(u);
 }
 //------------------------------------------------------------------------------------------

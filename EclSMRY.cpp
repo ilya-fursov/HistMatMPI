@@ -1276,24 +1276,21 @@ std::string SimProxyFile::msg_contents() const			// message reporting what is st
 {
 	std::string msg;
 	std::vector<int> bs = block_starts();
-	if (Rank == 0)
-	{
-		char buff[BUFFSIZE], buffeng[BUFFSIZE];
-		sprintf(buff, "Загружено %zu модел(ей), количество параметров %zu\n", block_ind.size(), par_names.size());
+	if (Rank == 0) {
+		char buffrus[BUFFSIZE], buffeng[BUFFSIZE];
+		sprintf(buffrus, "Загружено %zu модел(ей), количество параметров %zu\n", block_ind.size(), par_names.size());
 		sprintf(buffeng, "Loaded %zu model(s), number of parameters %zu\n", block_ind.size(), par_names.size());
-		msg = MessageRE(buff, buffeng);
+		msg = MessageRE(buffrus, buffeng);
 
 		assert(data_dates.size() == data_vecs.size());
 		assert(data_dates.size()+1 == bs.size());
 
-		for (size_t i = 0; i < data_dates.size(); i++)
-		{
-			sprintf(buff, "* блок %zu: количество моделей %d, количество дат %zu, количество векторов %zu\n", i+1, *--bs.end() - bs[i], data_dates[i].size(), data_vecs[i].size());
-			sprintf(buffeng, "* block %zu: number of models %d, number of dates %zu, number of vectors %zu\n", i+1, *--bs.end() - bs[i], data_dates[i].size(), data_vecs[i].size());
-			msg += MessageRE(buff, buffeng);
+		for (size_t i = 0; i < data_dates.size(); i++) {
+			sprintf(buffrus, "* model-block %zu: количество моделей %d, количество дат %zu, количество векторов %zu\n", i, bs[i+1] - bs[i], data_dates[i].size(), data_vecs[i].size());
+			sprintf(buffeng, "* model-block %zu: number of models %d, number of dates %zu, number of vectors %zu\n", i, bs[i+1] - bs[i], data_dates[i].size(), data_vecs[i].size());
+			msg += MessageRE(buffrus, buffeng);
 		}
 	}
-
 	return msg;
 }
 //--------------------------------------------------------------------------------------------------
@@ -1403,6 +1400,47 @@ std::vector<int> SimProxyFile::block_starts() const
 	return res;
 }
 //--------------------------------------------------------------------------------------------------
+void SimProxyFile::recalc_blocks(int last_block)	// for 'block_ind' with some elements marked as '-1', removes them, recalculates 'block_ind',
+{													// and clears the elements of 'data_dates', 'data_vecs' where appropriate.
+	int b_new = -1;									// 'last_block' is the last block index in the old 'block_ind' as of before setting any '-1' marks.
+	int b_last = -1;
+
+	// 1. Find the blocks to be erased
+	std::vector<int> unique_olds = Unique(block_ind);
+	std::vector<size_t> erase_list;
+	for (int b = 0; b <= last_block; b++)	// b : all the old blocks
+		if (std::find(unique_olds.begin(), unique_olds.end(), b) == unique_olds.end()) erase_list.push_back(b);		// block 'b' not found -> erase it
+
+	// 2. Recalculate block_ind
+	std::vector<int> block_ind_new;
+	block_ind_new.reserve(block_ind.size());
+	for (size_t i = 0; i < block_ind.size(); i++) {
+		if (block_ind[i] != -1) {
+			assert(block_ind[i] >= b_last);
+			if (block_ind[i] != b_last) b_new++;
+			block_ind_new.push_back(b_new);
+			b_last = block_ind[i];
+		}
+	}
+	block_ind = std::move(block_ind_new);
+
+	// 3. Clear 'data_dates', 'data_vecs'
+	for (size_t i = 0; i < erase_list.size(); i++) {
+		assert(erase_list[i] < data_dates.size());
+		data_dates[erase_list[i]].clear();
+		data_vecs[erase_list[i]].clear();
+	}
+}
+//--------------------------------------------------------------------------------------------------
+void SimProxyFile::print_debug_1(const std::string &msg) const	// print some stuff for debugging adding the models
+{
+	if (Rank == 0) {
+		printf("%s\nblock_ind (len = %zu): %s", msg.c_str(), block_ind.size(), ToString(block_ind, "%d", " ").c_str());
+		printf("Arrays lengths\tdata_dates %zu\tdata_vecs %zu\tdata %zu\tparams %zu\n", data_dates.size(), data_vecs.size(), data.size(), params.size());
+		printf("Xmin = %g\tXavg = %g\n", Xmin, Xavg);
+	}
+}
+//--------------------------------------------------------------------------------------------------
 SimProxyFile::~SimProxyFile()
 {
 	delete Ecl;
@@ -1414,7 +1452,6 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 {
 	datapoint_block.clear();
 	datapoint_modcount.clear();
-	std::string msg = "";
 
 	int err = 0;		// for exceptions synchronising
 	try {
@@ -1499,10 +1536,10 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 					if (count_err[j] > 0) {
 						sprintf(msgrus, "При применении backval = '%.500s' для параметра '%.100s' (тип EXP) получились значения <= 0 для %d модели(ей) из ECLSMRY", bv_sorted[j].c_str(), pname_sorted[j].c_str(), count_err[j]);
 						sprintf(msgeng, "When engaging backval = '%.500s' for parameter '%.100s' (EXP type), values <= 0 were obtained for %d model(s) in ECLSMRY", bv_sorted[j].c_str(), pname_sorted[j].c_str(), count_err[j]);
-						if (msg.size() > 0) msg += "\n";
-						msg += MessageRE(msgrus, msgeng);
+						if (errmsg.size() > 0) errmsg += "\n";
+						errmsg += MessageRE(msgrus, msgeng);
 					}
-				throw Exception(msg);
+				throw Exception(errmsg);
 			}
 
 			params_new[params.size()] = std::move(pval_sorted);			// transfer the params values from the model which we are adding
@@ -1566,49 +1603,55 @@ std::string SimProxyFile::AddModel(const std::vector<std::string> &pname, const 
 
 	MPI_Barrier(comm);
 
-	// check if the added model is repeating an early model
-	int popflag = 0;
-	if (Rank == 0 && block_ind.size() > 1)
-	{
-		size_t par_size = params.size();
-		std::vector<std::vector<double>> params_int(par_size);
+	// Check if the added model is approximately repeating early models, and delete these early models
+	std::string msg = "";
+	Xmin = Xavg = 0;
+	if (Rank == 0 && block_ind.size() > 1) {
+		const int last_block = *--block_ind.end();
+		const size_t Np = params.size();		// Number of models (including the just added one)
+		std::vector<std::vector<double>> params_int(Np);
 		std::vector<size_t> ind = GetSubvecIndSorted(par_names, pname);
 		assert(pname.size() == ind.size() && pname.size() == par_names.size());
-		for (size_t i = 0; i < par_size; i++)
-		{
+		for (size_t i = 0; i < Np; i++) {
 			params_int[i] = Reorder(params[i], ind);
 			params_int[i] = par_tran->ExternalToInternal(params_int[i]);	// convert to internal params
 		}
 
-		Mat dist = KrigStart::DistMatr(params_int, 0, par_size-1, par_size-1, par_size);
-		size_t i1, j1;
-		Xmin = dist.Min(i1, j1);
-		Xavg = dist.Sum()/dist.ICount();
+		Mat dist = KrigStart::DistMatr(params_int, 0, Np-1, Np-1, Np);		// (Np-1)*1 distance matrix
 
-		for (size_t i = 0; i < dist.ICount(); i++)
-			if (dist(i, 0) < Xtol && block_ind[i] == *--block_ind.end())	// the last (added) model is close to model 'i', and is in the same block
-			{
-				msg = stringFormatArr("Добавленная модель убрана из ECLSMRY, поскольку она слишком близка к существующей модели-{0:%zu}. Но список имен параметров в ECLSMRY был обновлен!\n",
-									  "The model added was removed from ECLSMRY, since it is too close to the existing model-{0:%zu}. However, parameters names list in ECLSMRY was updated!\n", i);
-				break;
+		Xmin = std::numeric_limits<double>::max();
+		Xavg = 0;
+		int count = 0;
+		for (size_t i = 0; i < dist.ICount(); i++) {	// i = [0, Np-1), i.e. all previous models
+			if (dist(i, 0) < Xtol) {	// the just-added model is close to model 'i': mark model 'i' for deletion
+				char msgrus[BUFFSIZE];
+				char msgeng[BUFFSIZE];
+				sprintf(msgrus, "Существующая модель-%zu из model-block-%d удаляется из ECLSMRY из-за близости к новой модели (dist = %g)\n", i, block_ind[i], dist(i, 0));
+				sprintf(msgeng, "Existing model-%zu from model-block-%d is removed from ECLSMRY due to proximity to the new model (dist = %g)\n", i, block_ind[i], dist(i, 0));
+				msg += MessageRE(msgrus, msgeng);
+
+				params[i].clear();
+				data[i].clear();
+				block_ind[i] = -1;
+			} else {	// model 'i' is preserved: calculate stats
+				if (dist(i, 0) < Xmin) Xmin = dist(i, 0);
+				Xavg += dist(i, 0);
+				count++;
 			}
-		if (msg != "")
-			popflag = 1;
+		}
+		if (count > 0) Xavg /= count;
+		else Xmin = Xavg = 0;
+
+		if (msg != "") {
+			recalc_blocks(last_block);
+
+			params = SqueezeVec(std::move(params));		// remove the possible gaps in the outer vectors
+			data_dates = SqueezeVec(std::move(data_dates));
+			data_vecs = SqueezeVec(std::move(data_vecs));
+			data = SqueezeVec(std::move(data));
+		}
 	}
-
-	MPI_Bcast(&popflag, 1, MPI_INT, 0, comm);		// popflag is sync
-	if (popflag)
-		PopModel();
-
 	return msg;
-}
-//--------------------------------------------------------------------------------------------------
-std::string SimProxyFile::AddSimProxyFile(const SimProxyFile *smry_0)		// appends the proxy file 'smry_0' to 'this'
-{															// currently, both proxy files should contain 1 block, and have the same parameters names, same dates and vecs
-															// all input and "output" is only referenced on comm-RANKS-0
-	// TODO													// models from 'smry_0' which are too close to the existing models, are skipped (similar to AddModel())
-															// the function returns a message counting the added/skipped models
-															// Xmin, Xavg are not updated
 }
 //--------------------------------------------------------------------------------------------------
 void SimProxyFile::PopModel()
@@ -1808,16 +1851,19 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 	std::vector<std::vector<double>> int_params = get_internal_parameters(parameters);		// valid on comm-RANKS-0
 	std::vector<int> mod_indices(int_params.size());					// accompanying indices of the models (design points)
 	std::iota(mod_indices.begin(), mod_indices.end(), 0);
+	std::vector<int> block_indices = block_ind;
 
 	// 3. Make reordering of the models if necessary
 	if (!plain_order)
 	{
-		HMMPI::Mat DMinternal = KrigStart::DistMatr(int_params, 0, int_params.size(), 0, int_params.size());	// distance matrix based on internal parameters
-		std::vector<size_t> ord_models = KrigStart::IndSignificant(DMinternal, int_params.size());	// the order is: sparse to dense
+		Mat DMinternal = KrigStart::DistMatr(int_params, 0, int_params.size(), 0, int_params.size());	// distance matrix based on internal parameters
+		std::vector<size_t> ord_models = KrigStart::IndSignificant(DMinternal, int_params.size());		// the order is: sparse to dense
 		assert(ord_models.size() == int_params.size());
-		std::reverse(ord_models.begin(), ord_models.end());											// now the order will be from dense to sparse
-		int_params = HMMPI::Reorder(int_params, ord_models);
-		mod_indices = HMMPI::Reorder(mod_indices, ord_models);
+		assert(ord_models.size() == block_indices.size());
+		std::reverse(ord_models.begin(), ord_models.end());												// now the order will be from dense to sparse
+		int_params = Reorder(int_params, ord_models);
+		mod_indices = Reorder(mod_indices, ord_models);
+		block_indices = Reorder(block_indices, ord_models);
 	}
 
 	// 4. Output to the file
@@ -1826,7 +1872,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 		FILE *file = fopen(fname.c_str(), "w");
 		assert(file != NULL);
 
-		fprintf(file, "%-5.5s\t%-11.11s", "", "");			// Header line 1: well names
+		fprintf(file, "%-5.5s\t%-5.5s\t%-11.11s", "", "", "");						// Header line 1: well names
 		for (size_t j = 0; j < parameters->name.size(); j++)
 			fprintf(file, "\t%-17.17s", "");
 		for (size_t v = 0; v < vecs.size(); v++)
@@ -1834,7 +1880,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 				fprintf(file, "\t%-21.21s", vecs[v].first.c_str());
 		fprintf(file, "\n");
 
-		fprintf(file, "%-5.5s\t%-11.11s", "", "");			// Header line 2: vector names
+		fprintf(file, "%-5.5s\t%-5.5s\t%-11.11s", "model", "model", "distance");	// Header line 2: property names
 		for (size_t j = 0; j < parameters->name.size(); j++)
 			fprintf(file, "\t%-17.17s", "");
 		for (size_t v = 0; v < vecs.size(); v++)
@@ -1842,7 +1888,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 				fprintf(file, "\t%-21.21s", vecs[v].second.c_str());
 		fprintf(file, "\n");
 
-		fprintf(file, "%-5.5s\t%-11.11s", "#", "DIST(i-1,i)");					// Header line 3: number, param names, dates
+		fprintf(file, "%-5.5s\t%-5.5s\t%-11.11s", "index", "block", "(i-1, i)");	// Header line 3: indices, param names, dates
 		for (size_t j = 0; j < parameters->name.size(); j++)
 			fprintf(file, "\t%-17.17s", parameters->name[j].c_str());
 		for (size_t v = 0; v < vecs.size(); v++)
@@ -1850,11 +1896,12 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 				fprintf(file, "\t%-21.21s", dates[d].ToString().c_str());
 		fprintf(file, "\n");
 
-		assert(datapoint_block.size() == N);									// datapoint_block is sync
+		assert(datapoint_block.size() == N);										// datapoint_block is sync
 		Mat int_params_prev;							// will store internal representation for distance calculation
 		for (size_t i = 0; i < int_params.size(); i++)
 		{
 			fprintf(file, "%-5d", mod_indices[i]);			// Model index
+			fprintf(file, "\t%-5d", block_indices[i]);		// Block index
 			if (i == 0)
 				fprintf(file, "\t%-11.11s", "--");			// Distance (i-1, i)
 			else

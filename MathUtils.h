@@ -77,6 +77,9 @@ template <class FwdIterator, class T>
 FwdIterator FindBinary(FwdIterator first, FwdIterator last, const T &val);			// binary search of "val" in a SORTED range [first, last); returns iterator to the first found element == "val", returns "last" if not found
 
 template <class T>
+std::vector<std::vector<T>> SqueezeVec(std::vector<std::vector<T>> v);				// returns a copy of "v" with empty v[i]'s removed
+
+template <class T>
 std::vector<T> Reorder(const std::vector<T> &v, const std::vector<size_t> &ord);	// creates vector from elements of "v" with indices from "ord" (indices may be repeated)
 
 template <class T>																		// treats "v" as row-major storage of M x N matrix, extracts ordi.size() x ordj.size() sub-matrix with indices "ordi", "ordj" (indices may be repeated)
@@ -114,7 +117,6 @@ template <class T>
 void SaveASCII(FILE *f, const T* const *Data, size_t len1, size_t len2, std::string fmt = "%12.8g");	// save Data[len1][len2] to "f" with given format; len1 numbers rows, len2 - columns
 template <class T>
 void VecAppend(std::vector<T> &a, const std::vector<T> &b);						// append to the vector end: a += b
-
 
 //------------------------------------------------------------------------------------------
 // This class represents matrices or vectors (= N x 1 matrices).
@@ -688,13 +690,25 @@ std::vector<size_t> SortPermutation(RandomAccessIterator first, RandomAccessIter
 }
 //------------------------------------------------------------------------------------------
 template <class FwdIterator, class T>
-FwdIterator FindBinary (FwdIterator first, FwdIterator last, const T &val)
+FwdIterator FindBinary(FwdIterator first, FwdIterator last, const T &val)
 {
 	FwdIterator i = std::lower_bound(first, last, val);
 	if (i != last && !(val < *i))
 		return i;		// found
 	else
 		return last;	// not found
+}
+//------------------------------------------------------------------------------------------
+template <class T>
+std::vector<std::vector<T>> SqueezeVec(std::vector<std::vector<T>> v)		// returns a copy of "v" with empty v[i]'s removed
+{
+	std::vector<std::vector<T>> res;
+	res.reserve(v.size());
+
+	for (size_t i = 0; i < v.size(); i++)
+		if (v[i].size() > 0) res.push_back(std::move(v[i]));
+
+	return res;
 }
 //------------------------------------------------------------------------------------------
 template <class T>

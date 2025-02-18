@@ -1271,8 +1271,8 @@ std::string PM_SimProxy::proc_msg() const					// sync message showing (1) the nu
 	std::string res = (std::string)HMMPI::MessageRE("Точки данных по процессам: ", "Data points on processors: ") + HMMPI::ToString(ends_size, "%d", ", ");
 
 	// (2), gather all mat_eff_rank's
-	res += (std::string)HMMPI::MessageRE("Эффективный ранг матрицы кригинга (столбцы <-> MPI-процессы), Mat(bl,col) - data_pts:\n",
-										 "Effective rank of kriging matrix (columns <-> MPI-processes), Mat(bl,col) - data_pts:\n");
+	res += (std::string)HMMPI::MessageRE("Эффективный ранг матрицы кригинга (столбцы <-> MPI-процессы), Mat(pt_bl,color) - data_pts:\n",
+										 "Effective rank of kriging matrix (columns <-> MPI-processes), Mat(pt_bl,color) - data_pts:\n");
 	std::string msg = "";
 	for (int r = 0; r < size; r++)							// compose the message rank by rank
 	{
@@ -1296,8 +1296,8 @@ std::string PM_SimProxy::proc_msg() const					// sync message showing (1) the nu
 	char buff[HMMPI::BUFFSIZE + 5], buff1[HMMPI::BUFFSIZE];
 	for (size_t i = 0; i < starts.size(); i++)
 	{
-		sprintf(buff1, "%zu(%d,%2d) -%4d", i, dp_block_color[i].first, dp_block_color[i].second, start_Nends[i]);	// start(block,color) - data_pts
-		sprintf(buff, "%15s: ", buff1);
+		sprintf(buff1, "%zu(%d,%3d) -%4d", i, dp_block_color[i].first, dp_block_color[i].second, start_Nends[i]);	// start(point-block,color) - data_pts
+		sprintf(buff, "%17s: ", buff1);
 		res += buff;
 		for (int r = 0; r < size; r++)
 		{
