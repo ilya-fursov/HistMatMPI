@@ -809,9 +809,10 @@ protected:
 	HMMPI::SimProxyFile Data;
 
 public:
-	std::string fname;			// eclsmry file name; if 'fname' is empty -> empty SimProxyFile is created
+	std::string fname;			// eclsmry file name; if file 'fname' is empty -> then empty SimProxyFile is created
 	int backup;					// specifies how many previous versions are backed up
-	double Xtol;				// if |xnew - xi| < Xtol, and dates & vecs lists have not changed, a new model will not be added
+	double Xtol;				// if |xnew - xi| < Xtol, xi is deleted, e.g. to avoid model duplication
+	std::string format_out;		// STANDARD, COMPRESSED - defines how the file is saved
 
 	KW_eclsmry();
 	virtual void FinalAction() noexcept;	// reads the file

@@ -55,6 +55,7 @@ public:
 	Date(const std::string &s);						// accepted 's' formats: DD.MM.YYYY, DD/MM/YYYY, optionally followed by " hh:mm::ss" or " hh:mm"
 	Date(int d, int m, int y, double s = 0) : Day(d), Month(m), Year(y), sec(s) {};
 	bool operator==(const Date &rhs) const {return Day == rhs.Day && Month == rhs.Month && Year == rhs.Year && sec == rhs.sec;};
+	bool operator!=(const Date &rhs) const {return !(*this == rhs);};
 	bool operator>(const Date &rhs) const;
 	bool operator<(const Date &rhs) const {return !(*this > rhs) && !(*this == rhs);};
 	void add(double days);							// shift the given date-time by the time interval provided (1.0 = 1 day)
@@ -314,15 +315,23 @@ public:
 class SimProxyFile
 {
 private:
-	const double stamp[4] = {exp(1), acos(-1), 1, 0};		// e, п, 1, 0 - for data stamp
-	void stamp_file(FILE *fd) const;						// write data stamp to a binary file to distinguish a valid file for SimProxyFile
-	int check_stamp(FILE *fd) const;						// check if data stamp is valid; returns: 0 - invalid stamp, 1 - empty file, 2 - valid non-empty file
-	std::string msg_contents() const;						// message reporting what is stored; should be called on all ranks
+	class data_stamp
+	{
+	private:
+		double stamp[4] = {exp(1), acos(-1), 2, 0};		// {e, п, ver, 0} - array used for data stamp;
+	public:												//      stamp[2] = ver = {1, 2} - file-format version: {on reading : set from file}, {on writing: to be set from KW_eclsmry.version}
+		double get_stamp2() const {return stamp[2];};
 
-	mutable PMEclipse *Ecl;									// these objects are not copied by copy ctor
+		void stamp_file(FILE *fd, int ver);				// write data stamp to a binary file (marking the file validity); besides, stamp[2] will be set to 'ver'
+		int check_stamp(FILE *fd);						// read data stamp and check its validity; returns: 0 - invalid stamp, 1 - empty file,
+	};													//      2 - valid non-empty file (for which stamp[2] will hold the version: 1 or 2)
+	mutable data_stamp D_stamp;						// use on comm-RANKS-0!
+
+	std::string msg_contents() const;				// message reporting what is stored; should be called on all ranks
+	mutable PMEclipse *Ecl;							// these objects are not copied by copy ctor
 	mutable PM_SimProxy *SimProxy;
 	mutable HMMPI::BlockDiagMat *BDC;
-	const ParamsTransform *par_tran;						// used for transforming parameters in AddModel() for model repeat checking
+	const ParamsTransform *par_tran;				// used for transforming parameters in AddModel() for model repeat checking
 													// two vectors of size 'len' filled by extract_proxy_vals(); sync on "comm"
 	mutable std::vector<int> datapoint_block;		// index of the first block where the given data point exists
 	mutable std::vector<int> datapoint_modcount;	// number of models in which the given data point exists
@@ -352,9 +361,9 @@ protected:
 	std::vector<std::vector<Date>> data_dates;				// data_dates[block][d] - sorted list of dates for "block", 0 <= d < Nd(block), Nd(block+1) >= Nd(block)
 	std::vector<std::vector<SimSMRY::pair>> data_vecs;		// data_vecs[block][v] - sorted list of eclipse vectors for "block", 0 <= v < Nv(block), Nv(block+1) >= Nv(block)
 															// 0 <= block < Nblock
-	std::vector<std::vector<double>> data;			// Np x ... data values, inner vectors can have different length (they store 1st date + all vecs, 2nd date + all vecs, ...)
-
-
+	mutable std::vector<std::vector<double>> data;	// Np x ... data values, inner vectors can have different length (they store 1st date + all vecs, 2nd date + all vecs, ...)
+															// 'data' is mutable for transposing in-place
+	void transpose_data(bool rows_are_dates) const;	// transpose each data[i] in place, assuming row-major storage, with Nrows from 'data_dates' (if rows_are_dates), or from 'data_vecs'
 public:
 	double Xtol;									// if |xnew - xi| < Xtol, and dates & vecs lists for 'i' and 'new' are the same, the new model will not be added
 	double Xmin, Xavg;								// after AddModel, distances |xnew - xi| are calculated, and their min and mean are saved here (only RANKS-0)
@@ -375,9 +384,9 @@ public:
 													// the function also fills Xmin, Xavg
 
 	void PopModel();								// pops the last added model; *NOTE* 'par_names' is not changed!; should be called on all ranks
-	void SaveToBinary(const std::string &fname) const;			// saves to binary file (only comm-RANKS-0 is working, but call it on all ranks)
-	std::string LoadFromBinary(const std::string &fname);		// loads from binary file, returns a short message; only comm-RANKS-0 is working, but "fname" should be sync on all ranks
-	void SaveToAscii(FILE *fd) const;							// saves to ASCII file (only comm-RANKS-0 is working)
+	void SaveToBinary(const std::string &fname, int ver) const;		// saves to binary file (only comm-RANKS-0 is working, but call it on all ranks)
+	std::string LoadFromBinary(const std::string &fname);			// loads from binary file, returns a short message; only comm-RANKS-0 is working, but "fname" should be sync on all ranks
+	void SaveToAscii(FILE *fd) const;								// saves to ASCII file (only comm-RANKS-0 is working)
 	PM_SimProxy *MakeProxy(const std::vector<Date> &dates, const std::vector<SimSMRY::pair> &vecs, const std::vector<double> &all_sigmas, Parser_1 *K, KW_item *kw, std::string cwd) const;		// creates a proxy model which resides on 'comm'
 																// inputs 'dates', 'vecs', 'all_sigmas' (only comm-RANKS-0) are as in extract_proxy_vals()
 																// inputs  'K', 'kw', 'cwd' (all comm-RANKS) are as in ModelFactory::Make

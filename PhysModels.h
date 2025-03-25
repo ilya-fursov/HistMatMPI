@@ -694,13 +694,13 @@ public:
 //---------------------------------------------------------------------------
 // One more type of DataProxy,
 // N_blocks <= |starts| <= |ends|, each starts[i] uses its own X, D, pscale; "starts" are not sync (but |starts| is sync, and non-empty starts[i] are sync)
-// *block* refers to the data_points with the same number of design models, e.g.
+// *point-block* refers to the data_points with the same number of design models, e.g.
 //			data_points
 // Np		|||
 // des.pts. ||| |||
 // 			||| ||| ||
-// blocks:	b0  b1  b2
-// Each block may contain more than one starts[i], if they have different 'pscale'
+// pt-blck:	b0  b1  b2
+// Each point-block may contain more than one starts[i], if they have different 'pscale'
 //---------------------------------------------------------------------------
 class PM_SimProxy : public PM_DataProxy
 {

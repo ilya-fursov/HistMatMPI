@@ -2060,15 +2060,13 @@ std::string KW_eclsmry::copy_file_exists(const std::string &f0, int c)
 	MPI_Bcast(&flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	std::string msg;
-	if (flag)
-	{
+	if (flag) {
 		msg = f0 + " -> " + f0 + "~\n";
 		std::string cmd = "cp " + f0 + " " + f0 + "~";		// copy command
 		msg += copy_file_exists(f0 + "~", c-1);
 		if (K->MPI_rank == 0)
 			system(cmd.c_str());
 	}
-
 	MPI_Barrier(MPI_COMM_WORLD);
 	return msg;
 }
@@ -2078,10 +2076,12 @@ KW_eclsmry::KW_eclsmry() : Data(MPI_COMM_WORLD)
 	name = "ECLSMRY";
 
 	DEFPAR(fname, "");
-	DEFPAR(backup, 3);
+	DEFPAR(backup, 1);
 	DEFPAR(Xtol, 1e-8);
+	DEFPAR(format_out, "COMPRESSED");
 
 	FinalizeParams();
+	EXPECTED[3] = std::vector<std::string>{"STANDARD", "COMPRESSED"};
 }
 //------------------------------------------------------------------------------------------
 void KW_eclsmry::FinalAction() noexcept
@@ -2113,9 +2113,10 @@ std::string KW_eclsmry::Save()
 {
 	std::string fn = HMMPI::getFullPath(this->CWD, fname), msg;
 	msg = copy_file_exists(fn, backup);
-	Data.SaveToBinary(fn);			// to be called on all ranks
+	Data.SaveToBinary(fn, format_out == "STANDARD" ? 1 : 2);		// to be called on all ranks
 
-	return "ECLSMRY (" + Data.models_params_msg() + (std::string)HMMPI::MessageRE(") сохранен в ", ") saved to ") + fn + "\n" + msg;
+	return "ECLSMRY (" + (format_out == "STANDARD" ? (std::string)"" : format_out + ", ") + Data.models_params_msg() +
+		   (std::string)HMMPI::MessageRE(") сохранен в ", ") saved to ") + fn + "\n" + msg;
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------

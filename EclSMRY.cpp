@@ -511,7 +511,7 @@ void EclSMRY::readSMSPEC(std::string modname)
 
 			delete pk;
 		}
-		fclose(file);
+		if (file) fclose(file);
 		file = NULL;
 
 		// fill 'Units' and 'vecs'
@@ -529,8 +529,7 @@ void EclSMRY::readSMSPEC(std::string modname)
 	}
 	catch (...)
 	{
-		if (file != NULL)
-			fclose(file);
+		if (file) fclose(file);
 		throw;
 	}
 }
@@ -565,7 +564,7 @@ void EclSMRY::readUNSMRY(std::string modname)
 			HMMPI::VecAppend(data_fl, pk_fl->data);
 			delete pk;
 		}
-		fclose(file);
+		if (file) fclose(file);
 		file = NULL;
 
 		// fill 'dates'
@@ -586,8 +585,7 @@ void EclSMRY::readUNSMRY(std::string modname)
 	}
 	catch (...)
 	{
-		if (file != NULL)
-			fclose(file);
+		if (file) fclose(file);
 		throw;
 	}
 }
@@ -1057,12 +1055,11 @@ void tNavSMRY::read_res(std::string modname)		// reads data from "...well.res"; 
 							ecl_prop_transform[i].func(Data.data() + t*propsfound_fullobj_N + i*fullobj_N + j);			// recalculate
 					}
 			}
-
-			fclose(f);
+			if (f) fclose(f);
 		}
 		catch (...)
 		{
-			fclose(f);
+			if (f) fclose(f);
 			throw;
 		}
 	}
@@ -1210,7 +1207,7 @@ void tNavSMRY::dump_all(std::string fname) const
 	for (auto x : vecs)
 		fprintf(f, "\t%s_%s", x.first.c_str(), x.second.c_str());
 
-	fclose(f);
+	if (f) fclose(f);
 }
 //--------------------------------------------------------------------------------------------------
 std::string tNavSMRY::dates_file() const		// name of file with dates
@@ -1253,22 +1250,30 @@ SimSMRY *tNavSMRY22::Copy() const
 //--------------------------------------------------------------------------------------------------
 // SimProxyFile
 //--------------------------------------------------------------------------------------------------
-void SimProxyFile::stamp_file(FILE *fd) const
+void SimProxyFile::data_stamp::stamp_file(FILE *fd, int ver)	// write data stamp to a binary file (marking the file validity); besides, stamp[2] will be set to 'ver'
 {
+	assert(ver == 1 || ver == 2);
+	stamp[2] = ver;
 	fwrite(stamp, sizeof(double), 4, fd);
 }
 //--------------------------------------------------------------------------------------------------
-int SimProxyFile::check_stamp(FILE *fd) const
-{
+int SimProxyFile::data_stamp::check_stamp(FILE *fd)		// read data stamp and check its validity; returns: 0 - invalid stamp, 1 - empty file,
+{														// 2 - valid non-empty file (for which stamp[2] will hold the version: 1 or 2)
 	double buff[4];
-	size_t c = fread(buff, 1, sizeof(buff), fd);
-	if (c == 0)						// 0 bytes read -> empty file
+	size_t c = fread(buff, sizeof(double), 4, fd);		// c = number of objects read successfully
+	if (c == 0)						// 0 elements read -> empty file
 		return 1;
-	else if (c < sizeof(buff))		// couldn't read the whole stamp -> invalid file
+	else if (c < 4)					// couldn't read the whole stamp -> invalid file
 		return 0;
-	else if (std::vector<double>(stamp, stamp+4) == std::vector<double>(buff, buff+4))	// stamp is valid
+	else if (buff[0] == stamp[0] &&
+			 buff[1] == stamp[1] &&
+			(buff[2] == 1 || buff[2] == 2) &&
+			 buff[3] == stamp[3])	// stamp is valid, version is valid
+	{
+		stamp[2] = buff[2];
 		return 2;
-	else																				// stamp is not valid
+	}
+	else							// stamp is not valid
 		return 0;
 }
 //--------------------------------------------------------------------------------------------------
@@ -1276,10 +1281,13 @@ std::string SimProxyFile::msg_contents() const			// message reporting what is st
 {
 	std::string msg;
 	std::vector<int> bs = block_starts();
+	const int ver = (int)D_stamp.get_stamp2();
+	assert(ver == 1 || ver == 2);
 	if (Rank == 0) {
 		char buffrus[BUFFSIZE], buffeng[BUFFSIZE];
-		sprintf(buffrus, "Загружено %zu модел(ей), количество параметров %zu\n", block_ind.size(), par_names.size());
-		sprintf(buffeng, "Loaded %zu model(s), number of parameters %zu\n", block_ind.size(), par_names.size());
+		const char *format = (ver == 1 ? "STANDARD" : "COMPRESSED");
+		sprintf(buffrus, "Формат файла на входе: %.20s\nЗагружено %zu модел(ей), количество параметров %zu\n", format, block_ind.size(), par_names.size());
+		sprintf(buffeng, "Input file format: %.20s\nLoaded %zu model(s), number of parameters %zu\n", format, block_ind.size(), par_names.size());
 		msg = MessageRE(buffrus, buffeng);
 
 		assert(data_dates.size() == data_vecs.size());
@@ -1438,6 +1446,17 @@ void SimProxyFile::print_debug_1(const std::string &msg) const	// print some stu
 		printf("%s\nblock_ind (len = %zu): %s", msg.c_str(), block_ind.size(), ToString(block_ind, "%d", " ").c_str());
 		printf("Arrays lengths\tdata_dates %zu\tdata_vecs %zu\tdata %zu\tparams %zu\n", data_dates.size(), data_vecs.size(), data.size(), params.size());
 		printf("Xmin = %g\tXavg = %g\n", Xmin, Xavg);
+	}
+}
+//--------------------------------------------------------------------------------------------------
+void SimProxyFile::transpose_data(bool rows_are_dates) const	// transpose each data[i] in place, assuming row-major storage, with Nrows from 'data_dates' (if rows_are_dates),
+{																// or from 'data_vecs'
+	assert(block_ind.size() == data.size());
+	for (size_t i = 0; i < data.size(); i++) {
+		const size_t bl = block_ind[i];				// bl = block for model 'i'
+		assert (bl < data_dates.size() && bl < data_vecs.size());
+		if (rows_are_dates) data[i] = VecTranspose(data[i], data_dates[bl].size());
+		else                data[i] = VecTranspose(data[i], data_vecs[bl].size());
 	}
 }
 //--------------------------------------------------------------------------------------------------
@@ -1679,7 +1698,7 @@ void SimProxyFile::PopModel()
 	}
 }
 //--------------------------------------------------------------------------------------------------
-void SimProxyFile::SaveToBinary(const std::string &fname) const
+void SimProxyFile::SaveToBinary(const std::string &fname, int ver) const	// saves to binary file (only comm-RANKS-0 is working, but call it on all ranks)
 {
 	assert(data_dates.size() == data_vecs.size());
 
@@ -1707,76 +1726,80 @@ void SimProxyFile::SaveToBinary(const std::string &fname) const
 	if (vecs0_size == 0)
 		throw Exception("Попытка сохранить ECLSMRY с моделью, имеющей пустой список векторов", "Attempt to save ECLSMRY with a model having empty vectors list");
 
-	if (Rank == 0)
-	{
+	if (Rank == 0) {
 		FILE *fd = fopen(fname.c_str(), "wb");
 		if (fd == NULL)
 			throw Exception((std::string)MessageRE("Невозможно открыть файл для записи '", "Cannot open file for writing '") + fname + "'");	// this exception and other exceptions on Rank-0 are not sync, but they are not likely to happen
 
 		try
 		{
-			stamp_file(fd);
-			write_bin(fd, block_ind);
+			assert(ver == 1 || ver == 2);
+			if (ver == 2) transpose_data(true);		// transpose forward
+			D_stamp.stamp_file(fd, ver);
+			write_bin(fd, block_ind, ver);
 			write_bin(fd, par_names);
 			write_bin(fd, params);
 			write_bin(fd, data_dates);
 			write_bin(fd, data_vecs);
-			write_bin(fd, data);
+			write_bin(fd, data, ver);
+			if (ver == 2) transpose_data(false);	// transpose backward
 		}
 		catch (...)
 		{
-			fclose(fd);
+			if (fd) fclose(fd);
 			throw;
 		}
-
-		fclose(fd);
+		if (fd) fclose(fd);
 	}
 }
 //--------------------------------------------------------------------------------------------------
-std::string SimProxyFile::LoadFromBinary(const std::string &fname)
-{
+std::string SimProxyFile::LoadFromBinary(const std::string &fname)	// loads from binary file, returns a short message;
+{																	// only comm-RANKS-0 is working, but "fname" should be sync on all ranks
 	datapoint_block.clear();
 	datapoint_modcount.clear();
 
-	FILE *fd = fopen(fname.c_str(), "rb");
+	FILE *fd = NULL;		// only comm-RANKS-0 will open the file
+
+	RANK0_SYNCERR_BEGIN(comm);
+	fd = fopen(fname.c_str(), "rb");
 	if (fd == NULL)
 		throw Exception((std::string)MessageRE("Невозможно открыть файл для чтения '", "Cannot open file for reading '") + fname + "'");
+	RANK0_SYNCERR_END(comm);
 
 	std::string msg = "";
 	int check;
-	if (Rank == 0)
-		check = check_stamp(fd);
+	if (Rank == 0) check = D_stamp.check_stamp(fd);		// fills stamp[2] = version
 
 	MPI_Barrier(comm);
 	MPI_Bcast(&check, 1, MPI_INT, 0, comm);										// sync the stamp check
 
 	if (check == 1)
 		msg = MessageRE("Пустой файл ECLSMRY\n", "Empty ECLSMRY file\n");		// nothing to be read; msg is sync
-	else if (check == 0)
-	{
-		fclose(fd);
+	else if (check == 0) {
+		if (fd) fclose(fd);
 		throw Exception(MessageRE((std::string)"Файл " + fname + " не является корректным файлом ECLSMRY",		// a sync exception
 								  (std::string)"File " + fname + " is not a correct ECLSMRY file"));
-	}
-	else if (Rank == 0)
-	{
+	} else if (Rank == 0) {
 		try
 		{
-			read_bin(fd, block_ind);
+			const int ver = (int)D_stamp.get_stamp2();
+			assert(ver == 1 || ver == 2);
+			read_bin(fd, block_ind, ver);
 			read_bin(fd, par_names);
 			read_bin(fd, params);
 			read_bin(fd, data_dates);
 			read_bin(fd, data_vecs);
-			read_bin(fd, data);
+			read_bin(fd, data, ver);
+			if (ver == 2) transpose_data(false);
 		}
 		catch (...)
 		{
-			fclose(fd);
+			if (fd) fclose(fd);
 			throw;					// this exception on Rank-0 is not sync, but it's not likely to happen
 		}
 	}
 
-	fclose(fd);
+	if (fd) fclose(fd);
 	if (msg == "")
 		msg = msg_contents();		// called on all ranks
 
@@ -1936,7 +1959,7 @@ void SimProxyFile::ViewSmry(const std::string &fname, const std::vector<Date> &d
 				}
 			fprintf(file, "\n");
 		}
-		fclose(file);
+		if (file) fclose(file);
 	}
 }
 //--------------------------------------------------------------------------------------------------

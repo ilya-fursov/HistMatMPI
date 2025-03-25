@@ -407,11 +407,10 @@ void KW_rundebug::Run()
 //	IMPORTKWD(eclsmry, KW_eclsmry, "ECLSMRY");
 
 //	IMPORTKWD(cz, KW_CoordZcorn, "COORDZCORN");
-//	IMPORTKWD(pts, KW_3points, "3POINTS");
+	IMPORTKWD(pts, KW_3points, "3POINTS");
 //	IMPORTKWD(mat, KW_mat, "MAT");
 //	IMPORTKWD(matvec, KW_matvec, "MATVEC");
 //	Add_pre("GRIDDIMENS");
-
 	Finish_pre();
 
 	std::string str1 = "Гнев, богиня, воспой Ахиллеса, Пелеева сына\nГрозный, который Ахеянаям тысячи бедствий соделал\n"
@@ -456,26 +455,100 @@ void KW_rundebug::Run()
 //	for (double s = 0; s <= 5; s += 0.5)
 //		std::cout << s << "\t" << HMMPI::integr_Gauss(g3, n, -50, mu, s) << "\n";
 
-	std::vector<double> u(10), v(5), w(15), y, z;
-	std::iota(u.begin(), u.end(), 1.1);
-	std::iota(v.begin(), v.end(), -2.2);
-	std::iota(w.begin(), w.end(), 0.03);
-	{
-		//std::cout << "DEBUG-A\n";
-		std::vector<std::vector<double>> XX = {u, y, v, z, w};
-		std::vector<std::vector<double>> YY = HMMPI::SqueezeVec(std::move(XX));
-		//std::cout << "DEBUG-B\n";
 
-		FILE *t = fopen("file_06feb.txt", "w");
-		fprintf(t, "YY\n");
-		HMMPI::write_ascii(t, YY);
-		//std::cout << "DEBUG-C\n";
-		fprintf(t, "XX\n");
-		HMMPI::write_ascii(t, XX);
-		//std::cout << "DEBUG-D\n";
-		fclose(t);
-	}
+    // test find_repeated_chunks()
+    size_t Nmin = 3;
+    std::vector<size_t> starts, counts;
+    printf("LENGTH = %zu\n", pts->x.size());
 
-	//std::cout << HMMPI::ToString(u);
+    HMMPI::find_repeated_chunks(pts->x, Nmin, starts, counts);
+    printf("First (x)\n");
+    printf("starts [%zu]: %s\n", starts.size(), HMMPI::ToString(starts, "%-3zu", " ").c_str());
+    printf("counts [%zu]: %s\n\n", counts.size(), HMMPI::ToString(counts, "%-3zu", " ").c_str());
+
+    HMMPI::find_repeated_chunks(pts->y, Nmin, starts, counts);
+    printf("Second (y)\n");
+    printf("starts [%zu]: %s\n", starts.size(), HMMPI::ToString(starts, "%-3zu", " ").c_str());
+    printf("counts [%zu]: %s\n\n", counts.size(), HMMPI::ToString(counts, "%-3zu", " ").c_str());
+
+    HMMPI::find_repeated_chunks(pts->z, Nmin, starts, counts);
+    printf("Third (z)\n");
+    printf("starts [%zu]: %s\n", starts.size(), HMMPI::ToString(starts, "%-3zu", " ").c_str());
+    printf("counts [%zu]: %s\n\n", counts.size(), HMMPI::ToString(counts, "%-3zu", " ").c_str());
+
+    // TEST 11 MAR
+    HMMPI::RandNormal Rn;
+    std::vector<double> vec;
+
+    // Form the vector!
+    // 1. main part
+    for (size_t i = 0; i < 500; i++) {
+		double a1 = double(rand())/(double(RAND_MAX) + 1);
+
+		if (a1 < 0.7) vec.push_back(Rn.get());
+		else if (a1 < 0.85) HMMPI::VecAppend(vec, std::vector<double>(2, Rn.get()));
+		else if (a1 < 0.92) HMMPI::VecAppend(vec, std::vector<double>(3, +0.0));
+		else if (a1 < 0.96) HMMPI::VecAppend(vec, std::vector<double>(10, -0.0));
+		else if (a1 < 0.98) HMMPI::VecAppend(vec, std::vector<double>(50, +0.0));
+		else HMMPI::VecAppend(vec, std::vector<double>(300, -0.0));
+    }
+
+    for (size_t i = 0; i < 100; i++) {
+		vec.push_back(Rn.get());
+    }
+
+    // 2. additional part
+     std::vector<double> add(15, 12.34);
+     HMMPI::VecAppend(vec, add);             // (2) in the END
+//
+//     HMMPI::VecAppend(add, vec);             // (1) in FRONT
+//     vec = add;
+
+    printf("Vector size: %zu\n", vec.size());
+    FILE *f1 = fopen("vector_test_11mar.txt", "w"); // output for viewing
+    for (size_t i = 0; i < vec.size(); i++) {
+		fprintf(f1, "%g\n", vec[i]);
+    }
+    fclose(f1);
+
+    f1 = fopen("vector_test_14mar.bin", "wb");
+    HMMPI::write_bin_work(f1, vec, 2);
+    fclose(f1);
+
+    std::vector<double> vec2(vec.size());
+    FILE *f2 = fopen("vector_test_14mar.bin", "rb");
+    HMMPI::read_bin_work(f2, vec2, 2);
+    fclose(f2);
+
+    double norm = -1;
+    HMMPI::Mat M(vec, vec.size(), 1);
+    HMMPI::Mat M2(vec2, vec2.size(), 1);
+    if (vec.size() > 0)
+		norm = (M-M2).Norm2();
+    printf("----------\n!\n!\n!\n----------\nDIFF NORM = %g\n----------\n\n", norm);
+    printf("vec sizes: %zu\t%zu\n", vec.size(), vec2.size());
+
+
+    // Test 'not_equal'
+    std::vector<double> vec5 = {+0.0, -0.0, +1.0, -1.0, +2.0, -2.0, -0.0, 2.71828, +0.0};
+    HMMPI::Mat M5(vec5.size(), vec5.size(), 0);
+    HMMPI::Mat M6(vec5.size(), vec5.size(), 0);
+    for (size_t i = 0; i < vec5.size(); i++)
+    	for (size_t j = 0; j < vec5.size(); j++) {
+    		M5(i, j) = HMMPI::not_equal(vec5[i], vec5[j]) ? 1 : 0;
+    		M6(i, j) = (vec5[i] != vec5[j]) ? 1 : 0;
+    	}
+    K->AppText("Test 'not_equal'\n");
+    K->AppText(HMMPI::ToString(vec5));
+    K->AppText(M5.ToString());
+    K->AppText("Test '!='\n");
+    K->AppText(M6.ToString());
+
+
+	//################## TEST 20 mar
+//	FILE *f = fopen("100_summary.txt", "w");
+//	eclsmry->get_Data().SaveToAscii(f);
+//	fclose(f);
+
 }
 //------------------------------------------------------------------------------------------

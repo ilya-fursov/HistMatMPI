@@ -1085,14 +1085,14 @@ std::string stringFormatArr(std::string str, const std::vector<std::string> &dat
 //------------------------------------------------------------------------------------------
 // I/O of vectors to files
 //------------------------------------------------------------------------------------------	AUXILIARY OVERLOADS
-void write_bin(FILE *fd, const std::string &s)
+void write_bin(FILE *fd, const std::string &s, int mode)
 {
 	size_t len = s.size();
 	fwrite(&len, sizeof(len), 1, fd);
 	fwrite(s.data(), sizeof(char), len, fd);
 }
 //------------------------------------------------------------------------------------------
-void read_bin(FILE *fd, std::string &s)
+void read_bin(FILE *fd, std::string &s, int mode)
 {
 	size_t len;
 	fread_check(&len, sizeof(len), 1, fd);
@@ -1110,16 +1110,16 @@ void write_ascii(FILE *fd, const std::string &s)
 	fprintf(fd, "%9s\t", s.c_str());
 }
 //------------------------------------------------------------------------------------------
-void write_bin(FILE *fd, const std::pair<std::string, std::string> &p)
+void write_bin(FILE *fd, const std::pair<std::string, std::string> &p, int mode)
 {
-	write_bin(fd, p.first);
-	write_bin(fd, p.second);
+	write_bin(fd, p.first, mode);
+	write_bin(fd, p.second, mode);
 }
 //------------------------------------------------------------------------------------------
-void read_bin(FILE *fd, std::pair<std::string, std::string> &p)
+void read_bin(FILE *fd, std::pair<std::string, std::string> &p, int mode)
 {
-	read_bin(fd, p.first);
-	read_bin(fd, p.second);
+	read_bin(fd, p.first, mode);
+	read_bin(fd, p.second, mode);
 }
 //------------------------------------------------------------------------------------------
 void write_ascii(FILE *fd, const std::pair<std::string, std::string> &p)
@@ -1127,12 +1127,12 @@ void write_ascii(FILE *fd, const std::pair<std::string, std::string> &p)
 	fprintf(fd, "%9s %s\t", p.first.c_str(), p.second.c_str());
 }
 //------------------------------------------------------------------------------------------
-void write_bin(FILE *fd, const Date &d)
+void write_bin(FILE *fd, const Date &d, int mode)
 {
 	d.write_bin(fd);
 }
 //------------------------------------------------------------------------------------------
-void read_bin(FILE *fd, Date &d)
+void read_bin(FILE *fd, Date &d, int mode)
 {
 	d.read_bin(fd);
 }
@@ -1143,20 +1143,15 @@ void write_ascii(FILE *fd, const Date &d)
 }
 //------------------------------------------------------------------------------------------	SPECIALIZATIONS
 template<>
-void write_bin(FILE *fd, const std::vector<double, std::allocator<double>> &v)
+void write_bin(FILE *fd, const std::vector<double, std::allocator<double>> &v, int mode)
 {
-	size_t len = v.size();
-	fwrite(&len, sizeof(len), 1, fd);
-	fwrite(v.data(), sizeof(double), len, fd);
+	write_bin_work<double>(fd, v, mode);
 }
 //------------------------------------------------------------------------------------------
 template<>
-void read_bin(FILE *fd, std::vector<double, std::allocator<double>> &v)
+void read_bin(FILE *fd, std::vector<double, std::allocator<double>> &v, int mode)
 {
-	size_t len;
-	fread_check(&len, sizeof(len), 1, fd);
-	v = std::vector<double>(len);
-	fread_check(v.data(), sizeof(double), len, fd);
+	read_bin_work<double>(fd, v, mode);
 }
 //------------------------------------------------------------------------------------------
 template<>
@@ -1168,20 +1163,15 @@ void write_ascii(FILE *fd, const std::vector<double, std::allocator<double>> &v)
 }
 //------------------------------------------------------------------------------------------
 template<>
-void write_bin(FILE *fd, const std::vector<int, std::allocator<int>> &v)
+void write_bin(FILE *fd, const std::vector<int, std::allocator<int>> &v, int mode)
 {
-	size_t len = v.size();
-	fwrite(&len, sizeof(len), 1, fd);
-	fwrite(v.data(), sizeof(int), len, fd);
+	write_bin_work<int>(fd, v, mode);
 }
 //------------------------------------------------------------------------------------------
 template<>
-void read_bin(FILE *fd, std::vector<int, std::allocator<int>> &v)
+void read_bin(FILE *fd, std::vector<int, std::allocator<int>> &v, int mode)
 {
-	size_t len;
-	fread_check(&len, sizeof(len), 1, fd);
-	v = std::vector<int>(len);
-	fread_check(v.data(), sizeof(int), len, fd);
+	read_bin_work<int>(fd, v, mode);
 }
 //------------------------------------------------------------------------------------------
 template<>
@@ -1190,6 +1180,12 @@ void write_ascii(FILE *fd, const std::vector<int, std::allocator<int>> &v)
 	size_t len = v.size();
 	fprintf(fd, "%10zu\t", len);
 	SaveASCII(fd, v.data(), len, "%d");
+}
+//------------------------------------------------------------------------------------------
+template<>
+bool not_equal(const double &x, const double &y)
+{
+	return std::signbit(x) != std::signbit(y) || x != y;
 }
 //------------------------------------------------------------------------------------------
 

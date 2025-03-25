@@ -11,6 +11,7 @@
 // this header defines some utilities
 
 #include "Abstract.h"
+#include <cassert>
 #include <cstdlib>
 #include <cstdio>
 #include <string>
@@ -318,29 +319,40 @@ std::string stringFormatArr(std::string str, const T &item);							// (1) Simpli
 template <class T>
 std::string stringFormatArr(std::string str_rus, std::string str_eng, const T &item);	// (2) Simplified version of stringFormatArr with two format string variants and one item (not an array)
 
-// functions for I/O of vectors to files - used e.g. in SimProxyFile
-template <typename T, typename A>
-void write_bin(FILE *fd, const std::vector<T, A> &v);									//  ####   ###  #   #        ###     #  ###
-																						//  #   #   #   ##  #         #     #  #   #
-template <typename T, typename A>														//  ####    #   # # #         #    #   #   #
-void read_bin(FILE *fd, std::vector<T, A> &v);											//  #   #   #   #  ##         #   #    #   #
-																						//  ####   ###  #   #        ### #      ###
+// functions for I/O of vectors to files - used e.g. in SimProxyFile					//  ####   ###  #   #        ###     #  ###
+template <typename T, typename A>														//  #   #   #   ##  #         #     #  #   #
+void write_bin(FILE *fd, const std::vector<T, A> &v, int mode = 1);						//  ####    #   # # #         #    #   #   #
+																						//  #   #   #   #  ##         #   #    #   #
+template <typename T, typename A>														//  ####   ###  #   #        ### #      ###
+void read_bin(FILE *fd, std::vector<T, A> &v, int mode = 1);							//
+																						// mode=1 : basic mode | mode=2 : handle chunks of repeated values
 template <typename T, typename A>
 void write_ascii(FILE *fd, const std::vector<T, A> &v);
 
-void write_bin(FILE *fd, const std::string &s);									// auxiliary overloads for string
-void read_bin(FILE *fd, std::string &s);
+template <class T>
+void write_bin_work(FILE *fd, const std::vector<T> &v, int mode);						// two helper functions for int, double
+
+template <class T>
+void read_bin_work(FILE *fd, std::vector<T> &v, int mode);
+
+void write_bin(FILE *fd, const std::string &s, int mode);								// auxiliary overloads for string
+void read_bin(FILE *fd, std::string &s, int mode);
 void write_ascii(FILE *fd, const std::string &s);
 
-void write_bin(FILE *fd, const std::pair<std::string, std::string> &p);			// auxiliary overloads for pair<string, string>
-void read_bin(FILE *fd, std::pair<std::string, std::string> &p);
+void write_bin(FILE *fd, const std::pair<std::string, std::string> &p, int mode);		// auxiliary overloads for pair<string, string>
+void read_bin(FILE *fd, std::pair<std::string, std::string> &p, int mode);
 void write_ascii(FILE *fd, const std::pair<std::string, std::string> &p);
 
 struct Date;
-void write_bin(FILE *fd, const Date &d);										// auxiliary overloads for Date
-void read_bin(FILE *fd, Date &d);
+void write_bin(FILE *fd, const Date &d, int mode);										// auxiliary overloads for Date
+void read_bin(FILE *fd, Date &d, int mode);
 void write_ascii(FILE *fd, const Date &d);
 
+template <class T>										// In 'data', find chunks of repeated values of size >= Nmin >= 2, save their start indices ('starts') and lengths ('counts').
+void find_repeated_chunks(const std::vector<T> &data, size_t Nmin, std::vector<size_t> &starts, std::vector<size_t> &counts);	// Past-the-end-element with count=0 is also added.
+
+template <class T>
+bool not_equal(const T &x, const T &y);					// Equivalent to x != y, but: +0.0 != -0.0
 //-----------------------------------------------------------------------------------------------------------------------
 // BELOW ARE THE TEMPLATE DEFINITIONS ***********************************************************************************
 //-----------------------------------------------------------------------------------------------------------------------
@@ -513,36 +525,35 @@ std::string stringFormatArr(std::string str_rus, std::string str_eng, const T &i
 // file I/O for vectors
 //------------------------------------------------------------------------------------------	SPECIALIZATIONS
 template <>																			// double
-void write_bin(FILE *fd, const std::vector<double, std::allocator<double>> &v);
+void write_bin(FILE *fd, const std::vector<double, std::allocator<double>> &v, int mode);
 template <>
-void read_bin(FILE *fd, std::vector<double, std::allocator<double>> &v);
+void read_bin(FILE *fd, std::vector<double, std::allocator<double>> &v, int mode);
 template <>
 void write_ascii(FILE *fd, const std::vector<double, std::allocator<double>> &v);
 template <>																			// int
-void write_bin(FILE *fd, const std::vector<int, std::allocator<int>> &v);
+void write_bin(FILE *fd, const std::vector<int, std::allocator<int>> &v, int mode);
 template <>
-void read_bin(FILE *fd, std::vector<int, std::allocator<int>> &v);
+void read_bin(FILE *fd, std::vector<int, std::allocator<int>> &v, int mode);
 template <>
 void write_ascii(FILE *fd, const std::vector<int, std::allocator<int>> &v);
 //------------------------------------------------------------------------------------------	DEFINITIONS
 template <typename T, typename A>
-void write_bin(FILE *fd, const std::vector<T, A> &v)
+void write_bin(FILE *fd, const std::vector<T, A> &v, int mode)
 {
 	size_t len = v.size();
 	fwrite(&len, sizeof(len), 1, fd);
 	for (size_t i = 0; i < len; i++)
-		write_bin(fd, v[i]);
+		write_bin(fd, v[i], mode);
 }
 //------------------------------------------------------------------------------------------
 template <typename T, typename A>
-void read_bin(FILE *fd, std::vector<T, A> &v)
+void read_bin(FILE *fd, std::vector<T, A> &v, int mode)
 {
 	size_t len;
 	fread_check(&len, sizeof(len), 1, fd);
 	v = std::vector<T, A>(len);
-
 	for (size_t i = 0; i < len; i++)
-		read_bin(fd, v[i]);
+		read_bin(fd, v[i], mode);
 }
 //------------------------------------------------------------------------------------------
 template <typename T, typename A>
@@ -553,6 +564,107 @@ void write_ascii(FILE *fd, const std::vector<T, A> &v)
 	for (size_t i = 0; i < len; i++)
 		write_ascii(fd, v[i]);
 	fprintf(fd, "\n");
+}
+//------------------------------------------------------------------------------------------
+template <class T>
+void write_bin_work(FILE *fd, const std::vector<T> &v, int mode)	// T = int, double
+{
+	const static size_t Nmin = 3;
+	const size_t len = v.size();
+
+	fwrite(&len, sizeof(len), 1, fd);
+	if (mode == 1) fwrite(v.data(), sizeof(T), len, fd);	// if size or count is zero, fwrite returns zero and performs no other action
+	else if (mode == 2) {
+		std::vector<size_t> starts, counts;
+		find_repeated_chunks(v, Nmin, starts, counts);
+		assert(starts.size() == counts.size());
+		assert(starts.size() > 0);
+
+		size_t c   = 0;		// current index in the vector
+		size_t sum = 0;		// total sum for checking
+		for (size_t i = 0; i < starts.size(); i++) {
+			size_t cnt = starts[i] - c;
+			assert(c + cnt <= len);
+			fwrite(&cnt, sizeof(cnt), 1, fd);
+			fwrite(v.data() + c, sizeof(T), cnt, fd);		// 'diff'
+			sum += cnt;
+
+			T val = T();
+			cnt = counts[i];
+			if (starts[i] < len) val = v[starts[i]];
+			fwrite(&cnt, sizeof(cnt), 1, fd);
+			fwrite(&val, sizeof(val), 1, fd);				// 'same'
+			sum += cnt;
+			c = starts[i] + counts[i];
+		}
+		assert(sum == len);
+	} else throw EObjFunc("Bad 'mode' in write_bin_work()");
+}
+//------------------------------------------------------------------------------------------
+template <class T>
+void read_bin_work(FILE *fd, std::vector<T> &v, int mode)			// T = int, double
+{
+	size_t len;
+	fread_check(&len, sizeof(len), 1, fd);
+	v = std::vector<T>(len);
+
+	if (mode == 1) fread_check(v.data(), sizeof(T), len, fd);		// if size or count is zero, fread returns zero and performs no other action
+	else if (mode == 2) {
+		size_t c = 0;				// current index in the vector
+		bool finished = false;
+		while (!finished) {
+			size_t cnt;
+			fread_check(&cnt, sizeof(cnt), 1, fd);
+			assert(c + cnt <= len);
+			fread_check(v.data() + c, sizeof(T), cnt, fd);			// 'diff'
+			c += cnt;
+
+			T val;
+			fread_check(&cnt, sizeof(cnt), 1, fd);
+			if (c == len && cnt == 0) finished = true;				// c <=> starts[i]
+			assert(c + cnt <= len);
+			fread_check(&val, sizeof(val), 1, fd);					// 'same'
+			for (size_t i = c; i < c + cnt; i++) v[i] = val;
+			c += cnt;
+		}
+		assert (c == len);
+	} else throw EObjFunc("Bad 'mode' in read_bin_work()");
+}
+//------------------------------------------------------------------------------------------
+template <class T>
+void find_repeated_chunks(const std::vector<T> &data, size_t Nmin, std::vector<size_t> &starts, std::vector<size_t> &counts)	// In 'data', find chunks of repeated values
+{										// of size >= Nmin >= 2, save their start indices ('starts') and lengths ('counts'). Past-the-end-element with count=0 is also added.
+	if (Nmin < 2)
+		throw EObjFunc(stringFormatArr("Nmin >= 2 is required in find_repeated_chunks(), current value = {0:%zu}", Nmin));
+	starts = counts = std::vector<size_t>();
+
+	if (data.size() > 0) {
+		T      last_val   = data[0];	// initialize the first chunk
+		size_t last_start = 0;
+		for (size_t i = 1; i <= data.size(); i++) {		// note, 'past-the-end' element always marks a new chunk
+			if (i == data.size() || not_equal(data[i], last_val)) {	// exited the previous chunk, new chunk starts from 'i'
+				if (i >= last_start + Nmin) {				// the previous chunk is long enough: save it
+					starts.push_back(last_start);
+					counts.push_back(i - last_start);
+				}
+				if (i < data.size()) {						// initialize the new chunk
+					last_val   = data[i];
+					last_start = i;
+				}
+			}
+		}
+	}
+	starts.push_back(data.size());		// the final dummy chunk (past-the-end)
+	counts.push_back(0);
+}
+//------------------------------------------------------------------------------------------	SPECIALIZATION
+template <>
+bool not_equal(const double &x, const double &y);
+//------------------------------------------------------------------------------------------	DEFINITION
+template <class T>
+bool not_equal(const T &x, const T &y)	// Equivalent to x != y, but: +0.0 != -0.0
+{
+	return x != y;
 }
 //------------------------------------------------------------------------------------------
 }	// namespace HMMPI

@@ -101,6 +101,9 @@ template <class T>
 std::vector<std::vector<T>> VecTranspose(const std::vector<std::vector<T>> &arr2d);		// transposes 2D array: res[i][j] = arr2d[j][i]
 
 template <class T>
+std::vector<T> VecTranspose(const std::vector<T> &arr_row_maj, size_t Nrow);			// transposes a row-major 2D array 'arr_row_maj' which originally has Nrow rows
+
+template <class T>
 bool FindDuplicate(std::vector<T> vec, T &dup);									// 'true' if "vec" has duplicate elements, in this case 'dup' is set to the found duplicate
 
 template <class T>
@@ -836,6 +839,26 @@ std::vector<std::vector<T>> VecTranspose(const std::vector<std::vector<T>> &arr2
 				res[j][i] = arr2d[i][j];
 		}
 	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+template <class T>
+std::vector<T> VecTranspose(const std::vector<T> &arr_row_maj, size_t Nrow)				// transposes a row-major 2D array 'arr_row_maj' which originally has Nrow rows
+{
+	const size_t N = arr_row_maj.size();
+	std::vector<T> res(N);
+
+	if (N == 0)
+		return res;
+
+	assert(N > 0 && Nrow > 0);
+	assert(N % Nrow == 0);
+	const size_t Ncol = N / Nrow;
+
+	for (size_t i = 0; i < Nrow; i++)
+		for (size_t j = 0; j < Ncol; j++)
+			res[Nrow*j + i] = arr_row_maj[Ncol*i + j];
 
 	return res;
 }
