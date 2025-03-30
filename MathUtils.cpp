@@ -1163,7 +1163,7 @@ void BlockDiagMat::write_test_tor(std::string msg) const	// reports from ctors a
 
 	FILE *F = fopen(fname, "a");
 	fprintf(F, "%p\t%s\n", this, msg.c_str());
-	fclose(F);
+	if (F) fclose(F);
 }
 //------------------------------------------------------------------------------------------
 BlockDiagMat::BlockDiagMat(MPI_Comm c) : last_r(0), comm(c), sz(0), finalized(false)
@@ -1464,7 +1464,7 @@ void BlockDiagMat::PrintToFile(std::string tag) const		// print the contents to 
 	for (size_t i = 0; i < Blocks.size(); i++)
 		fprintf(F, "%s", Blocks[i]->ToString().c_str());
 
-	fclose(F);
+	if (F) fclose(F);
 #endif
 }
 //------------------------------------------------------------------------------------------

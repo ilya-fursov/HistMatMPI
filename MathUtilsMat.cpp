@@ -67,7 +67,7 @@ const double* Mat::chol_spo() const
 		if (info != 0)
 		{
 			reset_chol_spo_cache();
-			std::string msg = stringFormatArr("DPOTRF ����������� � info {0:%d}", "DPOTRF exited with info {0:%d}", info);
+			std::string msg = stringFormatArr("DPOTRF завершилась с info {0:%d}", "DPOTRF exited with info {0:%d}", info);
 			debug_output(msg + "\n", this);
 			throw Exception(msg);
 		}
@@ -96,7 +96,7 @@ void Mat::cache_msg_to_file(const std::string& msg) const			// debug output of '
 	if (f != NULL)
 	{
 		fputs(msg.c_str(), f);
-		fclose(f);
+		if (f) fclose(f);
 	}
 #endif
 }
@@ -116,7 +116,7 @@ void Mat::dsytrf(const double** A, const int** ipiv) const
 		if (info != 0)
 		{
 			reset_dsytrf_cache();
-			std::string msg = stringFormatArr("DSYTRF ����������� � info {0:%d}", "DSYTRF exited with info {0:%d}", info);
+			std::string msg = stringFormatArr("DSYTRF завершилась с info {0:%d}", "DSYTRF exited with info {0:%d}", info);
 			debug_output(msg + "\n", this);
 			throw Exception(msg);
 		}
@@ -148,7 +148,7 @@ void Mat::debug_output(const std::string& msg, const Mat* m) const
 	{
 		fputs(msg.c_str(), debug);
 		m->SaveASCII(debug, "%20.16g");
-		fclose(debug);
+		if (debug) fclose(debug);
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -887,7 +887,7 @@ Mat Mat::InvSPO() const
 	int info = LAPACKE_dpotri(LAPACK_ROW_MAJOR, 'U', icount, A, icount);
 	if (info != 0)
 	{
-		std::string msg = stringFormatArr("DPOTRI ����������� � info {0:%d}", "DPOTRI exited with info {0:%d}", info);
+		std::string msg = stringFormatArr("DPOTRI завершилась с info {0:%d}", "DPOTRI exited with info {0:%d}", info);
 		Mat temp(std::vector<double>(chol_spo(), chol_spo() + icount * icount), icount, icount);
 		debug_output(msg + "\n", &temp);
 		throw Exception(msg);
@@ -911,7 +911,7 @@ Mat Mat::InvU() const						// inverse of the upper triangular matrix [the upper 
 	int info = LAPACKE_dtrtri(LAPACK_ROW_MAJOR, 'U', 'N', icount, res.data.data(), jcount);
 	if (info != 0)
 	{
-		std::string msg = stringFormatArr("DTRTRI ����������� � info {0:%d}", "DTRTRI exited with info {0:%d}", info);
+		std::string msg = stringFormatArr("DTRTRI завершилась с info {0:%d}", "DTRTRI exited with info {0:%d}", info);
 		debug_output(msg + "\n", this);
 		throw Exception(msg);
 	}
@@ -950,7 +950,7 @@ Mat Mat::InvSY() const
 	int info = LAPACKE_dsytri(LAPACK_ROW_MAJOR, 'U', icount, res.data(), icount, ipiv);
 	if (info != 0)
 	{
-		std::string msg = stringFormatArr("DSYTRI ����������� � info {0:%d}, �������� �������:", "DSYTRI exited with info {0:%d}, original matrix:", info);
+		std::string msg = stringFormatArr("DSYTRI завершилась с info {0:%d}, исходная матрица:", "DSYTRI exited with info {0:%d}, original matrix:", info);
 		debug_output(msg + "\n", this);
 		throw Exception(msg);
 	}
@@ -1025,7 +1025,7 @@ std::vector<double> Mat::EigVal(size_t I0, size_t I1) const
 		throw Exception("Wrong indices I0, I1 in Mat::EigVal");
 
 	double* W = new double[icount];						// storage for eigenvalues
-	double* A = new double[icount * icount];				// copy of the matrix data (it will be destroyed by the procedure)
+	double* A = new double[icount * icount];			// copy of the matrix data (it will be destroyed by the procedure)
 	memcpy(A, data.data(), icount * icount * sizeof(double));
 
 	int lda = icount;
@@ -1037,7 +1037,7 @@ std::vector<double> Mat::EigVal(size_t I0, size_t I1) const
 		delete[] W;
 		delete[] A;
 
-		std::string msg = stringFormatArr("DSYEVR ����������� � info {0:%d}", "DSYEVR exited with info {0:%d}", info);
+		std::string msg = stringFormatArr("DSYEVR завершилась с info {0:%d}", "DSYEVR exited with info {0:%d}", info);
 		debug_output(msg + "\n", this);
 		throw Exception(msg);
 	}
@@ -1084,7 +1084,7 @@ std::vector<double> Mat::EigVal(size_t I0, size_t I1, Mat& EigVec) const
 		delete[] Z;
 		delete[] isuppz;
 
-		std::string msg = stringFormatArr("DSYEVR ����������� � info {0:%d}", "DSYEVR exited with info {0:%d}", info);
+		std::string msg = stringFormatArr("DSYEVR завершилась с info {0:%d}", "DSYEVR exited with info {0:%d}", info);
 		debug_output(msg + "\n", this);
 		throw Exception(msg);
 	}
@@ -1120,7 +1120,7 @@ std::vector<double> Mat::SgVal() const
 	if (info != 0)
 	{
 		delete[] A;
-		std::string msg = stringFormatArr("DGESDD ����������� � info {0:%d}", "DGESDD exited with info {0:%d}", info);
+		std::string msg = stringFormatArr("DGESDD завершилась с info {0:%d}", "DGESDD exited with info {0:%d}", info);
 		debug_output(msg + "\n", this);
 		throw Exception(msg);
 	}
@@ -1143,7 +1143,7 @@ double Mat::ICond1SPO() const
 	int info = LAPACKE_dpocon(LAPACK_ROW_MAJOR, 'U', icount, chol.data.data(), lda, norm1, &res);
 	if (info != 0)
 	{
-		std::string msg = stringFormatArr("DPOCON ����������� � info {0:%d}", "DPOCON exited with info {0:%d}", info);
+		std::string msg = stringFormatArr("DPOCON завершилась с info {0:%d}", "DPOCON exited with info {0:%d}", info);
 		debug_output(msg + "\n", &chol);
 		throw Exception(msg);
 	}

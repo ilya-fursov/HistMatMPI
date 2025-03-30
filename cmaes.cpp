@@ -1042,7 +1042,7 @@ void cmaes_WriteToFileAW(cmaes_t *t, const char *key, const char *name,
 		if (t->gen > 0 || strncmp(name, "outcmaesfit", 11) != 0)		// TODO file or not?
 		  cmaes_WriteToFilePtr(t, key, fp); /* do not write fitness for gen==0 */
 
-	  fclose(fp);
+	  if (fp) fclose(fp);
   }
 
   MPI_Barrier(MPI_COMM_WORLD);	// to avoid hidden sync bugs
@@ -1677,7 +1677,7 @@ void cmaes_ReadSignals(cmaes_t *t, char const *filename)
     return;
   }
   cmaes_ReadFromFilePtr( t, fp);
-  fclose(fp);
+  if (fp) fclose(fp);
 }
 /* --------------------------------------------------------- */
 void cmaes_ReadFromFilePtr( cmaes_t *t, FILE *fp)
@@ -2730,7 +2730,7 @@ readpara_ReadFromFile(readpara_t *t, const char * filename)
           }
         }
     } /* for */
-  fclose(fp);
+  if (fp) fclose(fp);
   return;
 } /* readpara_ReadFromFile() */
 
@@ -2803,7 +2803,7 @@ readpara_WriteToFile(readpara_t *t, const char *filenamedest,
 		fprintf(fp, "\n");
 	  } /* for */
 	  fprintf(fp, "\n");
-	  fclose(fp);
+	  if (fp) fclose(fp);
   }
 } /* readpara_WriteToFile() */
 
@@ -3117,7 +3117,7 @@ void ERRORMESSAGE( char const *s1, char const *s2,
   {
 	  fprintf( fp, "\n -- %s %s\n", asctime(localtime(&t)),
 			   s2 ? szCat(s1, s2, s3, s4) : s1);
-	  fclose (fp);
+	  if (fp) fclose(fp);
   }
 #endif
 }
@@ -3175,12 +3175,11 @@ double **ReadLimits(const char *fname, int dim)
 	{
 		ReleaseLimits(res, dim);
 		res = 0;
-		fclose(fp);
-		throw HMMPI::Exception("Íåïðàâèëüíàÿ ðàçìåðíîñòü çíà÷åíèé ãðàíèö",
-								"Dimensions mismatch in ReadLimits");
+		if (fp) fclose(fp);
+		throw HMMPI::Exception("Dimensions mismatch in ReadLimits");
 	}
 
-    fclose(fp);
+    if (fp) fclose(fp);
 	return res;
 }
 /* ----------------------------------------------------------------------- */

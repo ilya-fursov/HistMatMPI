@@ -7662,7 +7662,7 @@ void alglib::read_csv(const char *filename, char separator, int flags, alglib::r
     if( _filesize==0 )
     {
         // empty file, return empty array, success
-        fclose(f_in);
+        if (f_in) fclose(f_in);
         return;
     }
     size_t filesize = _filesize;
@@ -7673,7 +7673,7 @@ void alglib::read_csv(const char *filename, char separator, int flags, alglib::r
     AE_CRITICAL_ASSERT(flag==0);
     size_t bytes_read = fread ((void*)p_buf, 1, filesize, f_in);
     AE_CRITICAL_ASSERT(bytes_read==filesize);
-    fclose(f_in);
+    if (f_in) fclose(f_in);
     
     //
     // Normalize file contents:
@@ -7819,12 +7819,12 @@ bool alglib::readstrings(std::string file, std::list<std::string> *pOutput, std:
         //
         if( s.length()<1 )
         {
-            fclose(f);
+            if (f) fclose(f);
             throw alglib::ap_error("internal error in read_strings");
         }
         pOutput->push_back(s);
     }
-    fclose(f);
+    if (f) fclose(f);
     return true;
 }
 

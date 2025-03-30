@@ -2257,7 +2257,7 @@ void ParamsInterface::Write_params_log(const std::vector<double> &p, std::string
 	for (size_t i = 0; i < p.size(); i++)
 		fprintf(sw, "%-20.15g\t%-11.6g\t%-11.6g\t%-5.3s\n", p[i], min[i], max[i], act[i].c_str());
 
-	fclose(sw);
+	if (sw) fclose(sw);
 }
 //------------------------------------------------------------------------------------------
 void ParamsInterface::Push_point(double Init, double Min, double Max, std::string AN, std::string Name)
@@ -2531,7 +2531,7 @@ void KW_limits::Write_params_log(const std::vector<double> &p, std::string fname
 	for (size_t i = 0; i < p.size(); i++)
 		fprintf(sw, "%11.7g\t%11.7g\t%11.7g\t%22.18g\t%11.7g\t%10.7s\t%11.7g\t%10.7s\t%5.3s\n", min[i], max[i], norm[i], p[i], std[i], func[i].c_str(), dh[i], dh_type[i].c_str(), act[i].c_str());
 
-	fclose(sw);
+	if (sw) fclose(sw);
 }
 //------------------------------------------------------------------------------------------
 std::string KW_limits::CheckPositive(const std::vector<double> &v, std::string vname)
@@ -2850,8 +2850,7 @@ void KW_parameters::Write_params_log(const std::vector<double> &p, std::string f
 			p_ext[i] = max[i];
 		fprintf(sw, "%-*.*s\t%-20.15g\t%-11.6g\t%-11.6g\t%-5.3s\t%-11s\t%-5.3s\t%-s\n", maxname, maxname, name[i].c_str(), p_ext[i], min[i], max[i], act[i].c_str(), backval[i].c_str(), func[i].c_str(), well_sc[i].c_str());
 	}
-
-	fclose(sw);
+	if (sw) fclose(sw);
 }
 //------------------------------------------------------------------------------------------
 const ParamsInterface *KW_parameters::GetParamsInterface() const

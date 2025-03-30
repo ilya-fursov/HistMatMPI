@@ -42,20 +42,18 @@ void MsgToFileApp(const std::string &msg)		// output to TEST_CACHE file
 	if (f != NULL)
 	{
 		fputs(msg.c_str(), f);
-		fclose(f);
+		if (f) fclose(f);
 	}
 #endif
 }
 //------------------------------------------------------------------------------------------
 bool FileExists(const std::string &fname)
 {
-	if (FILE *file = fopen(fname.c_str(), "r"))
-	{
-		fclose(file);
+	if (FILE *file = fopen(fname.c_str(), "r")) {
+		if (file) fclose(file);
 		return true;
 	}
-	else
-		return false;
+	else return false;
 }
 //------------------------------------------------------------------------------------------
 int ExitStatus(int stat_val)			// get the sub-process exit code based on 'stat_val' returned from system(), using WEXITSTATUS
@@ -641,13 +639,11 @@ std::string CmdLauncher::MakeHostFile(int np) const		// creates a hostfile (retu
 	std::vector<std::string> hosts = HostList(np);			// result valid on rank-0
 	std::string res;										// significant on rank-0
 
-	if (rank == 0)
-	{
+	if (rank == 0) {
 		bool name_ok = false;
 		int c = 0;
 		char fname[BUFFSIZE];
-		while (!name_ok)									// first, generate appropriate file name
-		{
+		while (!name_ok) {									// first, generate appropriate file name
 			sprintf(fname, host_templ, c);
 			if (!FileExists(fname))
 				name_ok = true;
@@ -657,11 +653,10 @@ std::string CmdLauncher::MakeHostFile(int np) const		// creates a hostfile (retu
 		FILE *f = fopen(fname, "w");
 		for (size_t i = 0; i < hosts.size(); i++)			// write to the file
 			fprintf(f, "%s\n", hosts[i].c_str());
-		fclose(f);
+		if (f) fclose(f);
 
 		res = fname;
 	}
-
 	return res;
 }
 //------------------------------------------------------------------------------------------
@@ -669,55 +664,42 @@ std::string CmdLauncher::MakeHostFile(int np) const		// creates a hostfile (retu
 int CmdLauncher::sync_tNav(std::string data_file) const noexcept
 {										// waits until an up-to-date tNavigator *.end file is available, returns the (mpi-sync) number of tNav errors
 	int res = 1;
-	if (rank == 0)
-	{
+	if (rank == 0) {
 		bool waiting = true;			// 'waiting for the file'
 		std::string end_file18 = get_end_file(data_file, false);
 		std::string end_file22 = get_end_file(data_file, true);
-		while (waiting)
-		{
+		while (waiting) {
 			std::string end_file;
 			bool tn22;
-			if (FileExists(data_file) && FileExists(end_file18) && FileModCompare(data_file, end_file18) < 0)	// identify the end file format on the run
-			{
+			if (FileExists(data_file) && FileExists(end_file18) && FileModCompare(data_file, end_file18) < 0) {	// identify the end file format on the run
 				end_file = end_file18;
 				tn22 = false;
-			}
-			else
-			{
+			} else {
 				end_file = end_file22;
 				tn22 = true;
 			}
 
-			if (FileExists(data_file) && FileExists(end_file) && FileModCompare(data_file, end_file) < 0)
-			{
+			if (FileExists(data_file) && FileExists(end_file) && FileModCompare(data_file, end_file) < 0) {
 				std::this_thread::sleep_for(std::chrono::seconds(2));	// wait 2 seconds to avoid conflicts
 				FILE *file = fopen(end_file.c_str(), "r");
 
 				std::string token = "Errors %d";
-				if (tn22)
-					token = "Ошибок %d";								// TODO the token is currently set based on 'tn' version (misleading), not its language!
+				if (tn22) token = "Ошибок %d";		// TODO the token is currently set based on 'tn' version (misleading), not its language!
 
-				while (file != NULL && !feof(file))
-				{
-					if (fscanf(file, token.c_str(), &res) == 1)
-					{
+				while (file != NULL && !feof(file)) {
+					if (fscanf(file, token.c_str(), &res) == 1) {
 						waiting = false;
 						break;
-					}
-					else
-					{
+					} else {
 						char c;
 						fscanf(file, "%c", &c);
 					}
 				}
-				fclose(file);
+				if (file) fclose(file);
 			}
-			else
-				std::this_thread::sleep_for(std::chrono::seconds(5));	// no "end file" found: wait 5 seconds
+			else std::this_thread::sleep_for(std::chrono::seconds(5));	// no "end file" found: wait 5 seconds
 		}
 	}
-
 	MPI_BarrierSleepy(MPI_COMM_WORLD);
 	MPI_Bcast(&res, 1, MPI_INT, 0, MPI_COMM_WORLD);
 

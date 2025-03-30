@@ -115,111 +115,6 @@ void KW_runForward::Run()
 			K->AppText("EMPTY\n");
 	}
 	// DEBUG
-
-
-
-	// DEBUG ---------- some cache testing
-//	Start_pre();
-//	IMPORTKWD(points, KW_3points, "3POINTS");			// 3POINTS->x,y provide 'x0', 'p' for VM_Ham_eq2[_eps]
-//	IMPORTKWD(opt, KW_optimization, "OPTIMIZATION");	// epsG provides 'eps' (or 'M0'), maa provides 'i0'
-//	Finish_pre();
-//
-//	PM_FullHamiltonian Ham0(PM), Ham1(PM);
-//	VM_Ham_eq2 VM2(&Ham0, &Ham1);
-//	VM2.x0 = Ham0.act_par(points->x);
-//	VM2.p = Ham0.act_par(points->y);
-//	VM2.eps = 3.81456;
-//	VM_Ham_eq2_eps VM2eps(VM2, opt->maa, opt->epsG);
-//
-//	std::vector<double> x = VM2eps.map_xfull_x(p);
-//
-//	Ham0.pact = Ham1.pact = VM2.p;
-//	std::vector<double> dh0 = Ham0.dHdp.Get(&Ham0, std::pair<std::vector<double>, std::vector<double>>(VM2.x0, VM2.p));
-//	std::vector<double> dh1 = Ham1.dHdp.Get(&Ham1, std::pair<std::vector<double>, std::vector<double>>(p, VM2.p));
-//	HMMPI::Mat dh1aux = Ham1.Gaux_grad.Get(&Ham1, std::pair<std::vector<double>, std::vector<double>>(p, VM2.p));
-//
-//	std::vector<double> func0 = VM2.Func_ACT(p);
-//	HMMPI::Mat jac0 = VM2.Jac_ACT(p);
-//
-//	std::vector<double> func = VM2eps.Func_ACT(x);
-//	HMMPI::Mat jac = VM2eps.Jac_ACT(x);
-//	std::cout << "+++++++++++++++++++++++++++++++++++++++++++++++++\n";
-//	std::cout << "xfull\t" << HMMPI::ToString(p);
-//	std::cout << "x    \t" << HMMPI::ToString(x);
-//
-//	std::cout << "dh0  \t" << HMMPI::ToString(dh0);
-//	std::cout << "dh1  \t" << HMMPI::ToString(dh1);
-//	std::cout << "dh1aux\n" << dh1aux.ToString();
-//
-//	std::cout << "func0\t" << HMMPI::ToString(func0);
-//	std::cout << "jac0\n" << jac0.ToString();
-//	std::cout << "func \t" << HMMPI::ToString(func);
-//	std::cout << "jac\n" << jac.ToString();
-//	std::cout << "+++++++++++++++++++++++++++++++++++++++++++++++++\n";
-	// DEBUG
-
-	// DEBUG
-//	PM_FullHamiltonian *Ham1 = dynamic_cast<PM_FullHamiltonian*>(PM);
-//	if (Ham1 != nullptr)
-//	{
-//		Ham1->tot_par(p);
-//		HMMPI::Mat iMM = Ham1->invG.Get(Ham1, p);
-//		std::vector<double> grad_p = Ham1->ObjFuncGrad_momentum_ACT(p);
-//		if (K->MPI_rank == 0)
-//		{
-//			std::cout << "\nMM\n" << iMM.ToString() << "\n";
-//			std::cout << "dH/dp\n" << HMMPI::ToString(grad_p) << "\n";
-//		}
-//	}
-	// DEBUG
-
-
-	// DEBUG----------------------------------------------------------***	FILE OUTPUT!!
-//	PM_FullHamiltonian Ham(PM);
-//	HMMPI::Mat G = Ham.G.Get(&Ham, p);
-//	HMMPI::Mat invG = Ham.invG.Get(&Ham, p);
-//
-//	std::vector<HMMPI::Mat> dxiG(p.size());
-//	for (size_t i = 0; i < p.size(); i++)
-//		dxiG[i] = Ham.dxi_G[i].Get(&Ham, p);
-//
-//	char fname[HMMPI::BUFFSIZE];
-//	sprintf(fname, "x_Hamiltonian_check_%d.txt", K->MPI_rank);
-//	FILE *f = fopen(fname, "w");
-//	Ham.nums_starts_to_file(f);
-//	fprintf(f, "Mass matrix\n");
-//	fputs(G.ToString().c_str(), f);
-//
-//	fprintf(f, "\nMass matrix inverse\n");
-//	fputs(invG.ToString().c_str(), f);
-//
-//	//------------------
-//	fprintf(f, "\nMass matrix-1\n");
-//	fputs(Gaux1.ToString().c_str(), f);
-//
-//	fprintf(f, "\nMass matrix inverse-1\n");
-//	fputs(invGaux1.ToString().c_str(), f);
-//
-//	//------------------
-//	fprintf(f, "\nMass matrix-2\n");
-//	fputs(Gaux2.ToString().c_str(), f);
-//
-//	fprintf(f, "\nMass matrix inverse-2\n");
-//	fputs(invGaux2.ToString().c_str(), f);
-//
-//
-//	for (size_t i = 0; i < p.size(); i++)
-//	{
-//		fprintf(f, "\ndMM/dx_%zu\n", i);
-//		fputs(dxiG[i].ToString().c_str(), f);
-//	}
-//	for (size_t i = 0; i < p.size(); i++)
-//		dxiG[i] = Ham.dxi_G[i].Get(&Ham, p);
-//
-//	fclose(f);
-	// DEBUG----------------------------------------------------------***
-
-
 }
 //------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
@@ -331,7 +226,7 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 		if (fd != NULL)
 		{
 			fputs(HMMPI::ToString(parameters->name, "%-17.17s").c_str(), fd);
-			fclose(fd);
+			if (fd) fclose(fd);
 		}
 		else
 			throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
@@ -358,7 +253,7 @@ void KW_runMultiple::Run()		// multiple run of PMEclipse, all resulting summarie
 			if (fd != NULL)
 			{
 				fputs(HMMPI::ToString(parameters->InternalToExternal(params[i]), "%-17.12g").c_str(), fd);
-				fclose(fd);
+				if (fd) fclose(fd);
 			}
 			else
 				throw HMMPI::Exception("Cannot open file for writing " + seq->logfile);
@@ -419,7 +314,7 @@ void KW_runOptProxy::Run()
 		if (f != 0)
 		{
 			fprintf(f, "%-5.5s\t%-8.8s\t%-10.10s\t%-11.11s\t%-17.17s\t%-10.10s\t%-2.2s\t%-17.17s\t%-12.12s\t%-12.12s\n", "#MOD", "HOURS", "DX", "PROXY", "SIM", "Tk", "*", "SIMBEST", "DIST_MIN", "DIST_AVG");
-			fclose(f);
+			if (f) fclose(f);
 		}
 	RANK0_SYNCERR_END(MPI_COMM_WORLD);
 
@@ -609,7 +504,7 @@ void KW_runOptProxy::Run()
 				fprintf(f, "%-5d\t%-8.3g\t%-10.5g\t%-11.6g\t%-17.12g\t%-10.5g\t%-2.2s\t%-17.12g\t%-12.6g\t%-12.6g\n",
 						int(smry->get_Data().total_models()), difftime(t1, t0)/double(3600), dX, qk1, of, Tk, (request_Rk_decr ? "*" : " "),
 							of_simbest, smry->get_Data().Xmin, smry->get_Data().Xavg);
-				fclose(f);
+				if (f) fclose(f);
 			}
 
 			if (write_params_log)
@@ -725,13 +620,10 @@ void KW_runSmryPlot::Run()
 	}
 	catch (...)
 	{
-		if (F0 != NULL)
-			fclose(F0);
+		if (F0) fclose(F0);
 		throw;
 	}
-	if (F0 != NULL)
-		fclose(F0);
-
+	if (F0) fclose(F0);
 
 	// II. Plot over design points
 	const double model_nug_cache = model->nugget;
@@ -778,12 +670,10 @@ void KW_runSmryPlot::Run()
 	}
 	catch (...)
 	{
-		if (F0 != NULL)
-			fclose(F0);
+		if (F0) fclose(F0);
 		throw;
 	}
-	if (F0 != NULL)
-		fclose(F0);
+	if (F0) fclose(F0);
 
 	model->nugget = model_nug_cache;								// restore the nugget
 }
@@ -855,7 +745,7 @@ void KW_runView_tNavSmry::Run()
 				fprintf(f0, "\t%-*.*g", wid, wid-5, M(i, j));
 			fprintf(f0, "\n");
 		}
-		fclose(f0);
+		if (f0) fclose(f0);
 	}
 	catch (...)
 	{
@@ -1016,7 +906,7 @@ void KW_runPlot::Run()
 				fprintf(f0, "%20.16g\t", FIT[i]);
 				HMMPI::SaveASCII(f0, POP[i], dim, "%20.16g");
 			}
-			fclose(f0);
+			if (f0) fclose(f0);
 		}
 #endif
 
@@ -1625,7 +1515,7 @@ void KW_runNNCfromgrid::Run()
 			}
 			fprintf(f, "\n");
 		}
-		fclose(f);
+		if (f) fclose(f);
 	}
 
 	K->AppText("NNCs are saved to '" + fout_name + "'\n");

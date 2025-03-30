@@ -203,11 +203,11 @@ void CornGrid::ReadGrids(const char *file, std::vector<size_t> len, std::vector<
 	}
 	catch (...)
 	{
-		fclose(File);
+		if (File) fclose(File);
 		throw;
 	}
 
-	fclose(File);
+	if (File) fclose(File);
 	File = 0;
 
 	if (!seek_beg)
@@ -1018,7 +1018,7 @@ void CornGrid::SavePropertyToFile(std::string fname, std::string prop_name, cons
 	}
 
 	fprintf(F, "/");
-	fclose(F);
+	if (F) fclose(F);
 }
 //------------------------------------------------------------------------------------------
 // ZCORN numbering scheme for grid X*Y*Z cells

@@ -426,8 +426,7 @@ int LeapFrog::Run2(PhysModel *pm, Mat &x, Mat &p, int N, double &dr) const
 						BounceVel3(vel, con_ind);
 					else
 					{
-						if (f0 != NULL)
-							fclose(f0);
+						if (f0) fclose(f0);
 						throw Exception("Unrecognized bounce_type '" + bounce_type + "' in LeapFrog::Run2");
 					}
 
@@ -482,9 +481,7 @@ int LeapFrog::Run2(PhysModel *pm, Mat &x, Mat &p, int N, double &dr) const
     p.Bcast(0, comm);
     dr = dist / max_dist;
 
-    if (f0 != NULL)
-    	fclose(f0);
-
+    if (f0) fclose(f0);
     return tot_bounce_count;
 }
 //------------------------------------------------------------------------------------------
@@ -573,9 +570,7 @@ int LeapFrog::Run_SOL(PhysModel *pm, Mat &x, Mat &v, int N, double &dr) const	//
     v.Bcast(0, comm);
     dr = dist / max_dist;
 
-    if (f0 != NULL)
-    	fclose(f0);
-
+    if (f0) fclose(f0);
     return 0;
 }
 //------------------------------------------------------------------------------------------
@@ -733,9 +728,7 @@ int LeapFrog::Run_SOL2(PhysModel *pm, Mat &x, Mat &v, int N, double &dr) const	/
     MPI_Bcast(&count_refl, 1, MPI_INT, 0, comm);
     dr = dist / max_dist;
 
-    if (f0 != NULL)
-    	fclose(f0);
-
+    if (f0) fclose(f0);
     return count_refl;
 }
 //------------------------------------------------------------------------------------------
@@ -846,9 +839,7 @@ int LeapFrog::RunHor2(PhysModel *pm, Mat &x, Mat &p, int N, double &dr) const	//
     p.Bcast(0, comm);
     dr = dist / max_dist;
 
-    if (f0 != NULL)
-    	fclose(f0);
-
+    if (f0) fclose(f0);
     return tot_bounce_count;
 }
 //------------------------------------------------------------------------------------------
@@ -1778,7 +1769,7 @@ LeapFrogGeneralized::LeapFrogGeneralized(PhysModel *pm, NonlinearSystemSolver *s
 
 #ifdef LF_GENERALIZED_OUT_X
     	FILE *fwork = fopen(LF_GENERALIZED_OUT_X, "w");
-    	fclose(fwork);
+    	if (fwork) fclose(fwork);
 #endif
 }
 //------------------------------------------------------------------------------------------
@@ -1804,7 +1795,7 @@ int LeapFrogGeneralized::Run(Mat &x, Mat &p, int N, double eps)
 #ifdef LF_GENERALIZED_OUT_X
     	FILE *fwork = fopen(LF_GENERALIZED_OUT_X, "a");
     	fputs(x.Tr().ToString().c_str(), fwork);
-    	fclose(fwork);
+    	if (fwork) fclose(fwork);
 #endif
 
     	Ham0 = Ham1;
@@ -1843,7 +1834,7 @@ void MC_point::save_point_2()
 		if (file != NULL)
 		{
 			fprintf(file, "%12.8g\t%12.8g\t%12.8g\n", y, eps, acc_rate);
-			fclose(file);
+			if (file) fclose(file);
 		}
 	}
 }
@@ -1856,20 +1847,16 @@ void MC_point::ResetFiles()
 	if (rnk == 0)
 	{
 		FILE *file = fopen(par_file, "w");
-		if (file != NULL)
-			fclose(file);
+		if (file) fclose(file);
 
 		file = fopen(par_all_file, "w");
-		if (file != NULL)
-			fclose(file);
+		if (file) fclose(file);
 
 		file = fopen(mod_data_file, "w");
-		if (file != NULL)
-			fclose(file);
+		if (file) fclose(file);
 
 		file = fopen(etc_file, "w");
-		if (file != NULL)
-			fclose(file);
+		if (file) fclose(file);
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -1885,28 +1872,28 @@ void MC_point::SavePoint()
 		if (file != NULL)
 		{
 			fputs(ToString(X).c_str(), file);
-			fclose(file);
+			if (file) fclose(file);
 		}
 
 		file = fopen(par_all_file, "a");				// model parameters for all points (incl. rejected)
 		if (file != NULL)
 		{
 			fputs(ToString(Xall).c_str(), file);
-			fclose(file);
+			if (file) fclose(file);
 		}
 
 		file = fopen(mod_data_file, "a");				// modelled data
 		if (file != NULL)
 		{
 			fputs(ToString(Mod).c_str(), file);
-			fclose(file);
+			if (file) fclose(file);
 		}
 #else
 		FILE *file = fopen(par_file, "a");				// model parameter[0]
 		if (file != NULL)
 		{
 			fprintf(file, "%12.8g\n", X[0]);
-			fclose(file);
+			if (file) fclose(file);
 		}
 #endif
 	}
@@ -1929,7 +1916,7 @@ void HMC_point::save_point_2()
 			fprintf(file, "%12.8g\t%12.8g\t%12.8g\t%d\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\t%12.8g\n",
 						y, eps, acc_rate, lf_bounces, dist_ratio, U0, U0_aux, U1, U1_aux, Kin0, Kin1, dE, M_emin, M_cond2, m_adj, val0, val1);
 
-			fclose(file);
+			if (file) fclose(file);
 		}
 	}
 }
@@ -2341,7 +2328,7 @@ void HMC1::preprocess(const Mat &x)
 	if (massmatr_file != NULL)
 	{
 		LF.M.SaveASCII(massmatr_file, "%20.16g");
-		fclose(massmatr_file);
+		if (massmatr_file) fclose(massmatr_file);
 	}
 #endif
 }

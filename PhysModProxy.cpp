@@ -106,7 +106,7 @@ void PM_Proxy::write_proxy_vals_end(const std::vector<std::vector<double>> &X0, 
 				dat1.pop_back();
 				fprintf(f, "%20.16g\t|\t%20.16g\t|\t%s\t|\t%s\n", of_before[i], of_after[i], dat0.c_str(), dat1.c_str());
 			}
-			fclose(f);
+			if (f) fclose(f);
 		}
 	}
 }
@@ -134,43 +134,34 @@ std::vector<std::vector<double>> PM_Proxy::XFromFile(std::string fname) const		/
 		MPI_Comm_rank(comm, &rnk);
 
 	std::vector<std::vector<double>> res;
-	if (rnk == 0)
-	{
+	if (rnk == 0) {
 		FILE *f0 = fopen(fname.c_str(), "r");
-		if (f0 != 0)
-		{
-			while (!feof(f0))
-			{
+		if (f0) {
+			while (!feof(f0)) {
 				std::vector<double> x0(dim);
 				bool filled = false;
 
-				for (int i = 0; i < dim; i++)
-				{
+				for (int i = 0; i < dim; i++) {
 					double d;
 					int n = fscanf(f0, "%lg", &d);
-					if (n == 1)
-					{
+					if (n == 1) {
 						x0[i] = d;
 						filled = true;
 					}
-					else if (i != 0)	// i == 0 && n == 0 may happen for empty line
-					{
-						fclose(f0);
+					else if (i != 0) {	// i == 0 && n == 0 may happen for empty line
+						if (f0) fclose(f0);
 						throw HMMPI::Exception("Number of items in a line is less than dimension in PM_Proxy::XFromFile");
 					}
-					else
-						break;
+					else break;
 				}
-
 				if (filled)
 					res.push_back(x0);
 			}
-			fclose(f0);
+			if (f0) fclose(f0);
 		}
 		else
 			throw HMMPI::Exception("Cannot open file in PM_Proxy::XFromFile");
 	}
-
 	return res;
 }
 //---------------------------------------------------------------------------
@@ -483,7 +474,7 @@ std::string PM_Proxy::Train(std::vector<std::vector<double>> pop, std::vector<si
 		{
 			for (const auto &p : pop)
 				fprintf(sw, "%s", HMMPI::ToString(p, "%20.16g").c_str());
-			fclose(sw);
+			if (sw) fclose(sw);
 		}
 	}
 
@@ -624,12 +615,12 @@ void PM_DataProxy::RecalcVals()
 		sprintf(fname, dump_CinvZ, dump_flag, RNK, 0);		// _pr0
 		FILE *f = fopen(fname, "w");
 		BigCinvZ.Tr().SaveASCII(f, "%20.16g");
-		fclose(f);
+		if (f) fclose(f);
 
 		sprintf(fname, dump_Ity, dump_flag, RNK, 0);		// _pr0
 		f = fopen(fname, "w");
 		ITY.SaveASCII(f, "%20.16g");
-		fclose(f);
+		if (f) fclose(f);
 	}
 }
 //---------------------------------------------------------------------------
@@ -923,7 +914,7 @@ void PM_DataProxy::PerturbData()
 		if (fpet != NULL)
 		{
 			HMMPI::Mat(d0_rpt).SaveASCII(fpet);
-			fclose(fpet);
+			if (fpet) fclose(fpet);
 		}
 	}
 #endif
@@ -1035,7 +1026,7 @@ PM_DataProxy2::PM_DataProxy2(PhysModel *pm, Parser_1 *K, KW_item *kw, _proxy_par
 		char fname[HMMPI::BUFFSIZE];
 		sprintf(fname, "Proxy_opt_KRIG_rnk%d.txt", RNK);
 		FILE *f = fopen(fname, "w");
-		fclose(f);
+		if (f) fclose(f);
 	}
 }
 //---------------------------------------------------------------------------
@@ -1160,7 +1151,7 @@ void PM_SimProxy::RecalcVals()
 			sprintf(fname, dump_CinvZ, dump_flag, RNK, ends[i].index);
 			FILE *f = fopen(fname, "w");
 			HMMPI::Mat(std::vector<double>(pbcz + ld*shift, pbcz + ld*(shift+1))).SaveASCII(f, "%20.16g");
-			fclose(f);
+			if (f) fclose(f);
 
 			pbcz = ITY_for_start[st_ind].ToVector().data();
 			ld = ITY_for_start[st_ind].JCount();
@@ -1168,7 +1159,7 @@ void PM_SimProxy::RecalcVals()
 			sprintf(fname, dump_Ity, dump_flag, RNK, ends[i].index);
 			f = fopen(fname, "w");
 			HMMPI::Mat(std::vector<double>(pbcz + ld*shift, pbcz + ld*(shift+1))).SaveASCII(f, "%20.16g");
-			fclose(f);
+			if (f) fclose(f);
 		}
 	}
 
@@ -1988,14 +1979,14 @@ void KrigStart::AddPoints(std::vector<std::vector<double>> x0, std::vector<std::
 		sprintf(fname, dump_D, dump_flag, 0);	// _pr0
 		FILE *f = fopen(fname, "w");
 		Dfull.SaveASCII(f, "%20.16g");						// full distance matrix
-		fclose(f);
+		if (f) fclose(f);
 
 		sprintf(fname, dump_X, dump_flag, 0);	// _pr0
 		f = fopen(fname, "w");
 
 		for (const auto &w : X)
 			fputs(HMMPI::ToString(w, "%20.16g").c_str(), f);		// points (full X)
-		fclose(f);
+		if (f) fclose(f);
 	}
 }
 //---------------------------------------------------------------------------
@@ -2095,7 +2086,7 @@ void KrigStart::RecalcPoints()								// (after adding X0, X1) makes appropriate
 		sprintf(fname, dump_C, dump_flag, RNK, index);
 		FILE *f = fopen(fname, "w");
 		C.SaveASCII(f, "%20.16g");
-		fclose(f);
+		if (f) fclose(f);
 	}
 }
 //---------------------------------------------------------------------------
@@ -2579,7 +2570,7 @@ void KrigEnd::OptimizeKrig()									// optimizes kriging parameters (via "ks") 
 
 		fprintf(f, "%d\t%d iter-s\t%g\t%g\t%g\t%g\t%g\t%g\n", index, dynamic_cast<OptLM*>(Opt)->iter_count, x0[0], x0[1], x0[2], x1[0], x1[1], x1[2]);
 		printf("[%d] pr-%d kriging opt, %d iter-s (%g, %g, %g) -> (%g, %g, %g)\n", RNK, index, dynamic_cast<OptLM*>(Opt)->iter_count, x0[0], x0[1], x0[2], x1[0], x1[1], x1[2]);
-		fclose(f);
+		if (f) fclose(f);
 	}
 #endif
 
@@ -2601,7 +2592,7 @@ void KrigEnd::OptimizeKrig()									// optimizes kriging parameters (via "ks") 
 		sprintf(fname, dump_C, dump_flag, RNK, start->index);	// for PROXY, DATAPROXY2: start->index = end->index
 		FILE *f = fopen(fname, "w");
 		start->C.SaveASCII(f, "%20.16g");
-		fclose(f);
+		if (f) fclose(f);
 	}
 }
 //---------------------------------------------------------------------------
@@ -2627,12 +2618,12 @@ std::string KrigEnd::RecalcVals()								// (after adding values) makes CinvZ ca
 		sprintf(fname, dump_CinvZ, dump_flag, RNK, index);
 		FILE *f = fopen(fname, "w");
 		CinvZ.SaveASCII(f, "%20.16g");
-		fclose(f);
+		if (f) fclose(f);
 
 		sprintf(fname, dump_Ity, dump_flag, RNK, index);
 		f = fopen(fname, "w");
 		HMMPI::Mat(Ity).SaveASCII(f, "%20.16g");
-		fclose(f);
+		if (f) fclose(f);
 	}
 
 	return mat_eff_rank;
@@ -2678,19 +2669,16 @@ void ValCont::write_FIT_SMRY() const								// debug output to file; len, smry_l
 {
 	int RNK;
 	MPI_Comm_rank(MPI_COMM_WORLD, &RNK);
-	if (RNK == 0)
-	{
+	if (RNK == 0) {
 		FILE *f_smry = fopen("ProxyDesignFIT_SMRY.txt", "w");		// output FIT, SMRY to file
-		if (f_smry != NULL)
-		{
-			if (FIT != 0)
-			{
+		if (f_smry) {
+			if (FIT != 0) {
 				HMMPI::SaveASCII(f_smry, FIT, len);
 				fprintf(f_smry, "\n");
 			}
 			if (SMRY != 0)
 				HMMPI::SaveASCII(f_smry, SMRY, len, smry_len);
-			fclose(f_smry);
+			if (f_smry) fclose(f_smry);
 		}
 	}
 }
@@ -2786,25 +2774,20 @@ void ValContDouble::FitSmryFromFile(std::string fname, int l)
 	if (comm != MPI_COMM_NULL)
 		MPI_Comm_rank(comm, &rnk);
 
-	if (rnk == 0)
-	{
+	if (rnk == 0) {
 		FIT = new double[len];
 		FILE *f0 = fopen(fname.c_str(), "r");
-		if (f0 != 0)
-		{
-			for (int c = 0; c < len; c++)
-			{
+		if (f0) {
+			for (int c = 0; c < len; c++) {
 				double d;
 				int n = fscanf(f0, "%lg", &d);
-				if (n == 1)
-					FIT[c] = d;
-				else if (feof(f0))
-				{
-					fclose(f0);
+				if (n == 1) FIT[c] = d;
+				else if (feof(f0)) {
+					if (f0) fclose(f0);
 					throw HMMPI::Exception("End of file reached before FIT was filled in ValContDouble::FitSmryFromFile");
 				}
 			}
-			fclose(f0);
+			if (f0) fclose(f0);
 		}
 		else
 			throw HMMPI::Exception("Cannot open file in ValContDouble::FitSmryFromFile");
@@ -2913,11 +2896,9 @@ void ValContVecDouble::FitSmryFromFile(std::string fname, int l)
 	if (comm != MPI_COMM_NULL)
 		MPI_Comm_rank(comm, &rnk);
 
-	if (rnk == 0)
-	{
+	if (rnk == 0) {
 		SMRY = new double*[len];
-		for (int i = 0; i < len; i++)
-		{
+		for (int i = 0; i < len; i++) {
 			if (smry_len != 0)
 				SMRY[i] = new double[smry_len];
 			else
@@ -2925,23 +2906,18 @@ void ValContVecDouble::FitSmryFromFile(std::string fname, int l)
 		}
 
 		FILE *f0 = fopen(fname.c_str(), "r");
-		if (f0 != 0)
-		{
+		if (f0) {
 			for (int c = 0; c < len; c++)
-				for (int i = 0; i < smry_len; i++)
-				{
+				for (int i = 0; i < smry_len; i++) {
 					double d;
 					int n = fscanf(f0, "%lg", &d);
-					if (n == 1)
-						SMRY[c][i] = d;
-					else if (feof(f0))
-					{
-						fclose(f0);
+					if (n == 1) SMRY[c][i] = d;
+					else if (feof(f0)) {
+						if (f0) fclose(f0);
 						throw HMMPI::Exception("End of file reached before SMRY was filled in ValContVecDouble::FitSmryFromFile");
 					}
 				}
-
-			fclose(f0);
+			if (f0) fclose(f0);
 		}
 		else
 			throw HMMPI::Exception("Cannot open file in ValContVecDouble::FitSmryFromFile");

@@ -212,15 +212,14 @@ int main(int argc, char *argv[])
 
 #ifdef TESTCTOR
 		FILE *testf = fopen(HMMPI::stringFormatArr("TESTCTOR_out_{0:%d}.txt", std::vector<int>{Parser_1::MPI_rank}).c_str(), "w");		// create empty file
-		fclose(testf);
+		if (testf) fclose(testf);
 #endif
 
 #ifdef TEST_CACHE
 	char fname[500];
 	sprintf(fname, TEST_CACHE, Parser_1::MPI_rank);
 	FILE *f = fopen(fname, "w");
-	if (f != NULL)
-		fclose(f);
+	if (f) fclose(f);
 #endif
 
 		CWD_holder::N = cwd;	// CMAES output

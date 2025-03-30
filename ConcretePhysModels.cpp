@@ -1365,13 +1365,13 @@ double PhysModelHM::obj_func_work(const std::vector<double> &p)
 					// output gradients to ASCII for debug
 					FILE *f = fopen("GRADIENTS_QWBHP.txt", "w");
 					HMMPI::Mat(std::vector<double>(Qwbhp.Serialize(), Qwbhp.Serialize() + Qwbhp.ICount()*Qwbhp.JCount()), Qwbhp.ICount(), Qwbhp.JCount()).SaveASCII(f);
-					fclose(f);
+					if (f) fclose(f);
 					f = fopen("GRADIENTS_QWGOR.txt", "w");
 					HMMPI::Mat(std::vector<double>(Qwgor.Serialize(), Qwgor.Serialize() + Qwgor.ICount()*Qwgor.JCount()), Qwgor.ICount(), Qwgor.JCount()).SaveASCII(f);
-					fclose(f);
+					if (f) fclose(f);
 					f = fopen("GRADIENTS_QWWCT.txt", "w");
 					HMMPI::Mat(std::vector<double>(Qwwct.Serialize(), Qwwct.Serialize() + Qwwct.ICount()*Qwwct.JCount()), Qwwct.ICount(), Qwwct.JCount()).SaveASCII(f);
-					fclose(f);
+					if (f) fclose(f);
 
 					// Gradients for PunqS3 turned out to have bugs; so this code is not developed further
 
@@ -3149,12 +3149,12 @@ void PMpConnect::run_simulation(const std::vector<double> &params)
 			}
 
 			for (size_t i = 0; i < Files.size(); i++)
-				fclose(Files[i]);
+				if (Files[i]) fclose(Files[i]);
 		}
 		catch (const std::exception &e)
 		{
 			for (size_t i = 0; i < Files.size(); i++)
-				fclose(Files[i]);
+				if (Files[i]) fclose(Files[i]);
 
 			sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
 		}
@@ -3384,7 +3384,7 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 			file = fopen(fname.c_str(), "r");
 			if (file == NULL)																// check if file exists
 				file_ok = false;
-			fclose(file);
+			if (file) fclose(file);
 			file = 0;
 
 			if (file_ok && HMMPI::FileModCompare(fname, templ->DataFileSubst()) < 0)		// check if file was updated
@@ -3411,7 +3411,7 @@ void PMConc::run_simulation(const std::vector<double> &params, std::vector<doubl
 		}
 		catch (const std::exception &e)
 		{
-			fclose(file);
+			if (file) fclose(file);
 			sprintf(err_msg, "%.*s", HMMPI::BUFFSIZE-50, e.what());
 		}
 	}
@@ -3722,7 +3722,7 @@ PM_Linear::PM_Linear(Parser_1 *K, KW_item *kw, MPI_Comm c) : PhysModel(K, kw, c)
 	{
 		FILE *f0 = fopen("LINEAR_FullCovariance.txt", "w");
 		FullCov.SaveASCII(f0, "%20.16g");
-		fclose(f0);
+		if (f0) fclose(f0);
 	}
 
 #ifdef TESTCTOR
@@ -3859,7 +3859,7 @@ void PM_Linear::PerturbData()
 		if (fpet != NULL)
 		{
 			d0.SaveASCII(fpet);
-			fclose(fpet);
+			if (fpet) fclose(fpet);
 		}
 #endif
 		fpet = fopen("MatVecVec_RML.txt", "w");		// output perturbed data within MATVECVEC
@@ -3867,7 +3867,7 @@ void PM_Linear::PerturbData()
 		{
 			fprintf(fpet, "MATVECVEC\n");
 			(G && d0 && cov_diag()).SaveASCII(fpet);
-			fclose(fpet);
+			if (fpet) fclose(fpet);
 		}
 	}
 }

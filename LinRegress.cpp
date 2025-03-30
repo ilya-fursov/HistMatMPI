@@ -1838,14 +1838,14 @@ void VectCorrEntry::FillData(size_t ind, const HMMPI::Vector2<double> &textsmry,
 					throw HMMPI::Exception((std::string)"Failed to open file '" + fnC + "' for writing");
 				fprintf(fileC, "Correlation matrix\n");
 				HMMPI::Mat(std::vector<double>(C, C+count), sz, sz).SaveASCII(fileC);
-				fclose(fileC);
+				if (fileC) fclose(fileC);
 
 				FILE *fileL = fopen(fnL, "w");
 				if (fileL == NULL)
 					throw HMMPI::Exception((std::string)"Failed to open file '" + fnL + "' for writing");
 				fprintf(fileL, "Choleski decomposition\n");
 				HMMPI::Mat(std::vector<double>(L, L+count), sz, sz).SaveASCII(fileL);
-				fclose(fileL);
+				if (fileL) fclose(fileL);
 			}
 #endif
 		}

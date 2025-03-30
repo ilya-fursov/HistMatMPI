@@ -68,7 +68,7 @@ void KW_runsoboltest::Run()
 				fprintf(sw, "\t%10.8f", vec[j]);
 			fprintf(sw, "\n");
 		}
-		fclose(sw);
+		if (sw) fclose(sw);
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -98,7 +98,7 @@ void KW_runmatrixtest::Run()
 		C.LoadASCII(f, mtest->sizeC);
 		D.LoadASCII(f, mtest->sizeD);
 		E.LoadASCII(f);
-		fclose(f);
+		if (f) fclose(f);
 
 		// start writing
 		f = fopen(mtest->fileout.c_str(), "w");
@@ -264,7 +264,7 @@ void KW_runmatrixtest::Run()
 		fprintf(f, "\nAutocorr(E)\n");
 		ac.SaveASCII(f);
 
-		fclose(f);
+		if (f) fclose(f);
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -334,7 +334,7 @@ void KW_runRosenbrock::Run()
 		fprintf(f, "Hessian 2 (fin. diff.)\n");
 		Hess2.SaveASCII(f);
 
-		fclose(f);
+		if (f) fclose(f);
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -354,23 +354,21 @@ void KW_runmatinv::Run()
 	int rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-	FILE *f = 0;
+	FILE *f = NULL;
 	try
 	{
 		HMMPI::Mat rhs = HMMPI::Mat(mat->v1) && HMMPI::Mat(mat->v2);
 		HMMPI::Mat sol = linsol->Sol(0)->Solve(mat->M, rhs);
 
-		if (rank == 0)
-		{
+		if (rank == 0) {
 			f = fopen("OutputRunMatInv.txt", "w");
 			sol.SaveASCII(f);
 		}
-
-		fclose(f);
+		if (f) fclose(f);
 	}
 	catch (...)
 	{
-		fclose(f);
+		if (f) fclose(f);
 		throw;
 	}
 }
@@ -509,16 +507,16 @@ void KW_rundebug::Run()
     for (size_t i = 0; i < vec.size(); i++) {
 		fprintf(f1, "%g\n", vec[i]);
     }
-    fclose(f1);
+    if (f1) fclose(f1);
 
     f1 = fopen("vector_test_14mar.bin", "wb");
     HMMPI::write_bin_work(f1, vec, 2);
-    fclose(f1);
+    if (f1) fclose(f1);
 
     std::vector<double> vec2(vec.size());
     FILE *f2 = fopen("vector_test_14mar.bin", "rb");
     HMMPI::read_bin_work(f2, vec2, 2);
-    fclose(f2);
+    if (f2) fclose(f2);
 
     double norm = -1;
     HMMPI::Mat M(vec, vec.size(), 1);
@@ -543,12 +541,5 @@ void KW_rundebug::Run()
     K->AppText(M5.ToString());
     K->AppText("Test '!='\n");
     K->AppText(M6.ToString());
-
-
-	//################## TEST 20 mar
-//	FILE *f = fopen("100_summary.txt", "w");
-//	eclsmry->get_Data().SaveToAscii(f);
-//	fclose(f);
-
 }
 //------------------------------------------------------------------------------------------
